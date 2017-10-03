@@ -7,7 +7,11 @@ __author__ = ('Nicola Segata (nicola.segata@unitn.it), '
 __version__ = '0.01'
 __date__ = '28 Sep 2017'
 
-from src.utils import *
+import src.utils as utils
+import os
+import argparse as ap
+import configparser as cp
+import sys
 
 def read_params():
     p = ap.ArgumentParser(description="")
@@ -50,15 +54,15 @@ def set_download_options(configparser_object, args):
 
 if __name__ == '__main__':
     args = read_params()
-    check_config_params(args, verbose=args.verbose)
+    utils.check_config_params(args, verbose=args.verbose)
 
     config = cp.ConfigParser()
     config = set_download_options(config, args)
 
     if (os.path.isfile(args.output)) and args.overwrite and args.verbose:
-        info('Output file "{}" will be overwritten\n'.format(args.output))
+        utils.info('Output file "{}" will be overwritten\n'.format(args.output))
     elif (os.path.isfile(args.output)) and not args.overwrite and args.verbose:
-        info('Output file "{}" will NOT be overwritten. Exiting\n'.format(args.output))
+        utils.info('Output file "{}" will NOT be overwritten. Exiting\n'.format(args.output))
         sys.exit(0)
 
     with open(args.output, 'w') as f:

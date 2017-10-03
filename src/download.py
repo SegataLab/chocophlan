@@ -7,7 +7,16 @@ __author__ = ('Nicola Segata (nicola.segata@unitn.it), '
 __version__ = '0.01'
 __date__ = '01 Oct 2017'
 
-from src.utils import *
+
+if __name__ == '__main__':
+    import utils
+else:
+    import src.utils as utils
+import multiprocessing as mp
+import time
+import ftplib
+import math
+import sys
 
 # The initt function as well as most of the do_download functionality have been taken from Francesco Asnicar's PhyloPhlAn2.
 def initt(terminating_):
@@ -31,8 +40,8 @@ def do_download(inputs):
                 ftp.retrbinary("RETR " + full_link, fileout.write)
         except Exception as e:
             terminating.set()
-            error(str(e), init_new_line=True)
-            error('Download failed for\n    {}'.format(ftp_link), init_new_line=True)
+            utils.error(str(e), init_new_line=True)
+            utils.error('Download failed for\n    {}'.format(ftp_link), init_new_line=True)
             raise
     else:
         terminating.set()
@@ -65,26 +74,27 @@ def download(config):
     with mp.Pool(initializer=initt, initargs=(terminating,),
              processes=int(config['nproc'])) as pool:
         try:
-            info("Starting parallel download.", init_new_line=True)
+            utils.info("Starting parallel download.", init_new_line=True)
             [_ for _ in pool.imap(do_download, argument_list, chunksize=chunksize if chunksize else 1)]
         except Exception as e:
-            error(str(e), init_new_line=True)
-            error('Download failed', init_new_line=True,
+            utils.error(str(e), init_new_line=True)
+            utils.error('Download failed.', init_new_line=True,
                   exit=True)
             raise
-
+    utils.info('Download succesful.', init_new_line=True)
 if __name__ == '__main__':
     t0 = time.time()
 
-    args = read_params()
-    check_params(args, verbose=args.verbose)
+    args = utils.read_params()
+    utils.check_params(args, verbose=args.verbose)
 
-    config = read_configs(args.config_file, verbose=args.verbose)
-    config = check_configs(config)
+    config = utils.read_configs(args.config_file, verbose=args.verbose)
+    config = utils.check_configs(config)
     config = config['download'] 
 
     download(config)
 
     t1 = time.time()
-    info('Total elapsed time {}s\n'.format(int(t1 - t0)))
+
+    utils.info('Total elapsed time {}s\n'.format(int(t1 - t0)), init_new_line=True)
     sys.exit(0)

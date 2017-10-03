@@ -7,17 +7,10 @@ __author__ = ('Nicola Segata (nicola.segata@unitn.it), '
 __version__ = '0.01'
 __date__ = '03 Oct 2017'
 
-# I have decided to import all libraries in the utils function regardless of
-# whether they will be all be needed. 
-
 import os
 import sys
 import argparse as ap
 import configparser as cp
-import multiprocessing as mp
-import time
-import ftplib
-import math
 
 def info(s, init_new_line=False, exit=False, exit_value=0):
     if init_new_line:
