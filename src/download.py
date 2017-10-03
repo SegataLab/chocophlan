@@ -7,7 +7,7 @@ __author__ = ('Nicola Segata (nicola.segata@unitn.it), '
 __version__ = '0.01'
 __date__ = '01 Oct 2017'
 
-from utils import *
+from src.utils import *
 
 # The initt function as well as most of the do_download functionality have been taken from Francesco Asnicar's PhyloPhlAn2.
 def initt(terminating_):
