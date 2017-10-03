@@ -9,7 +9,11 @@ __version__ = '0.01'
 __date__ = '28 Sep 2017'
 
 
-from src.utils import *
+import src.utils as utils
+import os
+import argparse as ap
+import configparser as cp
+import sys
 
 
 def read_params():
@@ -65,7 +69,7 @@ def set_download_options(configparser_object, args, verbose=False):
 
 if __name__ == '__main__':
     args = read_params()
-    check_config_params(args, verbose=args.verbose)
+    utils.check_config_params(args, verbose=args.verbose)
 
     config = cp.ConfigParser()
     config = set_download_options(config, args, verbose=args.verbose)

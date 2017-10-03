@@ -9,16 +9,10 @@ __version__ = '0.01'
 __date__ = '03 Oct 2017'
 
 
-# I have decided to import all libraries in the utils function regardless of
-# whether they will be all be needed.
 import os
 import sys
 import argparse as ap
 import configparser as cp
-import multiprocessing as mp
-import time
-import ftplib
-import math
 
 
 def info(s, init_new_line=False, exit=False, exit_value=0):
@@ -41,6 +35,20 @@ def error(s, init_new_line=False, exit=False, exit_value=1):
 
     if exit:
         sys.exit(exit_value)
+
+
+def remove_file(filename, path=None, verbose=False):
+    to_remove = path if path else ''
+    to_remove += filename if filename else ''
+
+    if to_remove:
+        if os.path.exists(to_remove):
+            if verbose:
+                error('removing "{}"'.format(to_remove))
+
+            os.remove(to_remove)
+        elif verbose:
+            error('file "{}" not found'.format(to_remove))
 
 
 def read_params():

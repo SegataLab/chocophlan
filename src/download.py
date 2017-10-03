@@ -9,7 +9,15 @@ __version__ = '0.01'
 __date__ = '01 Oct 2017'
 
 
-from src.utils import *
+if __name__ == '__main__':
+    import utils
+else:
+    import src.utils as utils
+import multiprocessing as mp
+import time
+import ftplib
+import math
+import sys
 
 
 def initt(terminating_):
@@ -37,6 +45,7 @@ def do_download(inputs):
                 ftp.retrbinary("RETR " + full_link, fileout.write)
         except Exception as e:
             terminating.set()
+            utils.remove_file(output_path)
             error(str(e), init_new_line=True)
             error('Download failed for\n    {}'.format(full_link),
                   init_new_line=True)
@@ -88,12 +97,15 @@ def download(config, verbose=False):
             error('Download failed', init_new_line=True, exit=True)
             raise
 
+    if verbose:
+        utils.info('Download succesful.', init_new_line=True)
+
 
 if __name__ == '__main__':
     t0 = time.time()
 
-    args = read_params()
-    check_params(args, verbose=args.verbose)
+    args = utils.read_params()
+    utils.check_params(args, verbose=args.verbose)
 
     config = read_configs(args.config_file, verbose=args.verbose)
     config = check_configs(config)
@@ -101,5 +113,6 @@ if __name__ == '__main__':
     download(config['download'], verbose=config['verbose'])
 
     t1 = time.time()
-    info('Total elapsed time {}s\n'.format(int(t1 - t0)))
+
+    utils.info('Total elapsed time {}s\n'.format(int(t1 - t0)), init_new_line=True)
     sys.exit(0)
