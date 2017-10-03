@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+
 __author__ = ('Nicola Segata (nicola.segata@unitn.it), '
               'Francesco Beghini (@unitn.it)'
               'Nicolai Karcher (karchern@gmail.com),'
@@ -7,9 +8,9 @@ __author__ = ('Nicola Segata (nicola.segata@unitn.it), '
 __version__ = '0.01'
 __date__ = '03 Oct 2017'
 
-# I have decided to import all libraries in the utils function regardless of
-# whether they will be all be needed. 
 
+# I have decided to import all libraries in the utils function regardless of
+# whether they will be all be needed.
 import os
 import sys
 import argparse as ap
@@ -18,6 +19,7 @@ import multiprocessing as mp
 import time
 import ftplib
 import math
+
 
 def info(s, init_new_line=False, exit=False, exit_value=0):
     if init_new_line:
@@ -53,6 +55,7 @@ def read_params():
 
     return p.parse_args()
 
+
 def check_params(args, verbose=False):
     if args.version:
         info('ChocoPhlAn version {} ({})\n'.format(__version__, __date__),
@@ -64,12 +67,14 @@ def check_params(args, verbose=False):
         error('configuration file "{}" not found'.format(args.config_file),
               exit=True)
 
+
 def check_config_params(args, verbose=False):
 	# I have created a check_config_params function for write_config_file.py
 	# The reason for this is that check_params checks the version, which I'm not sure the
 	# write_config_file.py script really needs. Alternatively, we can leave remove the version check from
-	# the check_params function here and decorate it with a version check if needed. 
+	# the check_params function here and decorate it with a version check if needed.
 	pass
+
 
 def read_configs(config_file, verbose=False):
     configs = {}
@@ -87,16 +92,39 @@ def read_configs(config_file, verbose=False):
 
     return configs
 
+
 def check_configs(config, verbose=False):
     for section_key, section_dic in config.items():
-        for key, value in section_dic.items(): 
-            section_dic[key] = trim_trailing_slashes(value)
+        for section, value in section_dic.items():
+            if 'nproc' in section:
+                try:
+                    section_dic[section] = int(value)
+                except Exception as e:
+                    error(str(e), init_new_line=True)
+                    error('nproc is not an int!\n    {}'
+                          .format('{}: {}\n    '.join(zip(['section_key', 'section', 'value'],
+                                                          [section_key, section, value]))),
+                          init_new_line=True, exit=True)
+            elif 'verbose' in section:
+                try:
+                    section_dic[section] = bool(value)
+                except Exception as e:
+                    error(str(e), init_new_line=True)
+                    error('verbose is not a bool!\n    {}'
+                          .format('{}: {}\n    '.join(zip(['section_key', 'section', 'value'],
+                                                          [section_key, section, value]))),
+                          init_new_line=True, exit=True)
+            else:
+                section_dic[section] = trim_trailing_slashes(value)
+
     return config
+
 
 def trim_trailing_slashes(input_string):
     try:
-        return input_string.rstrip("/")
+        return input_string.strip().rstrip("/")
     except Exception as e:
         error(str(e), init_new_line=True)
-        error('Supplied object not a string\n    {}'.format(input_string), init_new_line=True)
+        error('Supplied object not a string\n    {}'.format(input_string),
+              init_new_line=True, exit=True)
         raise
