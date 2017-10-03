@@ -16,7 +16,7 @@ def chocophlan():
     check_params(args, verbose=args.verbose)
 
     config = read_configs(args.config_file, verbose=args.verbose)
-    config = check_configs(configs, verbose=args.verbose)
+    config = check_configs(config, verbose=args.verbose)
 
     download.download(config['download'])
 
