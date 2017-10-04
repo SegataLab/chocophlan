@@ -72,8 +72,8 @@ def download(config, verbose=False):
     ftp.cwd(config['refseq_bacterial_genomes'])
     ls = ftp.nlst()
     argument_list += [(config['refseq_ftp_base'],
-                       '/'.join([config['refseq_bacterial_genomes'], entry,
-                                 config['download_dir'], 'refseq/genomes',
+                       '/'.join([config['refseq_bacterial_genomes'], entry]),
+                       '/'.join([config['download_dir'], 'refseq/genomes',
                                  entry]))
                       for entry in ls if "genomic.fna.gz" in entry]
 
