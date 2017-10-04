@@ -18,6 +18,7 @@ import time
 import ftplib
 import math
 import sys
+import os
 
 
 def initt(terminating_):
@@ -46,8 +47,8 @@ def do_download(inputs):
         except Exception as e:
             terminating.set()
             utils.remove_file(output_path)
-            error(str(e), init_new_line=True)
-            error('Download failed for\n    {}'.format(full_link),
+            utils.error(str(e), init_new_line=True)
+            utils.error('Download failed for\n    {}'.format(full_link),
                   init_new_line=True)
             raise
     else:
@@ -88,13 +89,13 @@ def download(config, verbose=False):
                  processes=config['nproc']) as pool:
         try:
             if verbose:
-                info("Starting parallel download.", init_new_line=True)
+                utils.info("Starting parallel download.", init_new_line=True)
 
             [_ for _ in pool.imap(do_download, argument_list,
                                   chunksize=chunksize if chunksize else 1)]
         except Exception as e:
-            error(str(e), init_new_line=True)
-            error('Download failed', init_new_line=True, exit=True)
+            utils.error(str(e), init_new_line=True)
+            utils.error('Download failed', init_new_line=True, exit=True)
             raise
 
     if verbose:
@@ -107,10 +108,11 @@ if __name__ == '__main__':
     args = utils.read_params()
     utils.check_params(args, verbose=args.verbose)
 
-    config = read_configs(args.config_file, verbose=args.verbose)
-    config = check_configs(config)
+    config = utils.read_configs(args.config_file, verbose=args.verbose)
+    config = utils.check_configs(config)
 
-    download(config['download'], verbose=config['verbose'])
+    print(config)
+    download(config['download'], verbose=config['download']['verbose'])
 
     t1 = time.time()
 

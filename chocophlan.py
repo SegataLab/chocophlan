@@ -22,7 +22,7 @@ def chocophlan():
     config = utils.read_configs(args.config_file, verbose=args.verbose)
     config = utils.check_configs(config, verbose=args.verbose)
 
-    download.download(config['download'])
+    download.download(config['download'], verbose=args.verbose)
 
 
 if __name__ == '__main__':
