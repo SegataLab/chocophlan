@@ -111,7 +111,6 @@ if __name__ == '__main__':
     config = utils.read_configs(args.config_file, verbose=args.verbose)
     config = utils.check_configs(config)
 
-    print(config)
     download(config['download'], verbose=config['download']['verbose'])
 
     t1 = time.time()
