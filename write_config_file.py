@@ -36,6 +36,8 @@ def read_params():
     group.add_argument('--refseq_taxonomic_catalogue',
                        default=('/refseq/release/release-catalog/RefSeq-releas'
                                 'e84.catalog.gz'))
+    group.add_argument('--refseq_taxdump',
+                       default=('/pub/taxonomy/taxdump.tar.gz'))
     group.add_argument('--uniprot_ftp_base', default='ftp.uniprot.org')
     group.add_argument('--uniprot_uniref100',
                        default=('/pub/databases/uniprot/current_release/uniref'
@@ -56,6 +58,8 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.refseq_bacterial_genomes)
     configparser_object.set('download', 'refseq_taxonomic_catalogue',
                             args.refseq_taxonomic_catalogue)
+    configparser_object.set('download', 'refseq_taxdump',
+                            args.refseq_taxdump)
     configparser_object.set('download', 'uniprot_ftp_base',
                             args.uniprot_ftp_base)
     configparser_object.set('download', 'uniprot_uniref100',

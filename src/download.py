@@ -82,6 +82,12 @@ def download(config, verbose=False):
                           config['refseq_taxonomic_catalogue'],
                           config['download_dir'] + '/refseq/catalogue/refseq_catalogue.gz'))
 
+    ### Refseq taxdump ###
+
+    argument_list.append((config['refseq_ftp_base'],
+                          config['refseq_taxdump'],
+                          config['download_dir'] + '/refseq/taxdump/refseq_taxdump.gz'))
+
     terminating = mp.Event()
     chunksize = math.floor(len(argument_list) / (int(config['nproc']) * 2))
 
