@@ -64,7 +64,7 @@ def download(config, verbose=False):
     ### uniprot XML ###
     argument_list = [(config['uniprot_ftp_base'],
                       config['uniprot_uniref100'],
-                      config['download_dir'] + '/uniprot/uniref/uniref100.xml.gz')]
+                      config['download_base_dir'] + config['relpath_uniref100'])]
 
     ### Bacterial refseq genomes ###
     ftp = ftplib.FTP(config['refseq_ftp_base'])
@@ -73,20 +73,20 @@ def download(config, verbose=False):
     ls = ftp.nlst()
     argument_list += [(config['refseq_ftp_base'],
                        '/'.join([config['refseq_bacterial_genomes'], entry]),
-                       '/'.join([config['download_dir'], 'refseq/genomes',
+                       '/'.join([config['download_base_dir'], config['relpath_bacterial_genomes'],
                                  entry]))
                       for entry in ls if "genomic.fna.gz" in entry]
 
     ### RefSeq catalogue ###
     argument_list.append((config['refseq_ftp_base'],
                           config['refseq_taxonomic_catalogue'],
-                          config['download_dir'] + '/refseq/catalogue/refseq_catalogue.gz'))
+                          config['download_base_dir'] + config['relpath_taxonomic_catalogue']))
 
     ### Refseq taxdump ###
 
     argument_list.append((config['refseq_ftp_base'],
                           config['refseq_taxdump'],
-                          config['download_dir'] + '/refseq/taxdump/refseq_taxdump.gz'))
+                          config['download_base_dir'] + config['relpath_taxdump']))
 
     terminating = mp.Event()
     chunksize = math.floor(len(argument_list) / (int(config['nproc']) * 2))

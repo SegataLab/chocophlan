@@ -42,9 +42,21 @@ def read_params():
     group.add_argument('--uniprot_uniref100',
                        default=('/pub/databases/uniprot/current_release/uniref'
                                 '/uniref100/uniref100.xml.gz'))
-    group.add_argument('--download_dir',
+    group.add_argument('--download_base_dir',
                        default=os.path.abspath(os.path.join(os.path.dirname(__file__), 'data')),
                        help='Base directory for raw files to be downloaded to')
+    group.add_argument('--relpath_bacterial_genomes',
+                       default='refseq/genomes',
+                       help='Directory for genome files')
+    group.add_argument('--relpath_taxonomic_catalogue',
+                       default='/refseq/catalogue/refseq_catalogue.gz',
+                       help='Directory for refseq catalogue file')
+    group.add_argument('--relpath_taxdump',
+                       default='/refseq/taxdump/refseq_taxdump.gz',
+                       help='Directory for refseq catalogue file')
+    group.add_argument('--relpath_uniref100',
+                       default='/uniprot/uniref/uniref100.xml.gz',
+                       help='Directory for uniref100 file')
     group.add_argument('--nproc', default=20, help='Number of parallel processes')
 
     return p.parse_args()
@@ -64,9 +76,25 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.uniprot_ftp_base)
     configparser_object.set('download', 'uniprot_uniref100',
                             args.uniprot_uniref100)
-    configparser_object.set('download', 'download_dir', args.download_dir)
+    configparser_object.set('download', 'download_base_dir', args.download_base_dir)
+    configparser_object.set('download', 'relpath_bacterial_genomes',
+                            args.relpath_bacterial_genomes)
+    configparser_object.set('download', 'relpath_taxonomic_catalogue',
+                            args.relpath_taxonomic_catalogue)
+    configparser_object.set('download', 'relpath_taxdump',
+                            args.relpath_taxdump)
+    configparser_object.set('download', 'relpath_uniref100',
+                            args.relpath_uniref100)
     configparser_object.set('download', 'verbose', str(verbose))
     configparser_object.set('download', 'nproc', str(args.nproc))
+
+
+    configparser_object.add_section('extract')
+    configparser_object.set('extract', 'refseq_taxdump',
+                            args.refseq_taxdump)
+    configparser_object.set('extract', 'verbose', str(verbose))
+    configparser_object.set('extract', 'nproc', str(args.nproc))
+
 
     return configparser_object
 
