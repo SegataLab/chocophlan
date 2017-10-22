@@ -13,6 +13,7 @@ import os
 import sys
 import argparse as ap
 import configparser as cp
+import re
 
 
 def info(s, init_new_line=False, exit=False, exit_value=0):

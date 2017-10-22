@@ -52,7 +52,7 @@ def read_params():
                        default='/refseq/catalogue/refseq_catalogue.gz',
                        help='Directory for refseq catalogue file')
     group.add_argument('--relpath_taxdump',
-                       default='/refseq/taxdump/refseq_taxdump.gz',
+                       default='/refseq/taxdump/refseq_taxdump.tar.gz',
                        help='Directory for refseq catalogue file')
     group.add_argument('--relpath_uniref100',
                        default='/uniprot/uniref/uniref100.xml.gz',
@@ -76,7 +76,8 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.uniprot_ftp_base)
     configparser_object.set('download', 'uniprot_uniref100',
                             args.uniprot_uniref100)
-    configparser_object.set('download', 'download_base_dir', args.download_base_dir)
+    configparser_object.set('download', 'download_base_dir', 
+                            args.download_base_dir)
     configparser_object.set('download', 'relpath_bacterial_genomes',
                             args.relpath_bacterial_genomes)
     configparser_object.set('download', 'relpath_taxonomic_catalogue',
@@ -90,8 +91,12 @@ def set_download_options(configparser_object, args, verbose=False):
 
 
     configparser_object.add_section('extract')
-    configparser_object.set('extract', 'refseq_taxdump',
-                            args.refseq_taxdump)
+    configparser_object.set('extract', 'download_base_dir', 
+                            args.download_base_dir)
+    configparser_object.set('extract', 'relpath_taxdump',
+                            args.relpath_taxdump)
+    configparser_object.set('extract', 'relpath_taxonomic_catalogue',
+                            args.relpath_taxonomic_catalogue)
     configparser_object.set('extract', 'verbose', str(verbose))
     configparser_object.set('extract', 'nproc', str(args.nproc))
 
@@ -106,14 +111,13 @@ if __name__ == '__main__':
     config = cp.ConfigParser()
     config = set_download_options(config, args, verbose=args.verbose)
 
-    if os.path.isfile(args.output) and args.overwrite and args.verbose:
-        info('Output file "{}" will be overwritten\n'.format(args.output))
-    elif os.path.isfile(args.output) and (not args.overwrite) and args.verbose:
-        info('Output file "{}" will NOT be overwritten. Exiting\n'
+    if os.path.isfile(args.output) and args.overwrite:
+        utils.info('Output file "{}" will be overwritten\n'.format(args.output))
+        with open(args.output, 'w') as f:
+          config.write(f)
+    elif os.path.isfile(args.output) and (not args.overwrite):
+        utils.info('Output file "{}" will NOT be overwritten. Exiting\n'
              .format(args.output))
         sys.exit(0)
-
-    with open(args.output, 'w') as f:
-        config.write(f)
 
     sys.exit(0)

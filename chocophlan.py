@@ -23,6 +23,7 @@ def chocophlan():
     config = utils.check_configs(config, verbose=args.verbose)
 
     download.download(config['download'], verbose=args.verbose)
+    # ADD EXTRACT WHEN READY
 
 
 if __name__ == '__main__':
