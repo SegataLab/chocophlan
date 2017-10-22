@@ -384,6 +384,7 @@ def extract_contigs_from_taxid(taxid, taxid_contigid_mapping, files_to_search=No
 		# if yes, extract fasta sequence
 
 		# In the end, write the whole thing out.
+		pass
 	else:
 		pass
 
