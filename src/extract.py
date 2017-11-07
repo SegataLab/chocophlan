@@ -27,12 +27,13 @@ import tarfile
 import re
 import copy
 import gzip
+import pickle
 
 from collections import defaultdict
 from Bio import Phylo
+from Bio import SeqIO
 from Bio.Phylo.BaseTree import Tree as BTree
 from Bio.Phylo.BaseTree import Clade as BClade
-
 
 class Nodes:
     #
@@ -334,9 +335,16 @@ class Names:
 def do_extraction(config, verbose=False):
 	taxdump_dir = config['download_base_dir'] + config['relpath_taxdump']
 	catalogue_dir = config['download_base_dir'] + config['relpath_taxonomic_catalogue']
+	genomes_dir = config['download_base_dir'] + config['relpath_bacterial_genomes']
+
 
 	taxid_contigid_dict = map_taxid_to_contigid(catalogue_dir)
-	# map_contigid_to_filename()
+	pickle.dump(taxid_contigid_dict, open(config['download_base_dir'] + config['relpath_pickle_taxid_contigid'], "wb" ))
+
+	contigid_to_filename = map_contigid_to_filename(genomes_dir)
+	pickle.dump(contigid_to_filename, open(config['download_base_dir'] + config['relpath_pickle_contigid_filename'], "wb" ))
+	
+	testrun = extract_contigs_from_taxid(515619, taxid_contigid_dict, contigid_to_filename)
 
 	names_buf, nodes_buf = read_taxdump(taxdump_dir)
 
@@ -369,12 +377,14 @@ def map_taxid_to_contigid(catalogue_file_dir):
 	utils.info("Finished taxid to contigid mapping", init_new_line=True)
 	return(taxid_contigid_dict)
 
-def extract_contigs_from_taxid(taxid, taxid_contigid_mapping, files_to_search=None):
+def extract_contigs_from_taxid(taxid, taxid_contigid_mapping, contigid_filename_mapping=None):
 	# For now, this function simply searches ALL files. We can later refine this by providing the file names using the
 	# files_to_search parameter. Once we created the contigid_to_filename mapping, we can easily query contigids for their
 	# file membership and pass the results to this function.
 
-	if files_to_search == None:
+	contigs_to_extract = taxid_contigid_mapping[taxid]
+
+	if contigid_filename_mapping == None:
 		# Search all files, as contigid_to_filename mapping hasn't been provided. Meant for sequenctial (instead of parallel)
 		# computation. 
 
@@ -384,19 +394,38 @@ def extract_contigs_from_taxid(taxid, taxid_contigid_mapping, files_to_search=No
 		# if yes, extract fasta sequence
 
 		# In the end, write the whole thing out.
-		pass
+		
+		# For now, exit if contigid_filename_mapping is not provided
+		utils.error("contig-ID to filename mapping not provided.")
+		sys.exit()
 	else:
-		pass
+		fasta_final = []
+		for contig in contigs_to_extract:
+			filename = contigid_filename_mapping[contig]
+			with gzip.open(genomes_dir + "/" +  filename, 'rt') as fasta_file:
+				fasta_final.append([record for record in fasta_file if record.id == contig])
 
-def map_contigid_to_filename():
+
+
+
+def map_contigid_to_filename(genomes_dir, verbose=False):
 	# To Francesco:
 	# I have not written this function yet. 
 	# I think we can later add this since the extract_contigs_from_taxid function has a parameter called "files_to_search".
-	
+
+	contigid_to_filename = defaultdict(list)
+	utils.info("Building contig-ID to genome file name mapping.", init_new_line=True)
+	for genome_file in os.listdir(genomes_dir):
+		with gzip.open(genomes_dir + "/" +  genome_file, 'rt') as fasta_file:
+			for record in SeqIO.parse(fasta_file, "fasta"):
+					contigid_to_filename[record.id] = genome_file
+	utils.info("Finished building contig-ID to genome file name mapping.", init_new_line=True)
+	return(contigid_to_filename)
+
+
 	# Additional idea: we can also save the position of each contig within each file like so:
 	# Final_dir = {"contig_id_1": ("file_name_abc", 252624)}, where the second entry of the tuple is the number of the contig within the file.
 	# Can be easily added while reading and creating the contigid to filename mapping. This would later safe us a LOT of time, right?
-	pass
 
 def read_taxdump(taxdump_dir, verbose=False):
 	utils.info('Reading the NCBI taxdump file from ' + taxdump_dir, init_new_line = True)

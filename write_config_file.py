@@ -46,17 +46,29 @@ def read_params():
                        default=os.path.abspath(os.path.join(os.path.dirname(__file__), 'data')),
                        help='Base directory for raw files to be downloaded to')
     group.add_argument('--relpath_bacterial_genomes',
-                       default='refseq/genomes',
+                       default='/refseq/genomes',
                        help='Directory for genome files')
     group.add_argument('--relpath_taxonomic_catalogue',
                        default='/refseq/catalogue/refseq_catalogue.gz',
                        help='Directory for refseq catalogue file')
     group.add_argument('--relpath_taxdump',
                        default='/refseq/taxdump/refseq_taxdump.tar.gz',
-                       help='Directory for refseq catalogue file')
+                       help='')
     group.add_argument('--relpath_uniref100',
                        default='/uniprot/uniref/uniref100.xml.gz',
                        help='Directory for uniref100 file')
+
+    group.add_argument('--relpath_pickle_taxid_contigid',
+                       default='/pickled/taxid_contig.p',
+                       help='')
+    group.add_argument('--relpath_pickle_taxid_taxonomy',
+                       default='/pickled/taxid_taxonomy.p',
+                       help='')
+    group.add_argument('--relpath_pickle_contigid_filename',
+                       default='/pickled/contigid_filename.p',
+                       help='')
+
+
     group.add_argument('--nproc', default=20, help='Number of parallel processes')
 
     return p.parse_args()
@@ -97,6 +109,16 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.relpath_taxdump)
     configparser_object.set('extract', 'relpath_taxonomic_catalogue',
                             args.relpath_taxonomic_catalogue)
+    configparser_object.set('extract', 'relpath_bacterial_genomes',
+                            args.relpath_bacterial_genomes)
+
+    configparser_object.set('extract', 'relpath_pickle_taxid_contigid',
+                            args.relpath_pickle_taxid_contigid)
+    configparser_object.set('extract', 'relpath_pickle_taxid_taxonomy',
+                            args.relpath_pickle_taxid_taxonomy)
+    configparser_object.set('extract', 'relpath_pickle_contigid_filename',
+                            args.relpath_pickle_contigid_filename)
+
     configparser_object.set('extract', 'verbose', str(verbose))
     configparser_object.set('extract', 'nproc', str(args.nproc))
 
