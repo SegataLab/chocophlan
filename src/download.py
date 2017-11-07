@@ -88,6 +88,20 @@ def download(config, verbose=False):
                           config['refseq_taxdump'],
                           config['download_base_dir'] + config['relpath_taxdump']))
 
+    ### UniProt Reference Proteomes ###
+    ftp = ftplib.FTP(config['uniprot_ftp_base'])
+    ftp.login()
+    ftp.cwd(config['uniprot_ref_proteomes'])
+    ls = ftp.nlst()
+    
+    r = re.compile("Reference_Proteomes.*")
+    ref_prot = [x for x in filter(r.match,ls)][0]
+
+    argument_list.append((config['uniprot_ftp_base'],
+                          config['uniprot_ref_proteomes'],
+                          "/"+ref_prot,
+                          config['download_base_dir'] + config['relpath_refprot']))
+
     terminating = mp.Event()
     chunksize = math.floor(len(argument_list) / (int(config['nproc']) * 2))
 

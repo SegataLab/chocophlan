@@ -42,6 +42,8 @@ def read_params():
     group.add_argument('--uniprot_uniref100',
                        default=('/pub/databases/uniprot/current_release/uniref'
                                 '/uniref100/uniref100.xml.gz'))
+    group.add_argument('--uniprot_ref_proteomes', default='/pub/databases/uniprot/current_release/knowledgebase/reference_proteomes')
+
     group.add_argument('--download_base_dir',
                        default=os.path.abspath(os.path.join(os.path.dirname(__file__), 'data')),
                        help='Base directory for raw files to be downloaded to')
@@ -57,6 +59,9 @@ def read_params():
     group.add_argument('--relpath_uniref100',
                        default='/uniprot/uniref/uniref100.xml.gz',
                        help='Directory for uniref100 file')
+    group.add_argument('--relpath_refprot',
+                       default='/reference_proteomes/Reference_Proteomes.tar.gz'
+                       help='')
 
     group.add_argument('--relpath_pickle_taxid_contigid',
                        default='/pickled/taxid_contig.p',
@@ -88,6 +93,8 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.uniprot_ftp_base)
     configparser_object.set('download', 'uniprot_uniref100',
                             args.uniprot_uniref100)
+    configparser_object.set('download', 'uniprot_ref_proteomes',
+                            args.uniprot_ref_proteomes)
     configparser_object.set('download', 'download_base_dir', 
                             args.download_base_dir)
     configparser_object.set('download', 'relpath_bacterial_genomes',
@@ -122,7 +129,7 @@ def set_download_options(configparser_object, args, verbose=False):
     configparser_object.set('extract', 'verbose', str(verbose))
     configparser_object.set('extract', 'nproc', str(args.nproc))
 
-
+	  
     return configparser_object
 
 
@@ -130,9 +137,10 @@ if __name__ == '__main__':
     args = read_params()
     utils.check_config_params(args, verbose=args.verbose)
 
+    print("AAA")
     config = cp.ConfigParser()
     config = set_download_options(config, args, verbose=args.verbose)
-
+ 
     if os.path.isfile(args.output) and args.overwrite:
         utils.info('Output file "{}" will be overwritten\n'.format(args.output))
         with open(args.output, 'w') as f:
