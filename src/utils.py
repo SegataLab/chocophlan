@@ -13,7 +13,6 @@ import os
 import sys
 import argparse as ap
 import configparser as cp
-import re
 
 
 def info(s, init_new_line=False, exit=False, exit_value=0):
@@ -78,11 +77,11 @@ def check_params(args, verbose=False):
 
 
 def check_config_params(args, verbose=False):
-	# I have created a check_config_params function for write_config_file.py
-	# The reason for this is that check_params checks the version, which I'm not sure the
-	# write_config_file.py script really needs. Alternatively, we can leave remove the version check from
-	# the check_params function here and decorate it with a version check if needed.
-	pass
+    # I have created a check_config_params function for write_config_file.py
+    # The reason for this is that check_params checks the version, which I'm not sure the
+    # write_config_file.py script really needs. Alternatively, we can leave remove the version check from
+    # the check_params function here and decorate it with a version check if needed.
+    pass
 
 
 def read_configs(config_file, verbose=False):

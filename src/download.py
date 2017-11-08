@@ -9,16 +9,17 @@ __version__ = '0.01'
 __date__ = '01 Oct 2017'
 
 
-if __name__ == '__main__':
-    import utils
-else:
-    import src.utils as utils
 import multiprocessing as mp
 import time
 import ftplib
 import math
 import sys
 import os
+if __name__ == '__main__':
+    import utils
+else:
+    import src.utils as utils
+import re
 
 
 def initt(terminating_):
@@ -42,14 +43,17 @@ def do_download(inputs):
             if not os.path.isdir(dir_path):
                 os.makedirs(dir_path)
 
-            with open(output_path, "wb") as fileout:
-                ftp.retrbinary("RETR " + full_link, fileout.write)
+            if not os.path.exists(output_path):
+                with open(output_path, "wb") as fileout:
+                    ftp.retrbinary("RETR " + full_link, fileout.write)
+            else:
+                utils.info("File {} already present\n".format(output_path))
         except Exception as e:
             terminating.set()
             utils.remove_file(output_path)
             utils.error(str(e), init_new_line=True)
             utils.error('Download failed for\n    {}'.format(full_link),
-                  init_new_line=True)
+                        init_new_line=True)
             raise
     else:
         terminating.set()
@@ -65,6 +69,11 @@ def download(config, verbose=False):
     argument_list = [(config['uniprot_ftp_base'],
                       config['uniprot_uniref100'],
                       config['download_base_dir'] + config['relpath_uniref100'])]
+
+    ### uniprot reference proteomes ###
+    argument_list += [(config['uniprot_ftp_base'],
+                      config['uniprot_reference_proteomes'],
+                      config['download_base_dir'] + config['relpath_reference_proteomes'])]
 
     ### Bacterial refseq genomes ###
     ftp = ftplib.FTP(config['refseq_ftp_base'])
@@ -83,7 +92,6 @@ def download(config, verbose=False):
                           config['download_base_dir'] + config['relpath_taxonomic_catalogue']))
 
     ### Refseq taxdump ###
-
     argument_list.append((config['refseq_ftp_base'],
                           config['refseq_taxdump'],
                           config['download_base_dir'] + config['relpath_taxdump']))
@@ -93,13 +101,13 @@ def download(config, verbose=False):
     ftp.login()
     ftp.cwd(config['uniprot_ref_proteomes'])
     ls = ftp.nlst()
-    
-    r = re.compile("Reference_Proteomes.*")
-    ref_prot = [x for x in filter(r.match,ls)][0]
+
+    r = re.compile("Reference_Proteomes_.*\.tar\.gz")
+    ref_prot = [x for x in filter(r.match, ls)][0]
 
     argument_list.append((config['uniprot_ftp_base'],
                           config['uniprot_ref_proteomes'],
-                          "/"+ref_prot,
+                          "/" + ref_prot,
                           config['download_base_dir'] + config['relpath_refprot']))
 
     terminating = mp.Event()
@@ -109,7 +117,7 @@ def download(config, verbose=False):
                  processes=config['nproc']) as pool:
         try:
             if verbose:
-                utils.info("Starting parallel download.", init_new_line=True)
+                utils.info("Starting parallel download\n", init_new_line=True)
 
             [_ for _ in pool.imap(do_download, argument_list,
                                   chunksize=chunksize if chunksize else 1)]
@@ -119,7 +127,7 @@ def download(config, verbose=False):
             raise
 
     if verbose:
-        utils.info('Download succesful.', init_new_line=True)
+        utils.info('Download succesful\n', init_new_line=True)
 
 
 if __name__ == '__main__':

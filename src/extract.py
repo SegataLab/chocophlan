@@ -1,12 +1,11 @@
-# 20171006: This script takes as input the downloaded refseq/uniprot files 
+# 20171006: This script takes as input the downloaded refseq/uniprot files
 # and extracts information in such a manner that it can be conveniently
-# accessed. 
+# accessed.
 
-# Current plan: In order to extract sequences belonging to taxonomic units 
-# (i.e. species), we create a contig_ID to tax_ID mapping from the refseq 
+# Current plan: In order to extract sequences belonging to taxonomic units
+# (i.e. species), we create a contig_ID to tax_ID mapping from the refseq
 # catalogue file. We then read the bacterial genome files (data/refseq/genomes/*),
 #  use the contig_ID to tax_ID mapping to write contig sequences to tax_ID files.
-
 
 
 __author__ = ('Nicola Segata (nicola.segata@unitn.it), '
@@ -28,12 +27,12 @@ import re
 import copy
 import gzip
 import pickle
-
 from collections import defaultdict
 from Bio import Phylo
 from Bio import SeqIO
 from Bio.Phylo.BaseTree import Tree as BTree
 from Bio.Phylo.BaseTree import Clade as BClade
+
 
 class Nodes:
     #
@@ -287,14 +286,14 @@ class Nodes:
 
         #add_noranks( self.reduced_tree.root )
 
-        utils.info("Removing noranks from the taxonomy")
+        utils.info("Removing noranks from the taxonomy\n")
         remove_noranks(self.reduced_tree.root)
         #add_noranks( self.reduced_tree.root )
-        utils.info("Adding taxon names to the taxonomy")
+        utils.info("Adding taxon names to the taxonomyn\n")
         add_taxa(self.reduced_tree.root)
-        utils.info("Adding nternal missing taxonomic levels")
+        utils.info("Adding nternal missing taxonomic levels\n")
         add_internal_missing_levels(self.reduced_tree.root, lev=-1)
-        utils.info("Removing duplicated taxa")
+        utils.info("Removing duplicated taxa\n")
         reduce_double_taxa(self.reduced_tree.root)
 
     # def save( self, out_file_name ):
@@ -332,124 +331,138 @@ class Names:
     def get_tax_ids_to_names(self):
         return self.tax_ids_to_names
 
+
 def do_extraction(config, verbose=False):
-	taxdump_dir = config['download_base_dir'] + config['relpath_taxdump']
-	catalogue_dir = config['download_base_dir'] + config['relpath_taxonomic_catalogue']
-	genomes_dir = config['download_base_dir'] + config['relpath_bacterial_genomes']
+    taxdump_dir = config['download_base_dir'] + config['relpath_taxdump']
+    catalogue_dir = config['download_base_dir'] + config['relpath_taxonomic_catalogue']
+    genomes_dir = config['download_base_dir'] + config['relpath_bacterial_genomes']
 
 
-	taxid_contigid_dict = map_taxid_to_contigid(catalogue_dir)
-	pickle.dump(taxid_contigid_dict, open(config['download_base_dir'] + config['relpath_pickle_taxid_contigid'], "wb" ))
+    taxid_contigid_dict = map_taxid_to_contigid(catalogue_dir)
+    pickle.dump(taxid_contigid_dict,
+                open(config['download_base_dir'] + config['relpath_pickle_taxid_contigid'], "wb" ))
 
-	contigid_to_filename = map_contigid_to_filename(genomes_dir)
-	pickle.dump(contigid_to_filename, open(config['download_base_dir'] + config['relpath_pickle_contigid_filename'], "wb" ))
-	
-	testrun = extract_contigs_from_taxid(515619, taxid_contigid_dict, contigid_to_filename)
+    contigid_to_filename = map_contigid_to_filename(genomes_dir)
+    pickle.dump(contigid_to_filename,
+                open(config['download_base_dir'] + config['relpath_pickle_contigid_filename'], "wb" ))
 
-	names_buf, nodes_buf = read_taxdump(taxdump_dir)
+    testrun = extract_contigs_from_taxid(515619, taxid_contigid_dict, contigid_to_filename)
 
-	utils.info("Starting extraction of taxonomic names\n", init_new_line=True)
-	names = Names(names_buf)
-	utils.info("Finishing extraction of taxonomic names", init_new_line=True)
+    names_buf, nodes_buf = read_taxdump(taxdump_dir)
 
-	utils.info("Creating taxonomy files from nodes.dmp", init_new_line=True)
-	tax_tree = Nodes(nodes_buf, names.get_tax_ids_to_names())
-	utils.info("Finished", init_new_line=True)
+    utils.info("Starting extraction of taxonomic names\n")
+    names = Names(names_buf)
+    utils.info("Finishing extraction of taxonomic names\n")
 
-	utils.info("Refining tree", init_new_line=True)
-	tax_tree.get_tree_with_reduced_taxonomy()
-	utils.info('Finished postprocessing the taxonomy', init_new_line=True)
+    utils.info("Creating taxonomy files from nodes.dmp\n")
+    tax_tree = Nodes(nodes_buf, names.get_tax_ids_to_names())
+    utils.info("Finished\n")
+
+    utils.info("Refining tree\n")
+    tax_tree.get_tree_with_reduced_taxonomy()
+    utils.info('Finished postprocessing the taxonomy\n')
+
 
 def map_taxid_to_contigid(catalogue_file_dir):
-	utils.info("Reading and processing catalogue file", init_new_line=True)
-	with gzip.open(catalogue_file_dir, 'r') as f:
-		catalogue = f.readlines()
-	# We need to use the decode method on the file object not only here, but also in the ported RepoPhlAn code
-	# (took me 1 or 2 hours to figure this out). Otherwise, it will read in the string in byte format.
-	# If you know a more elegant solution to this problem, please lemme know.
-	catalogue = [x.decode('utf-8').strip().split("\t") for x in catalogue]
-	utils.info("Finished reading catalogue file", init_new_line=True)
-	taxids_contigids = [(x[0], x[2]) for x in catalogue]
-	taxid_contigid_dict = defaultdict(list)
-	utils.info("Creating taxid to contigid mapping", init_new_line=True)
-	for key, value in [x for x in taxids_contigids]:
-		taxid_contigid_dict[key].append(value)
-	utils.info("Finished taxid to contigid mapping", init_new_line=True)
-	return(taxid_contigid_dict)
+    utils.info("Reading and processing catalogue file\n")
 
-def extract_contigs_from_taxid(taxid, taxid_contigid_mapping, contigid_filename_mapping=None):
-	# For now, this function simply searches ALL files. We can later refine this by providing the file names using the
-	# files_to_search parameter. Once we created the contigid_to_filename mapping, we can easily query contigids for their
-	# file membership and pass the results to this function.
+    with gzip.open(catalogue_file_dir, 'r') as f:
+        catalogue = f.readlines()
 
-	contigs_to_extract = taxid_contigid_mapping[taxid]
+    # We need to use the decode method on the file object not only here, but also in the ported RepoPhlAn code
+    # (took me 1 or 2 hours to figure this out). Otherwise, it will read in the string in byte format.
+    # If you know a more elegant solution to this problem, please lemme know.
+    catalogue = [x.decode('utf-8').strip().split("\t") for x in catalogue]
+    utils.info("Finished reading catalogue file\n")
+    taxids_contigids = [(x[0], x[2]) for x in catalogue]
+    taxid_contigid_dict = defaultdict(list)
+    utils.info("Creating taxid to contigid mapping\n")
 
-	if contigid_filename_mapping == None:
-		# Search all files, as contigid_to_filename mapping hasn't been provided. Meant for sequenctial (instead of parallel)
-		# computation. 
+    for key, value in [x for x in taxids_contigids]:
+        taxid_contigid_dict[key].append(value)
 
-		# get list of all filename in genome file directory
-		# read them sequentially using BioPython
-		# check whether fasta header contains contig id
-		# if yes, extract fasta sequence
+    utils.info("Finished taxid to contigid mapping\n")
 
-		# In the end, write the whole thing out.
-		
-		# For now, exit if contigid_filename_mapping is not provided
-		utils.error("contig-ID to filename mapping not provided.")
-		sys.exit()
-	else:
-		fasta_final = []
-		for contig in contigs_to_extract:
-			filename = contigid_filename_mapping[contig]
-			with gzip.open(genomes_dir + "/" +  filename, 'rt') as fasta_file:
-				fasta_final.append([record for record in fasta_file if record.id == contig])
+    return taxid_contigid_dict
 
 
+def extract_contigs_from_taxid(taxid, taxid_contigid_mapping,
+                               contigid_filename_mapping=None):
+    # For now, this function simply searches ALL files. We can later refine this by providing the file names using the
+    # files_to_search parameter. Once we created the contigid_to_filename mapping, we can easily query contigids for their
+    # file membership and pass the results to this function.
+
+    contigs_to_extract = taxid_contigid_mapping[taxid]
+
+    if contigid_filename_mapping is None:
+        # Search all files, as contigid_to_filename mapping hasn't been provided. Meant for sequenctial (instead of parallel)
+        # computation.
+
+        # get list of all filename in genome file directory
+        # read them sequentially using BioPython
+        # check whether fasta header contains contig id
+        # if yes, extract fasta sequence
+
+        # In the end, write the whole thing out.
+
+        # For now, exit if contigid_filename_mapping is not provided
+        utils.error("contig-ID to filename mapping not provided.")
+        sys.exit()
+    else:
+        fasta_final = []
+        for contig in contigs_to_extract:
+            filename = contigid_filename_mapping[contig]
+
+            with gzip.open(genomes_dir + "/" + filename, 'rt') as fasta_file:
+                fasta_final.append([record for record in fasta_file if record.id == contig])
 
 
 def map_contigid_to_filename(genomes_dir, verbose=False):
-	# To Francesco:
-	# I have not written this function yet. 
-	# I think we can later add this since the extract_contigs_from_taxid function has a parameter called "files_to_search".
+    # To Francesco:
+    # I have not written this function yet.
+    # I think we can later add this since the extract_contigs_from_taxid function has a parameter called "files_to_search".
 
-	contigid_to_filename = defaultdict(list)
-	utils.info("Building contig-ID to genome file name mapping.", init_new_line=True)
-	for genome_file in os.listdir(genomes_dir):
-		with gzip.open(genomes_dir + "/" +  genome_file, 'rt') as fasta_file:
-			for record in SeqIO.parse(fasta_file, "fasta"):
-					contigid_to_filename[record.id] = genome_file
-	utils.info("Finished building contig-ID to genome file name mapping.", init_new_line=True)
-	return(contigid_to_filename)
+    contigid_to_filename = defaultdict(list)
+    utils.info("Building contig-ID to genome file name mapping\n")
+
+    for genome_file in os.listdir(genomes_dir):
+        with gzip.open(genomes_dir + "/" + genome_file, 'rt') as fasta_file:
+            for record in SeqIO.parse(fasta_file, "fasta"):
+                    contigid_to_filename[record.id] = genome_file
+
+    utils.info("Finished building contig-ID to genome file name mapping\n")
+    return contigid_to_filename
 
 
-	# Additional idea: we can also save the position of each contig within each file like so:
-	# Final_dir = {"contig_id_1": ("file_name_abc", 252624)}, where the second entry of the tuple is the number of the contig within the file.
-	# Can be easily added while reading and creating the contigid to filename mapping. This would later safe us a LOT of time, right?
-
+# Additional idea: we can also save the position of each contig within each file like so:
+# Final_dir = {"contig_id_1": ("file_name_abc", 252624)}, where the second entry of the tuple is the number of the contig within the file.
+# Can be easily added while reading and creating the contigid to filename mapping. This would later safe us a LOT of time, right?
 def read_taxdump(taxdump_dir, verbose=False):
-	utils.info('Reading the NCBI taxdump file from ' + taxdump_dir, init_new_line = True)
-	try:
-	    tarf = None
-	    if os.path.isfile(taxdump_dir):
-	        tarf = tarfile.open(taxdump_dir, "r:gz")
-	    else:
-	    	utils.error(taxdump_dir + ' is not existing. Chocophlan will exit.')
-	    	sys.exit()
-	    for m in tarf.getmembers():
-	        if m.name == "names.dmp":
-	            names_buf = (l.decode("utf-8").strip().split('\t')
-	                         for l in tarf.extractfile(m).readlines())
-	        if m.name == "nodes.dmp":
-	            nodes_buf = (l.decode("utf-8").strip().split('\t')
-	                         for l in tarf.extractfile(m).readlines())
-	except Exception as e:
-	    utils.error("Error in extracting or reading " +
-	                 taxdump_dir + ": " + str(e))
-	    sys.exit()
+    utils.info('Reading the NCBI taxdump file from {}\n'.format(taxdump_dir))
+    try:
+        tarf = None
 
-	utils.info('names.dmp and nodes.dmp successfully read', init_new_line = True)
-	return names_buf, nodes_buf
+        if os.path.isfile(taxdump_dir):
+            tarf = tarfile.open(taxdump_dir, "r:gz")
+        else:
+            utils.error('{} does not exists. Exiting...'.format(taxdump_dir))
+            sys.exit()
+        for m in tarf.getmembers():
+            if m.name == "names.dmp":
+                names_buf = (l.decode("utf-8").strip().split('\t')
+                             for l in tarf.extractfile(m).readlines())
+            if m.name == "nodes.dmp":
+                nodes_buf = (l.decode("utf-8").strip().split('\t')
+                             for l in tarf.extractfile(m).readlines())
+    except Exception as e:
+        utils.error("Error in extracting or reading {}: {}"
+                    .format(taxdump_dir, e))
+        sys.exit()
+
+    utils.info('names.dmp and nodes.dmp successfully read\n')
+
+    return (names_buf, nodes_buf)
+
 
 if __name__ == '__main__':
     t0 = time.time()
