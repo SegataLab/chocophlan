@@ -51,7 +51,7 @@ def parse_reference_proteomes(config, verbose=False):
     chunksize = math.floor(len(argument_list) / (int(config['nproc']) * 2))
 
     for k in kingdom_to_process:
-        basepath = "{}/{}/{}/*.idmapping.gz".format(config['download_base_dir'],config['relpath_refprot'], k)
+        basepath = "{}/{}/{}/*.idmapping.gz".format(config['download_base_dir'],config['relpath_reference_proteomes'], k)
         ls = glob.glob(basepath)
 
         chunksize = config['nproc']
@@ -69,10 +69,16 @@ def parse_reference_proteomes(config, verbose=False):
     pickle.dump(proteomes, open(config['download_base_dir'] + config['relpath_pickle_proteomes'], "wb" ))
 
 if __name__ == '__main__':
+    t0=time.time()
     args = utils.read_params()
     utils.check_params(args, verbose=args.verbose)
 
     config = utils.read_configs(args.config_file, verbose=args.verbose)
     config = utils.check_configs(config)
-    
 
+    parse_reference_proteomes(config)
+    
+    t1=time.time()
+
+    utils.info('Total elapsed time {}s\n'.format(int(t1 - t0)))
+    sys.exit(0)

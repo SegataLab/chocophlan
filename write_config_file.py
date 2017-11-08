@@ -66,13 +66,16 @@ def read_params():
                        default='/uniprot/unirefer/Reference_Proteomes.tar.gz',
                        help='Directory for the reference proteomes file')
     group.add_argument('--relpath_pickle_taxid_contigid',
-                       default='/pickled/taxid_contig.p',
+                       default='/pickled/taxid_contig.pkl',
                        help='')
     group.add_argument('--relpath_pickle_taxid_taxonomy',
-                       default='/pickled/taxid_taxonomy.p',
+                       default='/pickled/taxid_taxonomy.pkl',
                        help='')
     group.add_argument('--relpath_pickle_contigid_filename',
-                       default='/pickled/contigid_filename.p',
+                       default='/pickled/contigid_filename.pkl',
+                       help='')
+    group.add_argument('--relpath_pickle_proteomes',
+                       default='/pickled/proteomes.pkl',
                        help='')
 
     group.add_argument('--nproc', default=20,
@@ -131,7 +134,18 @@ def set_download_options(configparser_object, args, verbose=False):
 
     configparser_object.set('extract', 'verbose', str(verbose))
     configparser_object.set('extract', 'nproc', str(args.nproc))
-
+    
+    configparser_object.add_section('process_proteomes')
+    configparser_object.set('process_proteomes', 'uniprot_ftp_base',
+                            args.uniprot_ftp_base)
+    configparser_object.set('process_proteomes', 'download_base_dir',
+                            args.download_base_dir)
+    configparser_object.set('process_proteomes', 'relpath_reference_proteomes',
+                            args.relpath_reference_proteomes)
+    configparser_object.set('process_proteomes', 'relpath_pickle_proteomes',
+                            args.pickle_proteomes)
+    configparser_object.set('process_proteomes', 'verbose', str(verbose))
+    configparser_object.set('process_proteomes' 'nproc', str(args.nproc))
     return configparser_object
 
 
