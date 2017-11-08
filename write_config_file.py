@@ -27,7 +27,7 @@ def read_params():
                          "existing config file"))
 
     group = p.add_argument_group(title="Download",
-                                 description=("Parameters for setting download"
+                                 description=("Parameters for setting download "
                                               "options"))
     group.add_argument('--refseq_ftp_base', default='ftp.ncbi.nlm.nih.gov')
     group.add_argument('--refseq_bacterial_genomes',
@@ -44,8 +44,7 @@ def read_params():
                                 '/uniref100/uniref100.xml.gz'))
     group.add_argument('--uniprot_reference_proteomes',
                        default=('/pub/databases/uniprot/current_release'
-                                '/knowledgebase/reference_proteomes'
-                                '/Reference_Proteomes_2017_10.tar.gz'))
+                                '/knowledgebase/reference_proteomes'))
 
     group.add_argument('--download_base_dir', default='data/',
                        help='Base directory for raw files to be downloaded to')
@@ -63,7 +62,7 @@ def read_params():
                        default='/uniprot/uniref/uniref100.xml.gz',
                        help='Directory for uniref100 file')
     group.add_argument('--relpath_reference_proteomes',
-                       default='/uniprot/unirefer/Reference_Proteomes.tar.gz',
+                       default='/uniprot/reference_proteomes',
                        help='Directory for the reference proteomes file')
     group.add_argument('--relpath_pickle_taxid_contigid',
                        default='/pickled/taxid_contig.pkl',
@@ -138,14 +137,16 @@ def set_download_options(configparser_object, args, verbose=False):
     configparser_object.add_section('process_proteomes')
     configparser_object.set('process_proteomes', 'uniprot_ftp_base',
                             args.uniprot_ftp_base)
+    configparser_object.set('process_proteomes', 'uniprot_reference_proteomes', 
+                            args.uniprot_reference_proteomes)
     configparser_object.set('process_proteomes', 'download_base_dir',
                             args.download_base_dir)
     configparser_object.set('process_proteomes', 'relpath_reference_proteomes',
                             args.relpath_reference_proteomes)
     configparser_object.set('process_proteomes', 'relpath_pickle_proteomes',
-                            args.pickle_proteomes)
+                            args.relpath_pickle_proteomes)
     configparser_object.set('process_proteomes', 'verbose', str(verbose))
-    configparser_object.set('process_proteomes' 'nproc', str(args.nproc))
+    configparser_object.set('process_proteomes', 'nproc', str(args.nproc))
     return configparser_object
 
 

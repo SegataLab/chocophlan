@@ -13,7 +13,9 @@ import gzip
 import pickle
 import multiprocessing as mp
 import glob
-
+import time
+import math
+import sys
 
 kingdom_to_process = ['Bacteria','Archaea']
 
@@ -48,7 +50,13 @@ def process(input, is_reference=True):
             
 def parse_reference_proteomes(config, verbose=False):
     terminating = mp.Event()
-    chunksize = math.floor(len(argument_list) / (int(config['nproc']) * 2))
+    chunksize = math.floor(int(config['nproc']) / 2)
+
+    if not os.path.exists("{}/{}".format(config['download_base_dir'],config['relpath_reference_proteomes'])):
+        utils.error('Required files does not exist! Exiting...', exit=True)
+    
+    if verbose:
+        utils.info("Starting parallel proteomes processing...\n", init_new_line=True)
 
     for k in kingdom_to_process:
         basepath = "{}/{}/{}/*.idmapping.gz".format(config['download_base_dir'],config['relpath_reference_proteomes'], k)
@@ -57,16 +65,14 @@ def parse_reference_proteomes(config, verbose=False):
         chunksize = config['nproc']
         with mp.Pool(initializer=initt, initargs=(terminating,), processes=config['nproc']) as pool:
             try:
-                if verbose:
-                    utils.info("Starting parallel proteomes processing...\n", init_new_line=True)
                 proteomes = { item['proteome_id']:item for item in [x for x in pool.imap(process, ls, chunksize = chunksize)]}
             except Exception as ex:
                 utils.error(str(e), init_new_line=True)
                 utils.error('Processing failed', init_new_line=True, exit=True)
                 raise
-        if verbose:
-                utils.info("Done\n", init_new_line=True)
     pickle.dump(proteomes, open(config['download_base_dir'] + config['relpath_pickle_proteomes'], "wb" ))
+    if verbose:
+        utils.info("Done\n", init_new_line=True)
 
 if __name__ == '__main__':
     t0=time.time()
@@ -75,8 +81,8 @@ if __name__ == '__main__':
 
     config = utils.read_configs(args.config_file, verbose=args.verbose)
     config = utils.check_configs(config)
-
-    parse_reference_proteomes(config)
+    
+    parse_reference_proteomes(config['process_proteomes'],config['process_proteomes']['verbose'])
     
     t1=time.time()
 
