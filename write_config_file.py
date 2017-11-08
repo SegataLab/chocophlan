@@ -2,7 +2,7 @@
 
 
 __author__ = ('Nicola Segata (nicola.segata@unitn.it), '
-              'Francesco Beghini (@unitn.it)'
+              'Francesco Beghini (francesco.beghini@unitn.it)'
               'Nicolai Karcher (karchern@gmail.com),'
               'Francesco Asnicar (f.asnicar@unitn.it)')
 __version__ = '0.01'
