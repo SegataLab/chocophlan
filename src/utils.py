@@ -97,7 +97,6 @@ def read_configs(config_file, verbose=False):
 
         for option in config[section]:
             configs[section.lower()][option.lower()] = config[section][option]
-
     return configs
 
 
@@ -115,7 +114,7 @@ def check_configs(config, verbose=False):
                           init_new_line=True, exit=True)
             elif 'verbose' in section:
                 try:
-                    section_dic[section] = bool(value)
+                    section_dic[section] = value == 'True'
                 except Exception as e:
                     error(str(e), init_new_line=True)
                     error('verbose is not a bool!\n    {}'

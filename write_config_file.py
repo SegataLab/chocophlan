@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
-
-
-__author__ = ('Nicola Segata (nicola.segata@unitn.it), '
-              'Francesco Beghini (francesco.beghini@unitn.it)'
+__author__ = ('Nicola Segata (nicola.segata@unitn.it),'
+              'Francesco Beghini (francesco.beghini@unitn.it),'
               'Nicolai Karcher (karchern@gmail.com),'
               'Francesco Asnicar (f.asnicar@unitn.it)')
 __version__ = '0.01'
@@ -45,7 +43,9 @@ def read_params():
     group.add_argument('--uniprot_reference_proteomes',
                        default=('/pub/databases/uniprot/current_release'
                                 '/knowledgebase/reference_proteomes'))
-
+    group.add_argument('--uniprot_pan_proteomes',
+                       default=('/pub/databases/uniprot/current_release'
+                           '/knowledgebase/pan_proteomes/'))
     group.add_argument('--download_base_dir', default='data/',
                        help='Base directory for raw files to be downloaded to')
 
@@ -64,6 +64,8 @@ def read_params():
     group.add_argument('--relpath_reference_proteomes',
                        default='/uniprot/reference_proteomes',
                        help='Directory for the reference proteomes file')
+    group.add_argument('--relpath_pan_proteomes',
+                       default='/uniprot/pan_proteomes')
     group.add_argument('--relpath_pickle_taxid_contigid',
                        default='/pickled/taxid_contig.pkl',
                        help='')
@@ -99,6 +101,8 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.uniprot_uniref100)
     configparser_object.set('download', 'uniprot_reference_proteomes',
                             args.uniprot_reference_proteomes)
+    configparser_object.set('download', 'uniprot_pan_proteomes',
+                            args.uniprot_pan_proteomes)
     configparser_object.set('download', 'download_base_dir',
                             args.download_base_dir)
     configparser_object.set('download', 'relpath_bacterial_genomes',
@@ -111,6 +115,8 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.relpath_uniref100)
     configparser_object.set('download', 'relpath_reference_proteomes',
                             args.relpath_reference_proteomes)
+    configparser_object.set('download', 'relpath_pan_proteomes',
+                            args.relpath_pan_proteomes)
     configparser_object.set('download', 'verbose', str(verbose))
     configparser_object.set('download', 'nproc', str(args.nproc))
 

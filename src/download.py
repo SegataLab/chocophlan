@@ -20,7 +20,7 @@ if __name__ == '__main__':
 else:
     import src.utils as utils
 import re
-
+from functools import partial
 
 def initt(terminating_):
     # This places terminating in the global namespace of the worker subprocesses.
@@ -30,11 +30,11 @@ def initt(terminating_):
     terminating = terminating_
 
 
-def do_download(inputs):
+def do_download(inputs, verbose):
     if not terminating.is_set():
         try:
             ftp_base, full_link, output_path = inputs
-
+            
             ftp = ftplib.FTP(ftp_base)  # Login to ftp server
             ftp.login()
 
@@ -45,15 +45,18 @@ def do_download(inputs):
 
             if not os.path.exists(output_path):
                 with open(output_path, "wb") as fileout:
+                    if verbose:
+                        utils.info("Downloading {}\n".format(full_link))
                     ftp.retrbinary("RETR " + full_link, fileout.write)
+                    ftp.quit()
             else:
-                utils.info("File {} already present\n".format(output_path))
+                if verbose:
+                    utils.info("File {} already present\n".format(output_path))
         except Exception as e:
             terminating.set()
-            utils.remove_file(output_path)
-            utils.error(str(e), init_new_line=True)
-            utils.error('Download failed for\n    {}'.format(full_link),
-                        init_new_line=True)
+#            utils.remove_file(output_path)
+            utils.error(str(e))
+            #utils.error('Download failed for\n    {}'.format(full_link))
             raise
     else:
         terminating.set()
@@ -66,68 +69,77 @@ def download(config, verbose=False):
     # TODO: The refseq catalogue needs to have the version included in its name!
 
     ### uniprot XML ###
-    argument_list = [(config['uniprot_ftp_base'],
-                      config['uniprot_uniref100'],
-                      config['download_base_dir'] + config['relpath_uniref100'])]
-
-    ### uniprot reference proteomes ###
-    argument_list += [(config['uniprot_ftp_base'],
-                      config['uniprot_reference_proteomes'],
-                      config['download_base_dir'] + config['relpath_reference_proteomes'])]
-
-    ### Bacterial refseq genomes ###
-    ftp = ftplib.FTP(config['refseq_ftp_base'])
-    ftp.login()
-    ftp.cwd(config['refseq_bacterial_genomes'])
-    ls = ftp.nlst()
-    argument_list += [(config['refseq_ftp_base'],
-                       '/'.join([config['refseq_bacterial_genomes'], entry]),
-                       '/'.join([config['download_base_dir'], config['relpath_bacterial_genomes'],
-                                 entry]))
-                      for entry in ls if "genomic.fna.gz" in entry]
-
-    ### RefSeq catalogue ###
-    argument_list.append((config['refseq_ftp_base'],
-                          config['refseq_taxonomic_catalogue'],
-                          config['download_base_dir'] + config['relpath_taxonomic_catalogue']))
-
-    ### Refseq taxdump ###
-    argument_list.append((config['refseq_ftp_base'],
-                          config['refseq_taxdump'],
-                          config['download_base_dir'] + config['relpath_taxdump']))
-
-    ### UniProt Reference Proteomes ###
+#    argument_list = [(config['uniprot_ftp_base'],
+#                      config['uniprot_uniref100'],
+#                      config['download_base_dir'] + config['relpath_uniref100'])]
+#
+#    ### Bacterial refseq genomes ###
+#    ftp = ftplib.FTP(config['refseq_ftp_base'])
+#    ftp.login()
+#    ftp.cwd(config['refseq_bacterial_genomes'])
+#    ls = ftp.nlst()
+#    ftp.quit()
+#    argument_list += [(config['refseq_ftp_base'],
+#                       '/'.join([config['refseq_bacterial_genomes'], entry]),
+#                       '/'.join([config['download_base_dir'], config['relpath_bacterial_genomes'],
+#                                 entry]))
+#                      for entry in ls if "genomic.fna.gz" in entry]
+#    ### RefSeq catalogue ###
+#    argument_list.append((config['refseq_ftp_base'],
+#                          config['refseq_taxonomic_catalogue'],
+#                          config['download_base_dir'] + config['relpath_taxonomic_catalogue']))
+#
+#    ### Refseq taxdump ###
+#    argument_list.append((config['refseq_ftp_base'],
+#                          config['refseq_taxdump'],
+#                          config['download_base_dir'] + config['relpath_taxdump']))
+#
+#    ### UniProt Reference Proteomes ###
+#    ftp = ftplib.FTP(config['uniprot_ftp_base'])
+#    ftp.login()
+#    ftp.cwd(config['uniprot_reference_proteomes'])
+#    ls = ftp.nlst()
+#    ftp.quit()
+#
+#    r = re.compile("Reference_Proteomes_.*\.tar\.gz")
+#    ref_prot = [x for x in filter(r.match, ls)][0]
+#
+#    argument_list.append((config['uniprot_ftp_base'],
+#                          "{}/{}".format(config['uniprot_reference_proteomes'],ref_prot),
+#                          config['download_base_dir'] + config['relpath_reference_proteomes']))
+    ### Pan proteome download ###
     ftp = ftplib.FTP(config['uniprot_ftp_base'])
     ftp.login()
-    ftp.cwd(config['uniprot_reference_proteomes'])
+    ftp.cwd(config['uniprot_pan_proteomes'])
     ls = ftp.nlst()
-
-    r = re.compile("Reference_Proteomes_.*\.tar\.gz")
-    ref_prot = [x for x in filter(r.match, ls)][0]
-
-    argument_list.append((config['uniprot_ftp_base'],
-                          config['uniprot_reference_proteomes'],
-                          "/" + ref_prot,
-                          config['download_base_dir'] + config['relpath_reference_proteomes']))
-
+    ftp.quit()
+    argument_list = []
+    argument_list += [(config['uniprot_ftp_base'],
+                       '/'.join([config['uniprot_pan_proteomes'], entry]),
+                       '/'.join([config['download_base_dir'], config['relpath_pan_proteomes'],
+                                entry]))
+                       for entry in ls if "fasta.gz" in entry]
+    
     terminating = mp.Event()
-    chunksize = math.floor(len(argument_list) / (int(config['nproc']) * 2))
-
+    #chunksize = math.floor(len(argument_list) / (int(config['nproc']) * 2))
     with mp.Pool(initializer=initt, initargs=(terminating,),
                  processes=config['nproc']) as pool:
         try:
             if verbose:
-                utils.info("Starting parallel download\n", init_new_line=True)
+                utils.info("Starting parallel download\n")
+            
+            # Need to define a partial function because function passed via imap require only one argument
+            do_download_partial = partial(do_download,verbose=config['verbose'])
 
-            [_ for _ in pool.imap(do_download, argument_list,
-                                  chunksize=chunksize if chunksize else 1)]
+            [_ for _ in pool.imap(do_download_partial, argument_list,
+                                  chunksize=1)]
         except Exception as e:
-            utils.error(str(e), init_new_line=True)
-            utils.error('Download failed', init_new_line=True, exit=True)
+            utils.error(str(e))
+            utils.error('Download failed', exit=True)
             raise
 
     if verbose:
-        utils.info('Download succesful\n', init_new_line=True)
+        utils.info('Download succesful\n')
 
 
 if __name__ == '__main__':
@@ -135,13 +147,13 @@ if __name__ == '__main__':
 
     args = utils.read_params()
     utils.check_params(args, verbose=args.verbose)
-
+    
     config = utils.read_configs(args.config_file, verbose=args.verbose)
     config = utils.check_configs(config)
-
+    print(config)
     download(config['download'], verbose=config['download']['verbose'])
 
     t1 = time.time()
 
-    utils.info('Total elapsed time {}s\n'.format(int(t1 - t0)), init_new_line=True)
+    utils.info('Total elapsed time {}s\n'.format(int(t1 - t0)))
     sys.exit(0)
