@@ -50,6 +50,7 @@ def do_download(inputs, verbose):
                     ftp.retrbinary("RETR " + full_link, fileout.write)
                     ftp.quit()
             else:
+                ftp.quit()
                 if verbose:
                     utils.info("File {} already present\n".format(output_path))
         except Exception as e:

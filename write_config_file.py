@@ -78,7 +78,9 @@ def read_params():
     group.add_argument('--relpath_pickle_proteomes',
                        default='/pickled/proteomes.pkl',
                        help='')
-
+    group.add_argument('--relpath_pickle_uniprotdb',
+                       default='/pickled/uniprotdb.pkl',
+                       help='')
     group.add_argument('--nproc', default=20,
                        help='Number of parallel processes')
 
@@ -151,6 +153,8 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.relpath_reference_proteomes)
     configparser_object.set('process_proteomes', 'relpath_pickle_proteomes',
                             args.relpath_pickle_proteomes)
+    configparser_object.set('process_proteomes', 'relpath_pickle_uniprotdb',
+                            args.relpath_pickle_uniprotdb)
     configparser_object.set('process_proteomes', 'verbose', str(verbose))
     configparser_object.set('process_proteomes', 'nproc', str(args.nproc))
     return configparser_object
@@ -166,7 +170,7 @@ if __name__ == '__main__':
     if os.path.isfile(args.output) and (not args.overwrite):
         sys.exit('Output file "{}" will NOT be overwritten. Exiting...'
                  .format(args.output))
-
+        
     with open(args.output, 'w') as f:
         config.write(f)
 
