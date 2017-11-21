@@ -80,6 +80,7 @@ class Nodes:
             clade.parent_tax_id = int(parent_tax_id)
             clade.rank = re.sub(r'\W+', '', rank).strip("_")
             clade.tax_id = int(tax_id)
+            clade.initially_terminal = False
             #clade.accession = accessions[clade.tax_id] if clade.tax_id in accessions else []
 
     # Set clade status values to "True" for sequence data and "final" or "draft" if it appears in accessions (taxid -> name, status, accessions)
@@ -90,6 +91,7 @@ class Nodes:
             tmp_nodes[clade.tax_id] = clade
 
             # can add any other info in node.dmp
+            
     # Build the tree using all the clades (iterate through clades using
     # tmp_nodes)
         self.tree = BTree()
@@ -100,6 +102,11 @@ class Nodes:
                 continue
             parent = tmp_nodes[node.parent_tax_id]
             parent.clades.append(node)
+
+        self.taxid_n = tmp_nodes
+        self.leaves_taxids = []
+        self.determine_initial_leaves()
+        self.get_leave_ids()
 
     # Recursively goes through all clades in the tree. Each clade root gets
     # list of all accessions in the clade.
@@ -131,6 +138,33 @@ class Nodes:
         clade.clades = [c for c in clade.clades if 'plasmid' not in c.name]
         for c in clade.clades:
             self.remove_plasmids(c)
+
+    def determine_initial_leaves(self, clade=None, recur=False):
+        if not clade:
+            clade = self.tree.root
+        if clade.is_terminal():
+            clade.initially_terminal=True
+        for c in clade.clades:
+            self.determine_initial_leaves(c, recur=True)
+
+    def remove_irrelevant_leaves(self, clade=None, tmp=None, taxids_to_keep=None):
+        # This needs more testing.
+        if not clade:
+            clade = self.tree.root
+        clade.clades = [c for c in clade.clades if (not c.initially_terminal) or (c.initially_terminal and c.tax_id in taxids_to_keep)]
+        for c in clade.clades:
+            self.remove_irrelevant_leaves(c, taxids_to_keep=taxids_to_keep)
+
+    def get_leave_ids(self, clade=None, recur=False):
+        if not recur:
+            self.leaves_taxids = []
+        if not clade:
+            clade = self.tree.root
+        if clade.is_terminal():
+            self.leaves_taxids.append(clade.tax_id)
+        for c in clade.clades:
+            self.get_leave_ids(c, recur=True)
+
 
     def print_tree(self, out_file_name, reduced=False):
 
@@ -330,7 +364,6 @@ class Names:
 
     def get_tax_ids_to_names(self):
         return self.tax_ids_to_names
-
 
 def do_extraction(config, verbose=False):
     taxdump_dir = config['download_base_dir'] + config['relpath_taxdump']
