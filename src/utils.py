@@ -10,10 +10,17 @@ __date__ = '03 Oct 2017'
 
 
 import os
+import h5py
 import sys
 import argparse as ap
 import configparser as cp
 
+def createDataset(filepath):
+    try:
+        f = h5py.File(filepath, 'a')
+        return f
+    except Exception as e:
+        error(str(e), exit=True)
 
 def info(s, init_new_line=False, exit=False, exit_value=0):
     if init_new_line:

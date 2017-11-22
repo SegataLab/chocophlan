@@ -49,6 +49,9 @@ def read_params():
     group.add_argument('--download_base_dir', default='data/',
                        help='Base directory for raw files to be downloaded to')
 
+    group.add_argument('--relpath_chocophlan_database',
+                       default='chocophlan.hdf5',
+                       help='')
     group.add_argument('--relpath_bacterial_genomes',
                        default='/refseq/genomes',
                        help='Directory for genome files')
@@ -74,6 +77,9 @@ def read_params():
                        help='')
     group.add_argument('--relpath_pickle_contigid_filename',
                        default='/pickled/contigid_filename.pkl',
+                       help='')
+    group.add_argument('--relpath_faa_output',
+                       default='/faa/uniprot.faa',
                        help='')
     group.add_argument('--relpath_pickle_proteomes',
                        default='/pickled/proteomes.pkl',
@@ -155,6 +161,11 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.relpath_pickle_proteomes)
     configparser_object.set('process_proteomes', 'relpath_pickle_uniprotdb',
                             args.relpath_pickle_uniprotdb)
+    configparser_object.set('process_proteomes', 'relpath_faa_output',
+                            args.relpath_faa_output)
+    configparser_object.set('process_proteomes', 'relpath_chocophlan_database',
+                            args.relpath_chocophlan_database)
+    
     configparser_object.set('process_proteomes', 'verbose', str(verbose))
     configparser_object.set('process_proteomes', 'nproc', str(args.nproc))
     return configparser_object
