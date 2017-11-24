@@ -73,7 +73,15 @@ def download(config, verbose=False):
     argument_list = [(config['uniprot_ftp_base'],
                       config['uniprot_uniref100'],
                       config['download_base_dir'] + config['relpath_uniref100'])]
+    
+    argument_list.append((config['uniprot_ftp_base'],
+                          config['uniprot_uniref90'],
+                          config['download_base_dir'] + config['relpath_uniref90']))
 
+    argument_list.append((config['uniprot_ftp_base'],
+                          config['uniprot_uniref50'],
+                          config['download_base_dir'] + config['relpath_uniref50']))
+    
     ### Bacterial refseq genomes ###
     ftp = ftplib.FTP(config['refseq_ftp_base'])
     ftp.login()
@@ -122,9 +130,9 @@ def download(config, verbose=False):
                        for entry in ls if "fasta.gz" in entry]
     
     terminating = mp.Event()
-    #chunksize = math.floor(len(argument_list) / (int(config['nproc']) * 2))
+    chunksize = math.floor(len(argument_list) / (int(config['nproc']) * 2))
     with mp.Pool(initializer=initt, initargs=(terminating,),
-                 processes=10) as pool:
+                 processes=chunksize) as pool:
         try:
             if verbose:
                 utils.info("Starting parallel download\n")

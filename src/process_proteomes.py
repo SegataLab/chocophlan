@@ -57,9 +57,9 @@ def createDataset(filepath):
 
         return f
     except Exception as e:
-        error(str(e), exit=True)
+        utils.error(str(e), exit=True)
 
-def parse_xml_elem(elem, config, table):
+def parse_uniprotkb_xml_elem(elem, config, database):
     try:
         d_prot = {}
         sequence = ""
@@ -84,7 +84,7 @@ def parse_xml_elem(elem, config, table):
                                 d_prot[children][ref.get('type')] = []
                             d_prot[children][ref.get('type')].append(ref.get('id').encode('utf-8'))
         
-            uniprotkb = table['/uniprotkb'] 
+            uniprotkb = database['/uniprotkb'] 
             if not uniprotkb.__contains__(d_prot['accession']):
                 protein = uniprotkb.create_group(d_prot['accession'])
             
@@ -110,14 +110,14 @@ def parse_xml_elem(elem, config, table):
         utils.error(str(e))
         raise
 
-def parse_xml(table, l_input, config):
+def parse_uniprotkb_xml(database, l_input, config):
     for input in l_input:
         if config['verbose']:
             utils.info('Starting processing {} file...\n'.format(input))
         tree = etree.iterparse(input)
         
         try:
-            [parse_xml_elem(b,config,table) for b in yield_filtered_xml(tree)]
+            [parse_uniprotkb_xml_elem(b,config,database) for b in yield_filtered_xml(tree)]
             del tree
         except Exception as e:
             utils.error(str(e))
@@ -142,7 +142,7 @@ def create_proteomes(database, config, verbose = False):
             d_proteomes[proteome].append(accession.encode('utf-8'))
     
     if not database.__contains__('proteomes'):
-        database.create_group('proteomes')
+        database.create_group('/proteomes')
     
     g_proteomes = database['/proteomes']
     
@@ -152,7 +152,8 @@ def create_proteomes(database, config, verbose = False):
             g_proteomes.create_dataset(proteome, (len(d_proteomes[proteome]),), dtype=np.dtype("S{}".format(str_size)))
         g_proteomes[proteome][:] = d_proteomes[proteome]
         
-        g_proteomes[proteome].attrs['tax_id'] = 0
+
+        g_proteomes[proteome].attrs['tax_id'] = database['/uniprotkb/{}'.format(d_proteomes[proteome][0])].attrs['tax_id']
         g_proteomes[proteome].attrs['isReference'] = False
         
     if not os.path.exists("{}/{}".format(config['download_base_dir'],config['relpath_reference_proteomes'])):
@@ -172,6 +173,21 @@ def create_proteomes(database, config, verbose = False):
     if verbose:
         utils.info("Done\n")
 
+def parse_uniref_xml_elem(elem, config, database):
+    try:
+        d_uniref = {}
+        elem = None
+    except Exception as e:
+        utils.error(str(e))
+        raise
+
+def create_uniprot_dataset(database, config, verbose=False):
+    uniprot100_xml = etree.iterparse(config['download_base_dir']+config['relpath_uniref100'])
+    uniprot90_xml = etree.iterparse(config['download_base_dir']+config['relpath_uniref90'])
+    uniprot50_xml = etree.iterparse(config['download_base_dir']+config['relpath_uniref50'])
+
+
+
 if __name__ == '__main__':
     t0=time.time()
     args = utils.read_params()
@@ -184,9 +200,9 @@ if __name__ == '__main__':
     with createDataset(config['download_base_dir']+config['relpath_chocophlan_database']) as choco:
         if not choco.__contains__("/uniprotkb"):
             choco.create_group('/uniprotkb')
-        #parse_xml(choco, ["data/uniprot/complete/uniprot_sprot.xml", "data/uniprot/complete/uniprot_trembl.xml"], config)
+        parse_uniprotkb_xml(choco, ["data/uniprot/complete/uniprot_sprot.xml", "data/uniprot/complete/uniprot_trembl.xml"], config)
         #parse_xml(choco,["data/uniprot/complete/uniprot_sprot_example.xml"], config)
-        parse_xml(choco,["data/uniprot/complete/uniprot_sprot.xml"], config)
+        #parse_uniprotkb_xml(choco,["data/uniprot/complete/uniprot_sprot.xml"], config)
         create_proteomes(choco,config)
     t1=time.time()
 

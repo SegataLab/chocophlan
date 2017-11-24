@@ -40,6 +40,12 @@ def read_params():
     group.add_argument('--uniprot_uniref100',
                        default=('/pub/databases/uniprot/current_release/uniref'
                                 '/uniref100/uniref100.xml.gz'))
+    group.add_argument('--uniprot_uniref90',
+                       default=('/pub/databases/uniprot/current_release/uniref'
+                                '/uniref90/uniref90.xml.gz'))
+    group.add_argument('--uniprot_uniref50',
+                       default=('/pub/databases/uniprot/current_release/uniref'
+                                '/uniref50/uniref50.xml.gz'))
     group.add_argument('--uniprot_reference_proteomes',
                        default=('/pub/databases/uniprot/current_release'
                                 '/knowledgebase/reference_proteomes'))
@@ -50,7 +56,7 @@ def read_params():
                        help='Base directory for raw files to be downloaded to')
 
     group.add_argument('--relpath_chocophlan_database',
-                       default='chocophlan.hdf5',
+                       default='/chocophlan.hdf5',
                        help='')
     group.add_argument('--relpath_bacterial_genomes',
                        default='/refseq/genomes',
@@ -64,6 +70,12 @@ def read_params():
     group.add_argument('--relpath_uniref100',
                        default='/uniprot/uniref/uniref100.xml.gz',
                        help='Directory for uniref100 file')
+    group.add_argument('--relpath_uniref90',
+                       default='/uniprot/uniref/uniref90.xml.gz',
+                       help='Directory for uniref90 file')
+    group.add_argument('--relpath_uniref50',
+                       default='/uniprot/uniref/uniref50.xml.gz',
+                       help='Directory for uniref50 file')
     group.add_argument('--relpath_reference_proteomes',
                        default='/uniprot/reference_proteomes',
                        help='Directory for the reference proteomes file')
@@ -107,6 +119,10 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.uniprot_ftp_base)
     configparser_object.set('download', 'uniprot_uniref100',
                             args.uniprot_uniref100)
+    configparser_object.set('download', 'uniprot_uniref90',
+                            args.uniprot_uniref90)
+    configparser_object.set('download', 'uniprot_uniref50',
+                            args.uniprot_uniref50)
     configparser_object.set('download', 'uniprot_reference_proteomes',
                             args.uniprot_reference_proteomes)
     configparser_object.set('download', 'uniprot_pan_proteomes',
@@ -121,6 +137,10 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.relpath_taxdump)
     configparser_object.set('download', 'relpath_uniref100',
                             args.relpath_uniref100)
+    configparser_object.set('download', 'relpath_uniref90',
+                            args.relpath_uniref90)
+    configparser_object.set('download', 'relpath_uniref50',
+                            args.relpath_uniref50)
     configparser_object.set('download', 'relpath_reference_proteomes',
                             args.relpath_reference_proteomes)
     configparser_object.set('download', 'relpath_pan_proteomes',
@@ -165,7 +185,13 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.relpath_faa_output)
     configparser_object.set('process_proteomes', 'relpath_chocophlan_database',
                             args.relpath_chocophlan_database)
-    
+    configparser_object.set('process_proteomes', 'relpath_uniref100',
+                            args.relpath_uniref100)
+    configparser_object.set('process_proteomes', 'relpath_uniref90',
+                            args.relpath_uniref90)
+    configparser_object.set('process_proteomes', 'relpath_uniref50',
+                            args.relpath_uniref50)
+
     configparser_object.set('process_proteomes', 'verbose', str(verbose))
     configparser_object.set('process_proteomes', 'nproc', str(args.nproc))
     return configparser_object
