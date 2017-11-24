@@ -105,8 +105,12 @@ class Nodes:
 
         self.taxid_n = tmp_nodes
         self.leaves_taxids = []
+        self.num_nodes = 0
+        # Determine initial leaves of the tree. This function is called once after loading of the tree and should NOT be called at any time later, as
+        # many logical concepts of functions here are based on this assumption.
         self.determine_initial_leaves()
         self.get_leave_ids()
+        self.get_nr_nodes()
 
     # Recursively goes through all clades in the tree. Each clade root gets
     # list of all accessions in the clade.
@@ -139,21 +143,58 @@ class Nodes:
         for c in clade.clades:
             self.remove_plasmids(c)
 
-    def determine_initial_leaves(self, clade=None, recur=False):
+    def determine_initial_leaves(self, clade=None):
         if not clade:
             clade = self.tree.root
         if clade.is_terminal():
             clade.initially_terminal=True
         for c in clade.clades:
-            self.determine_initial_leaves(c, recur=True)
+            self.determine_initial_leaves(c)
 
-    def remove_irrelevant_leaves(self, clade=None, tmp=None, taxids_to_keep=None):
-        # This needs more testing.
+    # Recursively go through the tree and remove each node that is initially terminal and whose taxid is not in the list of taxids to keep.
+    # Beware that this function will only "spare" a taxon if it is initially terminal. This might be problematic in later usecases, since I'm
+    # not sure whether we can garantuee that all species taxids (corresponding to proteomes) are actually ALL leave nodes in the initial tree.
+    def remove_leaves(self, clade=None, taxids_to_keep=None):
         if not clade:
             clade = self.tree.root
         clade.clades = [c for c in clade.clades if (not c.initially_terminal) or (c.initially_terminal and c.tax_id in taxids_to_keep)]
         for c in clade.clades:
-            self.remove_irrelevant_leaves(c, taxids_to_keep=taxids_to_keep)
+            self.remove_leaves(c, taxids_to_keep=taxids_to_keep)
+
+    def get_nr_nodes(self, clade=None, num_nodes=None):
+        if not clade:
+            clade = self.tree.root
+        if not num_nodes:
+            self.num_nodes = 0
+        clade.clades = [c for c in clade.clades]
+        for c in clade.clades:
+            self.num_nodes += 1
+            self.get_nr_nodes(c, num_nodes = self.num_nodes)
+
+    # This function removes"stub" subtrees that (can) remain after pruning unwanted leaves with the remove_leaves function.
+    def remove_stub(self, clade=None):
+        if not clade:
+            clade = self.tree.root
+        clade.clades = [c for c in clade.clades if (c.is_terminal() and c.initially_terminal) or (not c.is_terminal())]
+        for c in clade.clades:
+            self.remove_stub(c)
+
+    # This function removes stubs until there are none left, returning only the tree of interest.
+    def remove_subtrees(self, clade=None):
+        itera = 0
+        while True:
+            self.get_nr_nodes()
+            nds_bf = self.num_nodes
+            self.remove_stub()
+            self.get_nr_nodes()
+            nds_af = self.num_nodes
+            # Pruning is complete if no nodes were removed between last and current iteration.
+            if (nds_af == nds_bf): 
+                print("Subtree pruning complete")
+                break
+            itera += 1
+            print("Removing stub subtrees. Iteration ", str(itera))
+
 
     def get_leave_ids(self, clade=None, recur=False):
         if not recur:
