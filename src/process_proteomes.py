@@ -26,7 +26,6 @@ from Bio.Seq import Seq
 from functools import partial
 
 kingdom_to_process = ['Bacteria','Archaea']
-tag_to_parse = ["accession","name","dbReference","sequence","organism","sequence"]
 dbReference = ["EMBL","Ensembl","GeneID","GO","KEGG","KO","Pfam","Refseq","Proteomes"]
 
 def filt(e):
@@ -60,6 +59,7 @@ def createDataset(filepath):
         utils.error(str(e), exit=True)
 
 def parse_uniprotkb_xml_elem(elem, config, database):
+    tag_to_parse = ["accession","name","dbReference","sequence","organism","sequence"]
     try:
         d_prot = {}
         sequence = ""
@@ -174,9 +174,34 @@ def create_proteomes(database, config, verbose = False):
         utils.info("Done\n")
 
 def parse_uniref_xml_elem(elem, config, database):
+    tag_to_parse = ['member', 'representativeMember', 'property'] 
     try:
         d_uniref = {}
-        elem = None
+        d_uniref = {}
+        d_uniref["id"] = elem.get('id')
+        d_uniref['members'] = {}
+        for tag in tag_to_parse:
+            tag_children = "{http://uniprot.org/uniref}"+tag
+            if tag == "property":
+                for pro in elem.iterchildren(tag_children):
+                    if pro.get('type') == 'common taxon ID':
+	    	        d_uniref["common_taxid"] = pro.get('value')
+	    if tag == "representativeMember" or tag == "member":
+	        member = [x for x in elem.iterchildren(tag_children)]
+	        properties = [x.iterchildren('{http://uniprot.org/uniref}property') for y in member for x in y.iterchildren("{http://uniprot.org/uniref}dbReference")]
+	        for p in properties:
+	    	    for pro in p:
+	    	        if pro.get('type') == "UniProtKB accession":
+	    		    accession = pro.get('value')
+	    		    d_uniref['members'][accession] = {}
+	    		    d_uniref['members'][accession]["isRepr"] = True if tag == "representativeMember" else False
+                        if pro.get('type') == "UniRef100 ID":
+	    		    d_uniref['members'][accession]["UniRef100"] = pro.get('value')
+	    		if pro.get('type') == "UniRef90 ID":
+	    		    d_uniref['members'][accession]["UniRef90"] = pro.get('value')
+	    		if pro.get('type') == "UniRef50 ID":
+	    		    d_uniref['members'][accession]["UniRef50"] = pro.get('value')
+
     except Exception as e:
         utils.error(str(e))
         raise
