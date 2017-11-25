@@ -185,8 +185,13 @@ def create_uniprot_dataset(database, config, verbose=False):
     uniprot100_xml = etree.iterparse(config['download_base_dir']+config['relpath_uniref100'])
     uniprot90_xml = etree.iterparse(config['download_base_dir']+config['relpath_uniref90'])
     uniprot50_xml = etree.iterparse(config['download_base_dir']+config['relpath_uniref50'])
+    
+    uniprot = BTree()
+    uniprot_entries = {}
+    
+    
 
-
+    entry = BClade(clades=[], name=name)
 
 if __name__ == '__main__':
     t0=time.time()
