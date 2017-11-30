@@ -49,6 +49,12 @@ def read_params():
     group.add_argument('--uniprot_reference_proteomes',
                        default=('/pub/databases/uniprot/current_release'
                                 '/knowledgebase/reference_proteomes'))
+    group.add_argument('--uniprot_sprot',
+                       default=('/pub/databases/uniprot/current_release'
+                           '/knowledgebase/complete/uniprot_sprot.xml.gz'))
+    group.add_argument('--uniprot_trembl',
+                       default=('/pub/databases/uniprot/current_release'
+                           '/knowledgebase/complete/uniprot_sprot.xml.gz'))
     group.add_argument('--uniprot_pan_proteomes',
                        default=('/pub/databases/uniprot/current_release'
                            '/knowledgebase/pan_proteomes/'))
@@ -76,6 +82,12 @@ def read_params():
     group.add_argument('--relpath_uniref50',
                        default='/uniprot/uniref/uniref50.xml.gz',
                        help='Directory for uniref50 file')
+    group.add_argument('--relpath_uniprot_sprot',
+                       default='/uniprot/complete/uniprot_sprot.xml.gz',
+                       help='')
+    group.add_argument('--relpath_uniprot_trembl',
+                       default='/uniprot/complete/uniprot_trembl.xml.gz',
+                       help='')
     group.add_argument('--relpath_reference_proteomes',
                        default='/uniprot/reference_proteomes',
                        help='Directory for the reference proteomes file')
@@ -90,15 +102,10 @@ def read_params():
     group.add_argument('--relpath_pickle_contigid_filename',
                        default='/pickled/contigid_filename.pkl',
                        help='')
-    group.add_argument('--relpath_faa_output',
-                       default='/faa/uniprot.faa',
+    group.add_argument('--temp_folder',
+                       default='data/tmp',
                        help='')
-    group.add_argument('--relpath_pickle_proteomes',
-                       default='/pickled/proteomes.pkl',
-                       help='')
-    group.add_argument('--relpath_pickle_uniprotdb',
-                       default='/pickled/uniprotdb.pkl',
-                       help='')
+
     group.add_argument('--nproc', default=20,
                        help='Number of parallel processes')
 
@@ -127,6 +134,10 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.uniprot_reference_proteomes)
     configparser_object.set('download', 'uniprot_pan_proteomes',
                             args.uniprot_pan_proteomes)
+    configparser_object.set('download', 'uniprot_sprot',
+                            args.uniprot_sprot)
+    configparser_object.set('download', 'uniprot_trembl',
+                            args.uniprot_trembl)
     configparser_object.set('download', 'download_base_dir',
                             args.download_base_dir)
     configparser_object.set('download', 'relpath_bacterial_genomes',
@@ -145,6 +156,10 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.relpath_reference_proteomes)
     configparser_object.set('download', 'relpath_pan_proteomes',
                             args.relpath_pan_proteomes)
+    configparser_object.set('download', 'relpath_uniprot_sprot',
+                            args.relpath_uniprot_sprot)
+    configparser_object.set('download', 'relpath_uniprot_trembl',
+                            args.relpath_uniprot_trembl)
     configparser_object.set('download', 'verbose', str(verbose))
     configparser_object.set('download', 'nproc', str(args.nproc))
 
@@ -177,20 +192,20 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.download_base_dir)
     configparser_object.set('process_proteomes', 'relpath_reference_proteomes',
                             args.relpath_reference_proteomes)
-    configparser_object.set('process_proteomes', 'relpath_pickle_proteomes',
-                            args.relpath_pickle_proteomes)
-    configparser_object.set('process_proteomes', 'relpath_pickle_uniprotdb',
-                            args.relpath_pickle_uniprotdb)
-    configparser_object.set('process_proteomes', 'relpath_faa_output',
-                            args.relpath_faa_output)
     configparser_object.set('process_proteomes', 'relpath_chocophlan_database',
                             args.relpath_chocophlan_database)
+    configparser_object.set('process_proteomes', 'relpath_uniprot_sprot',
+                            args.relpath_uniprot_sprot)
+    configparser_object.set('process_proteomes', 'relpath_uniprot_trembl',
+                            args.relpath_uniprot_trembl)
     configparser_object.set('process_proteomes', 'relpath_uniref100',
                             args.relpath_uniref100)
     configparser_object.set('process_proteomes', 'relpath_uniref90',
                             args.relpath_uniref90)
     configparser_object.set('process_proteomes', 'relpath_uniref50',
                             args.relpath_uniref50)
+    configparser_object.set('process_proteomes', 'temp_folder',
+                            args.temp_folder)
 
     configparser_object.set('process_proteomes', 'verbose', str(verbose))
     configparser_object.set('process_proteomes', 'nproc', str(args.nproc))

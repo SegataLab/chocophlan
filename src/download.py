@@ -15,11 +15,13 @@ import ftplib
 import math
 import sys
 import os
+import hashlib
 if __name__ == '__main__':
     import utils
 else:
     import src.utils as utils
 import re
+from lxml import etree 
 from functools import partial
 
 def initt(terminating_):
@@ -65,9 +67,13 @@ def do_download(inputs, verbose):
 
 def download(config, verbose=False):
     # TODO: MD5 checksum testing! UNIREF: Check .metalink file with size, md5
-    # TODO: Check if folders exist!
-    # TODO: Incoorporate the download of the large uniref file!
     # TODO: The refseq catalogue needs to have the version included in its name!
+
+        os.makedirs(config['download_base_dir']+config['relpath_uniref100'], exist_ok=True)
+        os.makedirs(config['download_base_dir']+os.path.split(config['relpath_taxdump'])[0], exist_ok=True)
+        os.makedirs(config['download_base_dir']+os.path.split(config['relpath_taxonomic_catalogue'])[0], exist_ok=True)
+        os.makedirs(config['download_base_dir']+config['refseq_bacterial_genomes'], exist_ok=True)
+        os.makedirs(config['download_base_dir']+os.path.split(config['relpath_uniprot_trembl'])[0], exist_ok=True)
 
     ### uniprot XML ###
     argument_list = [(config['uniprot_ftp_base'],
@@ -75,13 +81,38 @@ def download(config, verbose=False):
                       config['download_base_dir'] + config['relpath_uniref100'])]
     
     argument_list.append((config['uniprot_ftp_base'],
+                          os.path.split(config['uniprot_uniref100'])[0] + "/RELEASE.metalink",
+                          config['download_base_dir'] + os.path.split(config['relpath_uniref100'])[0] + "/RELEASE_100.metalink"))
+
+    argument_list.append((config['uniprot_ftp_base'],
                           config['uniprot_uniref90'],
                           config['download_base_dir'] + config['relpath_uniref90']))
 
     argument_list.append((config['uniprot_ftp_base'],
+                          os.path.split(config['uniprot_uniref90'])[0] + "/RELEASE.metalink",
+                          config['download_base_dir'] + os.path.split(config['relpath_uniref90'])[0] + "/RELEASE_90.metalink"))
+    
+    argument_list.append((config['uniprot_ftp_base'],
                           config['uniprot_uniref50'],
                           config['download_base_dir'] + config['relpath_uniref50']))
     
+    argument_list.append((config['uniprot_ftp_base'],
+                          os.path.split(config['uniprot_uniref50'])[0] + "/RELEASE.metalink",
+                          config['download_base_dir'] + os.path.split(config['relpath_uniref50'])[0] + "/RELEASE_50.metalink"))
+
+    argument_list.append((config['uniprot_ftp_base'],
+                          config['uniprot_sprot'],
+                          config['download_base_dir'] + config['relpath_uniprot_sprot']))
+
+    argument_list.append((config['uniprot_ftp_base'],
+                          config['uniprot_trembl'],
+                          config['download_base_dir'] + config['relpath_uniprot_trembl']))
+    
+    argument_list.append((config['uniprot_ftp_base'],
+                          os.path.split(config['uniprot_sprot'])[0] + "/RELEASE.metalink",
+                          config['download_base_dir'] + os.path.split(config['relpath_uniprot_sprot'])[0] + "/RELEASE.metalink"))
+
+
     ### Bacterial refseq genomes ###
     ftp = ftplib.FTP(config['refseq_ftp_base'])
     ftp.login()
@@ -110,24 +141,25 @@ def download(config, verbose=False):
     ls = ftp.nlst()
     ftp.quit()
 
-    r = re.compile("Reference_Proteomes_.*\.tar\.gz")
-    ref_prot = [x for x in filter(r.match, ls)][0]
-
-    argument_list.append((config['uniprot_ftp_base'],
-                          "{}/{}".format(config['uniprot_reference_proteomes'],ref_prot),
+    r = re.compile(".*.metalink|Reference_Proteomes_.*\.tar\.gz")
+    ref_prot = [x for x in filter(r.match, ls)]
+    
+    for f in ref_prot:
+        argument_list.append((config['uniprot_ftp_base'],
+                          "{}/{}".format(config['uniprot_reference_proteomes'],f),
                           config['download_base_dir'] + config['relpath_reference_proteomes']))
     ### Pan proteome download ###
-    ftp = ftplib.FTP(config['uniprot_ftp_base'])
-    ftp.login()
-    ftp.cwd(config['uniprot_pan_proteomes'])
-    ls = ftp.nlst()
-    ftp.quit()
-    argument_list = []
-    argument_list += [(config['uniprot_ftp_base'],
-                       '/'.join([config['uniprot_pan_proteomes'], entry]),
-                       '/'.join([config['download_base_dir'], config['relpath_pan_proteomes'],
-                                entry]))
-                       for entry in ls if "fasta.gz" in entry]
+   # ftp = ftplib.FTP(config['uniprot_ftp_base'])
+   # ftp.login()
+   # ftp.cwd(config['uniprot_pan_proteomes'])
+   # ls = ftp.nlst()
+   # ftp.quit()
+   # argument_list = []
+   # argument_list += [(config['uniprot_ftp_base'],
+   #                    '/'.join([config['uniprot_pan_proteomes'], entry]),
+   #                    '/'.join([config['download_base_dir'], config['relpath_pan_proteomes'],
+   #                             entry]))
+   #                    for entry in ls if "fasta.gz" in entry]
     
     terminating = mp.Event()
     chunksize = math.floor(len(argument_list) / (int(config['nproc']) * 2))
@@ -149,8 +181,40 @@ def download(config, verbose=False):
 
     if verbose:
         utils.info('Download succesful\n')
+    
+    files_to_check = [(config['download_base_dir'] + config['relpath_uniref100'], config['download_base_dir'] + os.path.split(config['relpath_uniref100'])[0] + "/RELEASE_100.metalink"),
+    (config['download_base_dir'] + config['relpath_uniref90'], config['download_base_dir'] + os.path.split(config['relpath_uniref90'])[0] + "/RELEASE_90.metalink"),
+    (config['download_base_dir'] + config['relpath_uniref50'], config['download_base_dir'] + os.path.split(config['relpath_uniref50'])[0] + "/RELEASE_50.metalink"),
+    (config['download_base_dir'] + config['relpath_uniprot_sprot'],  config['download_base_dir'] + os.path.split(config['relpath_uniprot_sprot'])[0] + "/RELEASE.metalink"),
+    (config['download_base_dir'] + config['relpath_uniprot_trembl'],  config['download_base_dir'] + os.path.split(config['relpath_uniprot_trembl'])[0] + "/RELEASE.metalink")]
+
+    find_file = etree.ETXPath("//{http://www.metalinker.org/}file")
+    find_veri = etree.ETXPath("//{http://www.metalinker.org/}verification")
 
 
+    for d, m in files_to_check:
+        if verbose:
+            utils.info("Checking {} md5 hash...\n".format(d))
+        md5hash = hashlib.md5()
+        with open(d,'rb') as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                md5hash.update(chunk)
+
+        calc_hash = md5hash.hexdigest()[:32]
+        down_hash = ""
+        with etree.parse(m) as meta:
+            entry = [x for x in find_file(meta) if x.get('name') == os.path.split(f)[1]][0]
+            down_hash = entry.getchildren()[1].getchildren()[0].text
+
+
+        if (md5_tar is None) or (md5_md5 is None):
+            sys.exit("MD5 checksums not found, something went wrong!")
+        # compare checksums
+        if calc_hash != down_hash:
+            sys.exit("MD5 checksums do not correspond! Delete previously downloaded files so they are re-downloaded")
+        else:
+            utils.info("{} checksum correspond\n".format(d))
+                              
 if __name__ == '__main__':
     t0 = time.time()
 
