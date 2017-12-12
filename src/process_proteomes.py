@@ -14,6 +14,7 @@ else:
 import os
 import gzip
 import pickle
+import re
 import multiprocessing as mp
 import glob
 import time
@@ -21,6 +22,8 @@ import math
 import sys
 import numpy as np
 import h5py
+import shutil
+from itertools import zip_longest
 from lxml import etree
 from Bio import SeqIO
 from Bio.SeqRecord import SeqRecord
@@ -30,7 +33,8 @@ from Bio.Phylo.BaseTree import Tree as BTree
 from functools import partial
 
 kingdom_to_process = ['Bacteria','Archaea']
-dbReference = ['EMBL','Ensembl','GeneID','GO','KEGG','KO','Pfam','Refseq','Proteomes']
+dbReference = ['GeneID','Proteomes']
+#dbReference = ['EMBL','Ensembl','GeneID','GO','KEGG','KO','Pfam','Refseq','Proteomes']
 
 def filt(e):
     return ('end' in e[0]) and ('entry' in e[1].tag)
@@ -45,6 +49,12 @@ def yield_filtered_xml(tree):
         yield elem
         elem.clear()
 
+def grouper(iterable, n, fillvalue=None):
+    #"Collect data into fixed-length chunks or blocks"
+    # grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx"
+    args = [iter(iterable)] * n
+    return zip_longest(*args, fillvalue=fillvalue)
+
 def initt(terminating_):
     # This places terminating in the global namespace of the worker subprocesses.
     # This allows the worker function to access `terminating` even though it is
@@ -52,86 +62,118 @@ def initt(terminating_):
     global terminating
     terminating = terminating_
 
-def init_parse(terminating_, tree_):
+def init_parse(terminating_, tree_,counter_):
     global terminating
     terminating = terminating_
     global tree
     tree = tree_
+    global counter
+    counter = counter_
 
 def createDataset(filepath):
     try:
-        f = h5py.File(filepath, 'a', driver='core', backing_store = True, block_size=1024)
+        f = h5py.File(filepath, 'a', driver='sec2')#, backing_store = True, block_size=1024)
         return f
     except Exception as e:
         utils.error(str(e), exit=True)
 
-def parse_uniprotkb_xml_elem(elem, database):
-    tag_to_parse = ['accession','name','dbReference','sequence','organism','sequence']
-    try:
-        d_prot = {}
-        sequence = ''
-        org = [x for x in elem.iterchildren('{http://uniprot.org/uniprot}organism')][0]
-        kingdom = [x for x in org.iterchildren('{http://uniprot.org/uniprot}lineage')][0].getchildren()[0].text
-        if kingdom in kingdom_to_process:
-            for children in tag_to_parse:
-                tag_children = '{http://uniprot.org/uniprot}'+children
-                if children == 'sequence':
-                    sequence = [x for x in elem.iterchildren(tag=tag_children)][0].text
-                if children == 'name' or children == 'accession':
-                    d_prot[children] = [x for x in elem.iterchildren(tag=tag_children)][0].text
-                if children == 'organism':
-                    org = [x for x in elem.iterchildren(tag_children)][0]
-                    d_prot['tax_id'] = [x.get('id') for x in org.iterchildren(tag='{http://uniprot.org/uniprot}dbReference')][0]
-                if children == 'dbReference':
-                    if children not in d_prot:
-                        d_prot[children] = {}
-                    for ref in elem.iterchildren(tag=tag_children):
-                        if ref.get('type') in dbReference:
-                            if ref.get('type') not in d_prot[children]:
-                                d_prot[children][ref.get('type')] = []
-                            d_prot[children][ref.get('type')].append(ref.get('id').encode('utf-8'))
-        
-            uniprotkb = database['/uniprotkb'] 
-            if d_prot['accession'] not in uniprotkb:
-                protein = uniprotkb.create_group(d_prot['accession'])
-            
-            protein = uniprotkb[d_prot['accession']]
-            protein.attrs['accession'] = d_prot['accession']
-            protein.attrs['name'] = d_prot['name']
-            protein.attrs['sequence'] = sequence
-            protein.attrs['tax_id'] = d_prot['tax_id']
-    
-            for ref in d_prot['dbReference'].keys():
-                str_size = max(map(len,d_prot['dbReference'][ref]))
-                if ref not in protein:
-                    reference = protein.create_dataset(ref, (len(d_prot['dbReference'][ref]),), dtype=np.dtype('S{}'.format(str_size)), compression='gzip')
-                
-                protein[ref][:] = d_prot['dbReference'][ref]
-
-        elem.clear()
-        
-        for ancestor in elem.xpath('ancestor-or-self::*'):
-            while ancestor.getprevious() is not None:
-                del ancestor.getparent()[0]
-    except Exception as e:
-        utils.error(str(e))
-        raise
-
-def parse_uniprotkb_xml(database, l_input, config):
-    for input in l_input:
-        if config['verbose']:
-            utils.info('Starting processing {} file...\n'.format(input))
-        tree = etree.iterparse(input)
-        
+def parse_uniprotkb_xml_elem(elem, config, db):
+    if not terminating.is_set() and elem is not None:
+        tag_to_parse = ['accession','name','dbReference','sequence','organism','sequence']
         try:
-            [parse_uniprotkb_xml_elem(b,database) for b in yield_filtered_xml(tree)]
-            del tree
+            d_prot = {}
+            sequence = ''
+            elem = etree.fromstring(elem)
+            org = [x for x in elem.iterchildren('{http://uniprot.org/uniprot}organism')][0]
+            kingdom = [x for x in org.iterchildren('{http://uniprot.org/uniprot}lineage')][0].getchildren()[0].text
+            proteome = [x.get("value") for x in elem.iterchildren('{http://uniprot.org/uniprot}dbReference') if x.get('id') == "Proteomes" ]
+            
+            if kingdom in kingdom_to_process and len(proteome):
+                for children in tag_to_parse:
+                    tag_children = '{http://uniprot.org/uniprot}'+children
+                    if children == 'sequence':
+                        sequence = [x for x in elem.iterchildren(tag=tag_children)][0].text
+                    if children == 'name' or children == 'accession':
+                        d_prot[children] = [x for x in elem.iterchildren(tag=tag_children)][0].text
+                    if children == 'organism':
+                        org = [x for x in elem.iterchildren(tag_children)][0]
+                        d_prot['tax_id'] = [x.get('id') for x in org.iterchildren(tag='{http://uniprot.org/uniprot}dbReference')][0]
+                    if children == 'dbReference':
+                        if children not in d_prot:
+                            d_prot[children] = {}
+                        for ref in elem.iterchildren(tag=tag_children):
+                            if ref.get('type') in dbReference:
+                                if ref.get('type') not in d_prot[children]:
+                                    d_prot[children][ref.get('type')] = []
+                                d_prot[children][ref.get('type')].append(ref.get('id').encode('utf-8'))
+                #with h5py.File('{}/uniprotkb_{}/uniprotkb_{}'.format(config['temp_folder'], db, d_prot['accession'])) as uniprotkb:
+                #    protein = uniprotkb.create_group(d_prot['accession'])
+                #    protein.attrs['accession'] = d_prot['accession']
+                #    protein.attrs['name'] = d_prot['name']
+                #    protein.attrs['sequence'] = sequence
+                #    protein.attrs['tax_id'] = d_prot['tax_id']
+                #    for ref in d_prot['dbReference'].keys():
+                #        str_size = max(map(len,d_prot['dbReference'][ref]))
+                #        if ref not in protein:
+                #            reference = protein.create_dataset(ref, (len(d_prot['dbReference'][ref]),), dtype=np.dtype('S{}'.format(str_size)), compression='gzip')
+                #    
+                #        protein[ref][:] = d_prot['dbReference'][ref]
+            elem.clear()
+            
+            for ancestor in elem.xpath('ancestor-or-self::*'):
+                while ancestor.getprevious() is not None:
+                    del ancestor.getparent()[0]
+        except Exception as e:
+            utils.error(str(e))
+            raise
+    else:
+        terminating.set()
+    
+def parse_uniprotkb_xml(xml_input, config):
+    terminating = mp.Event()
+    chunksize = config['nproc']
+    from multiprocessing import Value
+    counter = Value('i',0)
+
+    db=os.path.splitext(os.path.basename(xml_input))[0]
+    if os.path.exists("{}/uniprotkb_{}/".format(config['temp_folder'], db)):
+        shutil.rmtree("{}/uniprotkb_{}/".format(config['temp_folder'], db))
+    os.makedirs("{}/uniprotkb_{}/".format(config['temp_folder'], db), exist_ok=True)
+    with createDataset('{}/{}_{}'.format(config['download_base_dir'],config['relpath_chocophlan_database'],db)) as choco:
+        if '/uniprotkb' not in choco:
+            choco.create_group('/uniprotkb')
+
+    if config['verbose']:
+        utils.info('Starting processing {} file...\n'.format(xml_input))
+    
+    tree = etree.iterparse(gzip.GzipFile(xml_input))
+    parse_uniprotkb_xml_elem_partial = partial(parse_uniprotkb_xml_elem, config=config, db=db)
+    with mp.Pool(initializer=init_parse, initargs=(terminating, tree,counter,), processes=chunksize) as pool:
+        try:
+            counter=0
+            for group in grouper(yield_filtered_xml_string(tree), 10000):
+                counter+=1
+                [_ for _ in pool.imap(parse_uniprotkb_xml_elem_partial, group, chunksize=chunksize)]
+                #if config['verbose']:
+                #    utils.info('Merging {} UniProtKB {} files...\n'.format(counter*10000, db))
+                #with createDataset('{}/{}_{}'.format(config['download_base_dir'],config['relpath_chocophlan_database'],db)) as choco:
+                #    ls = os.listdir("{}/uniprotkb_{}/".format(config['temp_folder'], db))
+                #    r = re.compile("uniprotkb_*.")
+                #    fl = [x for x in filter(r.match, ls)]
+                #    for f in fl:
+                #        f = "{}/uniprotkb_{}/{}".format(config['temp_folder'],db,f)
+                #        with h5py.File(f) as temp:
+                #            protein = list(temp)[0]
+                #            temp.copy('{}'.format(protein), choco['/uniprotkb'])
+                #            os.unlink(f)
+                #if config['verbose']:
+                #    utils.info('Finished merging {} UniProtKB {} files...\n'.format(counter*10000, db))
         except Exception as e:
             utils.error(str(e))
             utils.error('Processing failed',  exit=True)
             raise
         if config['verbose']:
-            utils.info('Done processing {} file!\n'.format(input))
+            utils.info('Done processing {} file!\n'.format(xml_input))
     if config['verbose']:
         utils.info('Done\n')
 
@@ -180,8 +222,11 @@ def create_proteomes(database, config, verbose = False):
         utils.info('Done\n')
 
 def parse_uniref_xml_elem(elem, config):
-    if not terminating.is_set():
+    if not terminating.is_set() and elem is not None:
         tag_to_parse = ['member', 'representativeMember', 'property'] 
+        global counter
+        with counter.get_lock():
+            counter.value += 1
         try:
             elem = etree.fromstring(elem)
             d_uniref = {}
@@ -208,49 +253,40 @@ def parse_uniref_xml_elem(elem, config):
                                 d_uniref['UniRef90'] = pro.get('value')
                             if pro.get('type') == 'UniRef50 ID':
                                 d_uniref['UniRef50'] = pro.get('value')
-            if not os.path.exists("{}/uniprot".format(config['temp_folder'])):
-                os.makedirs("{}/uniprot/".format(config['temp_folder']),exist_ok = True)
                 
             accession = d_uniref['id']
-            with h5py.File("{}/uniprot/{}".format(config['temp_folder'],accession)) as database:
-                #if 'uniref' not in database:
-                #    database.create_group('/uniref')
-                #for c in ['100','90','50']:
-                #    if '/uniref/{}'.format(c) not in database:
-                #        database.create_group('/uniref/{}'.format(c))
+            #print(counter.value)
+           # with h5py.File("{}/uniref/{}".format(config['temp_folder'],accession)) as database:
+           #     accession = d_uniref['id']
+           #     cluster, pid = accession.split('_')
+           #     cluster = cluster.split('UniRef')[1]
 
-                #g_uniref = database['/uniref']
-            
-                accession = d_uniref['id']
-                cluster, pid = accession.split('_')
-                cluster = cluster.split('UniRef')[1]
+           #     if cluster not in database:
+           #         database.create_group('/{}'.format(cluster))
+           #     if accession not in database['/{}'.format(cluster)]:
+           #         database.create_group('/{}/{}'.format(cluster, accession))
 
-                if cluster not in database:
-                    database.create_group('/{}'.format(cluster))
-                if accession not in database['/{}'.format(cluster)]:
-                    database.create_group('/{}/{}'.format(cluster, accession))
+           #     entry = database['/{}/{}'.format(cluster,accession)]
+           #     if 'UniRef100' in d_uniref:
+           #         entry['UniRef100'] = h5py.SoftLink('/uniref/100/{}'.format(d_uniref['UniRef100']))
+           #     if 'UniRef90' in d_uniref:
+           #         entry['UniRef90'] = h5py.SoftLink('/uniref/90/{}'.format(d_uniref['UniRef90']))
+           #     if 'UniRef50' in d_uniref:
+           #         entry['UniRef50'] = h5py.SoftLink('/uniref/50/{}'.format(d_uniref['UniRef50']))
 
-                entry = database['/{}/{}'.format(cluster,accession)]
-                if 'UniRef100' in d_uniref:
-                    entry['UniRef100'] = h5py.SoftLink('/uniref/100/{}'.format(d_uniref['UniRef100']))
-                if 'UniRef90' in d_uniref:
-                    entry['UniRef90'] = h5py.SoftLink('/uniref/90/{}'.format(d_uniref['UniRef90']))
-                if 'UniRef50' in d_uniref:
-                    entry['UniRef50'] = h5py.SoftLink('/uniref/50/{}'.format(d_uniref['UniRef50']))
-
-                str_len = max([max(len(k),len(v)) for k,v in d_uniref['members']])
-                members = entry.create_dataset('members', (len(d_uniref['members']),2), dtype = np.dtype('S{}'.format(str_len)))
-                members[:] = d_uniref['members']
+           #     str_len = max([max(len(k),len(v)) for k,v in d_uniref['members']]) 
+           #     members = entry.create_dataset('members', (len(d_uniref['members']),2), dtype = np.dtype('S{}'.format(str_len)))
+           #     members[:] = d_uniref['members']
 
         except Exception as e:
             utils.error(str(e))
-            with open("{}/uniprot/FAILED".format(config['temp_folder']),'w+') as out:
+            with open("{}/uniref/FAILED".format(config['temp_folder']),'w+') as out:
                 out.write(elem.get('id')+"\n")
             raise
     else:
         terminating.set()
 
-def create_uniref_dataset(database, config, verbose=False):
+def create_uniref_dataset(config):
     uniprot100_xml = etree.iterparse(gzip.GzipFile(config['download_base_dir']+config['relpath_uniref100']))
     uniprot90_xml = etree.iterparse(gzip.GzipFile(config['download_base_dir']+config['relpath_uniref90']))
     uniprot50_xml = etree.iterparse(gzip.GzipFile(config['download_base_dir']+config['relpath_uniref50']))
@@ -258,32 +294,66 @@ def create_uniref_dataset(database, config, verbose=False):
     terminating = mp.Event()
     chunksize = config['nproc']
     uniprot_entries=[]
+    from multiprocessing import Value
+    counter = Value('i',0)
+
+    with createDataset("{}/{}_uniref".format(config['download_base_dir'],config['relpath_chocophlan_database'])) as choco:
+        if 'uniref' not in choco:
+            choco.create_group('/uniref')
+        if '/uniref/100' not in choco:
+            choco.create_group('/uniref/100')
+        if '/uniref/90' not in choco:
+            choco.create_group('/uniref/90')
+        if '/uniref/50' not in choco:
+            choco.create_group('/uniref/50')
+
+    if os.path.exists("{}/uniref".format(config['temp_folder'])):
+        shutil.rmtree("{}/uniref".format(config['temp_folder']))
+    os.makedirs("{}/uniref/".format(config['temp_folder']),exist_ok = True)
     
     for tree in [uniprot100_xml, uniprot50_xml, uniprot90_xml]:
-        with mp.Pool(initializer=init_parse, initargs=(terminating, tree,), processes=chunksize) as pool:
+        with mp.Pool(initializer=init_parse, initargs=(terminating, tree,counter,), processes=chunksize) as pool:
             try:
-                if verbose:
-                    util.info("Starting processing UniProt database\n")
+                if config['verbose']:
+                    utils.info("Starting processing UniRef database\n")
                 parse_uniref_xml_elem_partial = partial(parse_uniref_xml_elem, config=config)
-                [_ for _ in pool.imap(parse_uniref_xml_elem_partial, yield_filtered_xml_string(tree), chunksize= chunksize)]
-                #uniprot_entries.append([parse_uniref_xml_elem(x) for x in yield_filtered_xml(tree)])
-                if verbose:
-                    utils.info("Done\n")
+                counter =0 
+                for group in grouper(yield_filtered_xml_string(tree), 10000):
+                    counter+=1
+                    [_ for _ in pool.imap(parse_uniref_xml_elem_partial, group, chunksize= chunksize)]
+                    #if config['verbose']:
+                    #    utils.info('Merging {} UniRef files...\n'.format(counter*10000))
+                    #with createDataset("{}/{}_uniref".format(config['download_base_dir'],config['relpath_chocophlan_database'])) as choco:
+                    #    ls = os.listdir("{}/uniref/".format(config['temp_folder']))
+                    #    r = re.compile("UniRef*.")
+                    #    fl = [x for x in filter(r.match, ls)]
+                    #    for f in fl:
+                    #        f_path= "{}/uniref/{}".format(config['temp_folder'],f)
+                    #        with h5py.File(f_path) as temp:
+                    #            cluster = list(temp)[0]
+                    #            entry = list(temp[cluster])[0]
+                    #            if f in choco['/uniref/{}'.format(cluster)]:
+                    #                del choco['/uniref/{}/{}'.format(cluster, f)]
+                    #            temp.copy('{}/{}'.format(cluster,entry), choco['/uniref/{}'.format(cluster)])
+                    #            os.unlink(f_path)
+                    #if config['verbose']:
+                    #    utils.info("Done\n")
             except Exception as e:
                 utils.error(str(e))
                 raise
-        if verbose:
-            utils.info('Merging UniRef files...\n')
-        for _, _, f in os.walk("{}/uniprot/".format(config['temp_folder'])):
-            with h5py.File(f) as temp:
-                cluster = list(temp)[0]
-                entry = list(p[cluster])[0]
-                temp.copy('{}/{}'.format(cluster,entry), database['/uniref/{}'.format(cluster)])
-                os.unlink(f)
-        if verbose:
+        if config['verbose']:
             utils.info('Done\n')
-    if verbose:
-        utils.info('UniProt database processed successfully.\n')
+    if config['verbose']:
+        utils.info('UniRef database processed successfully.\n')
+
+#def link_database():
+#    # Keep all hdf5 files (2 for UniProtKB and 1 UniRef) separated and crete a new file that soft links all of them
+#    with createDataset("{}/{}_uniref".format(config['download_base_dir'],config['relpath_chocophlan_database'])) as choco:
+#    with createDataset("{}/{}".format(config['download_base_dir'],config['relpath_chocophlan_database'])) as choco:
+#        choco['uniref'] = h5py.ExternalLink("{{}_uniref".format(config['relpath_chocophlan_database']), '/uniref')
+#    with createDataset("{}/{}_uniprot_trembl.xml".format(config['download_base_dir'],config['relpath_chocophlan_database'])) as choco:
+#    with createDataset("{}/{}_uniprot_sprot.xml".format(config['download_base_dir'],config['relpath_chocophlan_database'])) as choco:
+         
 
 if __name__ == '__main__':
     t0=time.time()
@@ -294,14 +364,18 @@ if __name__ == '__main__':
     config = utils.check_configs(config)
     config = config['process_proteomes']
 
-    with createDataset(config['download_base_dir']+config['relpath_chocophlan_database']) as choco:
-        if '/uniprotkb' not in choco:
-            choco.create_group('/uniprotkb')
-        #parse_uniprotkb_xml(choco, ['data/uniprot/complete/uniprot_sprot.xml', 'data/uniprot/complete/uniprot_trembl.xml'], config)
-        #parse_uniprotkb_xml(choco,['data/uniprot/complete/uniprot_sprot_example.xml'], config)
-        #parse_uniprotkb_xml(choco,['data/uniprot/complete/uniprot_sprot.xml'], config)
+    processes = [mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_sprot'], config,)),
+                 mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_trembl'], config,)),
+                 mp.Process(target=create_uniref_dataset, args=(config,))
+                ]
+
+    for p in processes:
+        p.start()
+
+    for p in processes:
+        p.join()
+
         #create_proteomes(choco,config)
-        create_uniref_dataset(None, config)
     t1=time.time()
 
     utils.info('Total elapsed time {}s\n'.format(float(t1 - t0)))

@@ -361,14 +361,14 @@ class Nodes:
 
         #add_noranks( self.reduced_tree.root )
 
-        utils.info("Removing noranks from the taxonomy\n")
+        utils.info('Removing noranks from the taxonomy\n')
         remove_noranks(self.reduced_tree.root)
-        #add_noranks( self.reduced_tree.root )
-        utils.info("Adding taxon names to the taxonomyn\n")
+        #add_noranks( self.reduced_tree.root)
+        utils.info('Adding taxon names to the taxonomyn\n')
         add_taxa(self.reduced_tree.root)
-        utils.info("Adding nternal missing taxonomic levels\n")
+        utils.info('Adding nternal missing taxonomic levels\n')
         add_internal_missing_levels(self.reduced_tree.root, lev=-1)
-        utils.info("Removing duplicated taxa\n")
+        utils.info('Removing duplicated taxa\n')
         reduce_double_taxa(self.reduced_tree.root)
 
     # def save( self, out_file_name ):
@@ -436,6 +436,10 @@ def do_extraction(config, verbose=False):
     tax_tree.get_tree_with_reduced_taxonomy()
     utils.info('Finished postprocessing the taxonomy\n')
 
+    utils.info("Pickling tree\n")
+    pickle.dump(tax_tree, 
+                open(config['download_base_dir'] + config['relpath_pickle_taxontree'], "wb" ))
+    utils.info("Finished\n")
 
 def map_taxid_to_contigid(catalogue_file_dir):
     utils.info("Reading and processing catalogue file\n")

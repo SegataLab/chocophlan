@@ -99,6 +99,9 @@ def read_params():
     group.add_argument('--relpath_pickle_taxid_taxonomy',
                        default='/pickled/taxid_taxonomy.pkl',
                        help='')
+    group.add_argument('--relpath_pickle_taxontree',
+                       default='/pickled/taxontree.pkl',
+                       help='')
     group.add_argument('--relpath_pickle_contigid_filename',
                        default='/pickled/contigid_filename.pkl',
                        help='')
@@ -179,6 +182,8 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.relpath_pickle_taxid_taxonomy)
     configparser_object.set('extract', 'relpath_pickle_contigid_filename',
                             args.relpath_pickle_contigid_filename)
+    configparser_object.set('extract', 'relpath_pickle_taxontree',
+                            args.relpath_pickle_taxontree)
 
     configparser_object.set('extract', 'verbose', str(verbose))
     configparser_object.set('extract', 'nproc', str(args.nproc))
