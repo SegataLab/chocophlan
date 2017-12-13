@@ -88,7 +88,10 @@ def parse_uniprotkb_xml_elem(elem, config, db):
             kingdom = [x for x in org.iterchildren('{http://uniprot.org/uniprot}lineage')][0].getchildren()[0].text
             proteome = [x.get("value") for x in elem.iterchildren('{http://uniprot.org/uniprot}dbReference') if x.get('id') == "Proteomes" ]
             
-            if kingdom in kingdom_to_process and len(proteome):
+            if kingdom in kingdom_to_process:
+                global counter
+                with counter.get_lock():
+                    counter.value += 1
                 for children in tag_to_parse:
                     tag_children = '{http://uniprot.org/uniprot}'+children
                     if children == 'sequence':
@@ -106,23 +109,12 @@ def parse_uniprotkb_xml_elem(elem, config, db):
                                 if ref.get('type') not in d_prot[children]:
                                     d_prot[children][ref.get('type')] = []
                                 d_prot[children][ref.get('type')].append(ref.get('id').encode('utf-8'))
-                #with h5py.File('{}/uniprotkb_{}/uniprotkb_{}'.format(config['temp_folder'], db, d_prot['accession'])) as uniprotkb:
-                #    protein = uniprotkb.create_group(d_prot['accession'])
-                #    protein.attrs['accession'] = d_prot['accession']
-                #    protein.attrs['name'] = d_prot['name']
-                #    protein.attrs['sequence'] = sequence
-                #    protein.attrs['tax_id'] = d_prot['tax_id']
-                #    for ref in d_prot['dbReference'].keys():
-                #        str_size = max(map(len,d_prot['dbReference'][ref]))
-                #        if ref not in protein:
-                #            reference = protein.create_dataset(ref, (len(d_prot['dbReference'][ref]),), dtype=np.dtype('S{}'.format(str_size)), compression='gzip')
-                #    
-                #        protein[ref][:] = d_prot['dbReference'][ref]
-            elem.clear()
-            
-            for ancestor in elem.xpath('ancestor-or-self::*'):
-                while ancestor.getprevious() is not None:
-                    del ancestor.getparent()[0]
+                elem.clear()
+                
+                for ancestor in elem.xpath('ancestor-or-self::*'):
+                    while ancestor.getprevious() is not None:
+                        del ancestor.getparent()[0]
+                return(d_prot)
         except Exception as e:
             utils.error(str(e))
             raise
@@ -135,39 +127,28 @@ def parse_uniprotkb_xml(xml_input, config):
     from multiprocessing import Value
     counter = Value('i',0)
 
-    db=os.path.splitext(os.path.basename(xml_input))[0]
-    if os.path.exists("{}/uniprotkb_{}/".format(config['temp_folder'], db)):
-        shutil.rmtree("{}/uniprotkb_{}/".format(config['temp_folder'], db))
-    os.makedirs("{}/uniprotkb_{}/".format(config['temp_folder'], db), exist_ok=True)
-    with createDataset('{}/{}_{}'.format(config['download_base_dir'],config['relpath_chocophlan_database'],db)) as choco:
-        if '/uniprotkb' not in choco:
-            choco.create_group('/uniprotkb')
+    db=os.path.splitext(os.path.basename(xml_input))[0].split('.')[0]
 
     if config['verbose']:
         utils.info('Starting processing {} file...\n'.format(xml_input))
     
     tree = etree.iterparse(gzip.GzipFile(xml_input))
+    if(os.path.exists("{}/pickled/idmap.pkl".format(config['download_base_dir']))):
+        idmap=pickle.load(open("{}/pickled/idmap.pkl".format(config['download_base_dir']),'rb'))
+    else:
+        idmap={}
+    
     parse_uniprotkb_xml_elem_partial = partial(parse_uniprotkb_xml_elem, config=config, db=db)
     with mp.Pool(initializer=init_parse, initargs=(terminating, tree,counter,), processes=chunksize) as pool:
         try:
-            counter=0
-            for group in grouper(yield_filtered_xml_string(tree), 10000):
-                counter+=1
-                [_ for _ in pool.imap(parse_uniprotkb_xml_elem_partial, group, chunksize=chunksize)]
-                #if config['verbose']:
-                #    utils.info('Merging {} UniProtKB {} files...\n'.format(counter*10000, db))
-                #with createDataset('{}/{}_{}'.format(config['download_base_dir'],config['relpath_chocophlan_database'],db)) as choco:
-                #    ls = os.listdir("{}/uniprotkb_{}/".format(config['temp_folder'], db))
-                #    r = re.compile("uniprotkb_*.")
-                #    fl = [x for x in filter(r.match, ls)]
-                #    for f in fl:
-                #        f = "{}/uniprotkb_{}/{}".format(config['temp_folder'],db,f)
-                #        with h5py.File(f) as temp:
-                #            protein = list(temp)[0]
-                #            temp.copy('{}'.format(protein), choco['/uniprotkb'])
-                #            os.unlink(f)
-                #if config['verbose']:
-                #    utils.info('Finished merging {} UniProtKB {} files...\n'.format(counter*10000, db))
+            file_chunk = 1
+            for group in grouper(yield_filtered_xml_string(tree), 1000000):
+                d={x['accession']:x for x in pool.imap(parse_uniprotkb_xml_elem_partial, group, chunksize=chunksize) if x is not None}
+                idmap.update(dict.fromkeys(d.keys(), file_chunk))
+                pickle.dump(d, open("{}/pickled/{}_{}.pkl".format(config['download_base_dir'],db, file_chunk),'wb'), -1)
+                file_chunk+=1
+            pickle.dump(idmap, open("{}/pickled/idmap.pkl".format(config['download_base_dir']),'wb'), -1)
+            print(db+str(counter.value))
         except Exception as e:
             utils.error(str(e))
             utils.error('Processing failed',  exit=True)
@@ -175,7 +156,7 @@ def parse_uniprotkb_xml(xml_input, config):
         if config['verbose']:
             utils.info('Done processing {} file!\n'.format(xml_input))
     if config['verbose']:
-        utils.info('Done\n')
+        utils.info('Done processing UniProtKB\n')
 
 def create_proteomes(database, config, verbose = False):
     if verbose:
@@ -254,30 +235,8 @@ def parse_uniref_xml_elem(elem, config):
                             if pro.get('type') == 'UniRef50 ID':
                                 d_uniref['UniRef50'] = pro.get('value')
                 
-            accession = d_uniref['id']
-            #print(counter.value)
-           # with h5py.File("{}/uniref/{}".format(config['temp_folder'],accession)) as database:
-           #     accession = d_uniref['id']
-           #     cluster, pid = accession.split('_')
-           #     cluster = cluster.split('UniRef')[1]
-
-           #     if cluster not in database:
-           #         database.create_group('/{}'.format(cluster))
-           #     if accession not in database['/{}'.format(cluster)]:
-           #         database.create_group('/{}/{}'.format(cluster, accession))
-
-           #     entry = database['/{}/{}'.format(cluster,accession)]
-           #     if 'UniRef100' in d_uniref:
-           #         entry['UniRef100'] = h5py.SoftLink('/uniref/100/{}'.format(d_uniref['UniRef100']))
-           #     if 'UniRef90' in d_uniref:
-           #         entry['UniRef90'] = h5py.SoftLink('/uniref/90/{}'.format(d_uniref['UniRef90']))
-           #     if 'UniRef50' in d_uniref:
-           #         entry['UniRef50'] = h5py.SoftLink('/uniref/50/{}'.format(d_uniref['UniRef50']))
-
-           #     str_len = max([max(len(k),len(v)) for k,v in d_uniref['members']]) 
-           #     members = entry.create_dataset('members', (len(d_uniref['members']),2), dtype = np.dtype('S{}'.format(str_len)))
-           #     members[:] = d_uniref['members']
-
+            return d_uniref
+            
         except Exception as e:
             utils.error(str(e))
             with open("{}/uniref/FAILED".format(config['temp_folder']),'w+') as out:
@@ -286,73 +245,40 @@ def parse_uniref_xml_elem(elem, config):
     else:
         terminating.set()
 
-def create_uniref_dataset(config):
-    uniprot100_xml = etree.iterparse(gzip.GzipFile(config['download_base_dir']+config['relpath_uniref100']))
-    uniprot90_xml = etree.iterparse(gzip.GzipFile(config['download_base_dir']+config['relpath_uniref90']))
-    uniprot50_xml = etree.iterparse(gzip.GzipFile(config['download_base_dir']+config['relpath_uniref50']))
+def create_uniref_dataset(xml, config):
+    uniref_xml = etree.iterparse(gzip.GzipFile(xml))
     
     terminating = mp.Event()
     chunksize = config['nproc']
-    uniprot_entries=[]
     from multiprocessing import Value
     counter = Value('i',0)
+    cluster = os.path.basename(xml).split('.')[0]
 
-    with createDataset("{}/{}_uniref".format(config['download_base_dir'],config['relpath_chocophlan_database'])) as choco:
-        if 'uniref' not in choco:
-            choco.create_group('/uniref')
-        if '/uniref/100' not in choco:
-            choco.create_group('/uniref/100')
-        if '/uniref/90' not in choco:
-            choco.create_group('/uniref/90')
-        if '/uniref/50' not in choco:
-            choco.create_group('/uniref/50')
+    if(os.path.exists("{}/pickled/{}_idmap.pkl".format(config['download_base_dir'], cluster))):
+        idmap=pickle.load(open("{}/pickled/{}_idmap.pkl".format(config['download_base_dir'],cluster), 'rb'))
+    else:
+        idmap={}
 
-    if os.path.exists("{}/uniref".format(config['temp_folder'])):
-        shutil.rmtree("{}/uniref".format(config['temp_folder']))
-    os.makedirs("{}/uniref/".format(config['temp_folder']),exist_ok = True)
-    
-    for tree in [uniprot100_xml, uniprot50_xml, uniprot90_xml]:
-        with mp.Pool(initializer=init_parse, initargs=(terminating, tree,counter,), processes=chunksize) as pool:
-            try:
-                if config['verbose']:
-                    utils.info("Starting processing UniRef database\n")
-                parse_uniref_xml_elem_partial = partial(parse_uniref_xml_elem, config=config)
-                counter =0 
-                for group in grouper(yield_filtered_xml_string(tree), 10000):
-                    counter+=1
-                    [_ for _ in pool.imap(parse_uniref_xml_elem_partial, group, chunksize= chunksize)]
-                    #if config['verbose']:
-                    #    utils.info('Merging {} UniRef files...\n'.format(counter*10000))
-                    #with createDataset("{}/{}_uniref".format(config['download_base_dir'],config['relpath_chocophlan_database'])) as choco:
-                    #    ls = os.listdir("{}/uniref/".format(config['temp_folder']))
-                    #    r = re.compile("UniRef*.")
-                    #    fl = [x for x in filter(r.match, ls)]
-                    #    for f in fl:
-                    #        f_path= "{}/uniref/{}".format(config['temp_folder'],f)
-                    #        with h5py.File(f_path) as temp:
-                    #            cluster = list(temp)[0]
-                    #            entry = list(temp[cluster])[0]
-                    #            if f in choco['/uniref/{}'.format(cluster)]:
-                    #                del choco['/uniref/{}/{}'.format(cluster, f)]
-                    #            temp.copy('{}/{}'.format(cluster,entry), choco['/uniref/{}'.format(cluster)])
-                    #            os.unlink(f_path)
-                    #if config['verbose']:
-                    #    utils.info("Done\n")
-            except Exception as e:
-                utils.error(str(e))
-                raise
-        if config['verbose']:
-            utils.info('Done\n')
+    file_chunk = 1
+    with mp.Pool(initializer=init_parse, initargs=(terminating, uniref_xml, counter,), processes=chunksize) as pool:
+        try:
+            if config['verbose']:
+                utils.info("Starting processing UniRef {} database\n".format(cluster))
+            parse_uniref_xml_elem_partial = partial(parse_uniref_xml_elem, config=config)
+            for group in grouper(yield_filtered_xml_string(uniref_xml), 1000000):
+                d={x['id']:x for x in pool.imap(parse_uniref_xml_elem_partial, group, chunksize=chunksize) if x is not None}
+                pickle.dump(d, open("{}/pickled/{}_{}.pkl".format(config['download_base_dir'],cluster, file_chunk),'wb'), -1)
+                idmap.update(dict.fromkeys(d.keys(), file_chunk))
+
+                file_chunk+=1
+
+        except Exception as e:
+            utils.error(str(e))
+            raise
+    pickle.dump(idmap, open("{}/pickled/{}_idmap.pkl".format(config['download_base_dir'],cluster),'wb'), -1)
     if config['verbose']:
-        utils.info('UniRef database processed successfully.\n')
+        utils.info('UniRef {} database processed successfully.\n'.format(cluster))
 
-#def link_database():
-#    # Keep all hdf5 files (2 for UniProtKB and 1 UniRef) separated and crete a new file that soft links all of them
-#    with createDataset("{}/{}_uniref".format(config['download_base_dir'],config['relpath_chocophlan_database'])) as choco:
-#    with createDataset("{}/{}".format(config['download_base_dir'],config['relpath_chocophlan_database'])) as choco:
-#        choco['uniref'] = h5py.ExternalLink("{{}_uniref".format(config['relpath_chocophlan_database']), '/uniref')
-#    with createDataset("{}/{}_uniprot_trembl.xml".format(config['download_base_dir'],config['relpath_chocophlan_database'])) as choco:
-#    with createDataset("{}/{}_uniprot_sprot.xml".format(config['download_base_dir'],config['relpath_chocophlan_database'])) as choco:
          
 
 if __name__ == '__main__':
@@ -364,9 +290,14 @@ if __name__ == '__main__':
     config = utils.check_configs(config)
     config = config['process_proteomes']
 
-    processes = [mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_sprot'], config,)),
-                 mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_trembl'], config,)),
-                 mp.Process(target=create_uniref_dataset, args=(config,))
+    #parse_uniprotkb_xml(config['download_base_dir']+config['relpath_uniprot_sprot'], config)
+#    parse_uniprotkb_xml(config['download_base_dir']+config['relpath_uniprot_trembl'], config)
+    processes = [#mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_sprot'], config,)),
+    #             mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_trembl'], config,)),
+                 mp.Process(target=create_uniref_dataset, args=(config['download_base_dir']+config['relpath_uniref100'],config,)),
+                 mp.Process(target=create_uniref_dataset, args=(config['download_base_dir']+config['relpath_uniref90'],config,)),
+                 mp.Process(target=create_uniref_dataset, args=(config['download_base_dir']+config['relpath_uniref50'],config,)),
+
                 ]
 
     for p in processes:
@@ -375,7 +306,7 @@ if __name__ == '__main__':
     for p in processes:
         p.join()
 
-        #create_proteomes(choco,config)
+    #    #create_proteomes(choco,config)
     t1=time.time()
 
     utils.info('Total elapsed time {}s\n'.format(float(t1 - t0)))
