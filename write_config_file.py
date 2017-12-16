@@ -102,6 +102,10 @@ def read_params():
     group.add_argument('--relpath_pickle_taxontree',
                        default='/pickled/taxontree.pkl',
                        help='')
+    group.add_argument('--relpath_pickle_proteomes',
+                       default='/pickled/proteomes.pkl',
+                       help='')
+    
     group.add_argument('--relpath_pickle_contigid_filename',
                        default='/pickled/contigid_filename.pkl',
                        help='')
@@ -209,8 +213,12 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.relpath_uniref90)
     configparser_object.set('process_proteomes', 'relpath_uniref50',
                             args.relpath_uniref50)
+    configparser_object.set('process_proteomes', 'relpath_pickle_proteomes',
+                            args.relpath_pickle_proteomes)
     configparser_object.set('process_proteomes', 'temp_folder',
                             args.temp_folder)
+    configparser_object.set('process_proteomes', 'relpath_pickle_taxontree',
+                            args.relpath_pickle_taxontree)
 
     configparser_object.set('process_proteomes', 'verbose', str(verbose))
     configparser_object.set('process_proteomes', 'nproc', str(args.nproc))
