@@ -69,16 +69,16 @@ def download(config, verbose=False):
     # TODO: MD5 checksum testing! UNIREF: Check .metalink file with size, md5
     # TODO: The refseq catalogue needs to have the version included in its name!
 
-        os.makedirs(config['download_base_dir']+config['relpath_uniref100'], exist_ok=True)
-        os.makedirs(config['download_base_dir']+os.path.split(config['relpath_taxdump'])[0], exist_ok=True)
-        os.makedirs(config['download_base_dir']+os.path.split(config['relpath_taxonomic_catalogue'])[0], exist_ok=True)
-        os.makedirs(config['download_base_dir']+config['refseq_bacterial_genomes'], exist_ok=True)
-        os.makedirs(config['download_base_dir']+os.path.split(config['relpath_uniprot_trembl'])[0], exist_ok=True)
+    os.makedirs(config['download_base_dir']+config['relpath_uniref100'], exist_ok=True)
+    os.makedirs(config['download_base_dir']+os.path.split(config['relpath_taxdump'])[0], exist_ok=True)
+    os.makedirs(config['download_base_dir']+os.path.split(config['relpath_taxonomic_catalogue'])[0], exist_ok=True)
+    os.makedirs(config['download_base_dir']+config['refseq_bacterial_genomes'], exist_ok=True)
+    os.makedirs(config['download_base_dir']+os.path.split(config['relpath_uniprot_trembl'])[0], exist_ok=True)
 
     ### uniprot XML ###
     argument_list = [(config['uniprot_ftp_base'],
-                      config['uniprot_uniref100'],
-                      config['download_base_dir'] + config['relpath_uniref100'])]
+                    config['uniprot_uniref100'],
+                    config['download_base_dir'] + config['relpath_uniref100'])]
     
     argument_list.append((config['uniprot_ftp_base'],
                           os.path.split(config['uniprot_uniref100'])[0] + "/RELEASE.metalink",

@@ -9,8 +9,10 @@ __date__ = '7 Nov 2017'
 
 if __name__ == '__main__':
     import utils
+    import extract
 else:
     import src.utils as utils
+    import src.extract as extract
 import os
 import gzip
 import pickle
@@ -212,14 +214,20 @@ def create_proteomes(config, verbose = False):
         utils.info('Done\n')
 
 def annotate_taxon_tree(config):
-    #proteomes = pickle.load(open("{}/{}".format(config['download_base_dir'],config['relpath_pickle_proteomes']),'rb'))
-    f=open("{}/{}".format(config['download_base_dir'],config['relpath_pickle_taxontree']),'rb')
-    taxontree = pickle.load(f)
+    proteomes = pickle.load(open("{}/{}".format(config['download_base_dir'],config['relpath_pickle_proteomes']),'rb'))
+    taxontree = pickle.load(open("{}/{}".format(config['download_base_dir'],config['relpath_pickle_taxontree']),'rb'))
+    taxids = extract.Nodes.lookup_by_taxid(taxontree) 
+    i=0
+    l=len(proteomes)
     for protid, v in proteomes.items():
+        i+=1
         taxid = v['tax_id']
-        clade = [x for x in taxontree.tree.find_elements(tax_id=int(taxid))][0]
-        clade.proteome = protid
-
+        try:
+            clade = taxids[int(taxid)]
+            clade.proteome = protid
+        except:
+            continue
+        print("{}/{}".format(i,l))
     pickle.dump(taxontree, open('{}{}'.format(config['download_base_dir'],config['relpath_pickle_taxontree']),'wb'))
 
 def parse_uniref_xml_elem(elem, config):
@@ -299,8 +307,6 @@ def create_uniref_dataset(xml, config):
     if config['verbose']:
         utils.info('UniRef {} database processed successfully.\n'.format(cluster))
 
-
-
 if __name__ == '__main__':
     t0=time.time()
     args = utils.read_params()
@@ -310,20 +316,21 @@ if __name__ == '__main__':
     config = utils.check_configs(config)
     config = config['process_proteomes']
     annotate_taxon_tree(config)
-   # processes = [mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_sprot'], config,)),
-   #              mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_trembl'], config,)),
-   #              mp.Process(target=create_uniref_dataset, args=(config['download_base_dir']+config['relpath_uniref100'],config,)),
-   #              mp.Process(target=create_uniref_dataset, args=(config['download_base_dir']+config['relpath_uniref90'],config,)),
-   #              mp.Process(target=create_uniref_dataset, args=(config['download_base_dir']+config['relpath_uniref50'],config,)),
-   #             ]
+    processes = [mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_sprot'], config,)),
+                 mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_trembl'], config,)),
+                 mp.Process(target=create_uniref_dataset, args=(config['download_base_dir']+config['relpath_uniref100'],config,)),
+                 mp.Process(target=create_uniref_dataset, args=(config['download_base_dir']+config['relpath_uniref90'],config,)),
+                 mp.Process(target=create_uniref_dataset, args=(config['download_base_dir']+config['relpath_uniref50'],config,)),
+                ]
 
-   # for p in processes:
-   #     p.start()
+    for p in processes:
+        p.start()
 
-   # for p in processes:
-   #     p.join()
+    for p in processes:
+        p.join()
 
-   # create_proteomes(config)
+    create_proteomes(config)
+    annotate_taxon_tree(config)
     t1=time.time()
 
     utils.info('Total elapsed time {}s\n'.format(float(t1 - t0)))

@@ -16,7 +16,7 @@ __version__ = '0.01'
 __date__ = '22 Oct 2017'
 
 if __name__ == '__main__':
-    import utils
+    import utils   
 else:
     import src.utils as utils
 import time
@@ -142,6 +142,15 @@ class Nodes:
         clade.clades = [c for c in clade.clades if 'plasmid' not in c.name]
         for c in clade.clades:
             self.remove_plasmids(c)
+
+    def lookup_by_taxid(self):
+        taxid={}
+        for clade in self.tree.find_clades():
+            if clade.tax_id:
+                if clade.tax_id in taxid:
+                    raise ValueError("Duplicate key: %s" % clade.tax_id)
+                taxid[clade.tax_id] = clade
+        return taxid
 
     def determine_initial_leaves(self, clade=None):
         if not clade:

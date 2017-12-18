@@ -11,6 +11,7 @@ __date__ = '28 Sep 2017'
 
 import src.utils as utils
 import src.download as download
+import src.process_proteomes as process_proteomes
 import time
 import sys
 
@@ -22,14 +23,13 @@ def chocophlan():
     config = utils.read_configs(args.config_file, verbose=args.verbose)
     config = utils.check_configs(config, verbose=args.verbose)
 
-    download.download(config['download'], verbose=args.verbose)
+    #download.download(config['download'], verbose=args.verbose)
     # ADD EXTRACT WHEN READY
-
+    process_proteomes.annotate_taxon_tree(config['process_proteomes'])
 
 if __name__ == '__main__':
     t0 = time.time()
     chocophlan()
     t1 = time.time()
-    utils.info('Total elapsed time {}s\n'.format(int(t1 - t0)),
-               init_new_line=True)
+    utils.info('Total elapsed time {}s\n'.format(int(t1 - t0)))
     sys.exit(0)
