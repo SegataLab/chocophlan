@@ -41,9 +41,7 @@ def do_download(inputs, verbose):
             ftp.login()
 
             dir_path = os.path.dirname(output_path)
-
-            if not os.path.isdir(dir_path):
-                os.makedirs(dir_path)
+            os.makedirs(dir_path, exist_ok=True)
 
             if not os.path.exists(output_path):
                 with open(output_path, "wb") as fileout:
@@ -57,6 +55,9 @@ def do_download(inputs, verbose):
                     utils.info("File {} already present\n".format(output_path))
         except Exception as e:
             terminating.set()
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+            print(exc_type, fname, exc_tb.tb_lineno)
 #            utils.remove_file(output_path)
             utils.error(str(e))
             #utils.error('Download failed for\n    {}'.format(full_link))
@@ -69,10 +70,9 @@ def download(config, verbose=False):
     # TODO: MD5 checksum testing! UNIREF: Check .metalink file with size, md5
     # TODO: The refseq catalogue needs to have the version included in its name!
 
-    os.makedirs(config['download_base_dir']+config['relpath_uniref100'], exist_ok=True)
+    os.makedirs(config['download_base_dir']+os.path.split(config['relpath_uniref100'])[0], exist_ok=True)
     os.makedirs(config['download_base_dir']+os.path.split(config['relpath_taxdump'])[0], exist_ok=True)
     os.makedirs(config['download_base_dir']+os.path.split(config['relpath_taxonomic_catalogue'])[0], exist_ok=True)
-    os.makedirs(config['download_base_dir']+config['refseq_bacterial_genomes'], exist_ok=True)
     os.makedirs(config['download_base_dir']+os.path.split(config['relpath_uniprot_trembl'])[0], exist_ok=True)
 
     ### uniprot XML ###
@@ -112,23 +112,27 @@ def download(config, verbose=False):
                           os.path.split(config['uniprot_sprot'])[0] + "/RELEASE.metalink",
                           config['download_base_dir'] + os.path.split(config['relpath_uniprot_sprot'])[0] + "/RELEASE.metalink"))
 
-
     ### Bacterial refseq genomes ###
     ftp = ftplib.FTP(config['refseq_ftp_base'])
     ftp.login()
     ftp.cwd(config['refseq_bacterial_genomes'])
     ls = ftp.nlst()
-    ftp.quit()
     argument_list += [(config['refseq_ftp_base'],
                        '/'.join([config['refseq_bacterial_genomes'], entry]),
                        '/'.join([config['download_base_dir'], config['relpath_bacterial_genomes'],
                                  entry]))
                       for entry in ls if "genomic.fna.gz" in entry]
+
+    ftp.cwd(config['refseq_taxonomic_catalogue'])
+    ls = ftp.nlst()
+    ftp.quit()
+    r = re.compile('RefSeq-release.*.catalog.gz')
+    catalog = list(filter(r.match, ls))[0]
+
     ### RefSeq catalogue ###
     argument_list.append((config['refseq_ftp_base'],
-                          config['refseq_taxonomic_catalogue'],
-                          config['download_base_dir'] + config['relpath_taxonomic_catalogue']))
-
+                          config['refseq_taxonomic_catalogue']+'/'+catalog,
+                          config['download_base_dir'] + config['relpath_taxonomic_catalogue']+'/'+catalog))
     ### Refseq taxdump ###
     argument_list.append((config['refseq_ftp_base'],
                           config['refseq_taxdump'],
@@ -147,7 +151,7 @@ def download(config, verbose=False):
     for f in ref_prot:
         argument_list.append((config['uniprot_ftp_base'],
                           "{}/{}".format(config['uniprot_reference_proteomes'],f),
-                          config['download_base_dir'] + config['relpath_reference_proteomes']))
+                          '{}{}/{}'.format(config['download_base_dir'],config['relpath_reference_proteomes'],f)))
     ### Pan proteome download ###
    # ftp = ftplib.FTP(config['uniprot_ftp_base'])
    # ftp.login()
@@ -163,8 +167,8 @@ def download(config, verbose=False):
     
     terminating = mp.Event()
     chunksize = math.floor(len(argument_list) / (int(config['nproc']) * 2))
-    with mp.Pool(initializer=initt, initargs=(terminating,),
-                 processes=chunksize) as pool:
+    chunksize = 2
+    with mp.Pool(initializer=initt, initargs=(terminating,), processes=chunksize) as pool:
         try:
             if verbose:
                 utils.info("Starting parallel download\n")
@@ -181,7 +185,7 @@ def download(config, verbose=False):
 
     if verbose:
         utils.info('Download succesful\n')
-    
+    return 
     files_to_check = [(config['download_base_dir'] + config['relpath_uniref100'], config['download_base_dir'] + os.path.split(config['relpath_uniref100'])[0] + "/RELEASE_100.metalink"),
     (config['download_base_dir'] + config['relpath_uniref90'], config['download_base_dir'] + os.path.split(config['relpath_uniref90'])[0] + "/RELEASE_90.metalink"),
     (config['download_base_dir'] + config['relpath_uniref50'], config['download_base_dir'] + os.path.split(config['relpath_uniref50'])[0] + "/RELEASE_50.metalink"),

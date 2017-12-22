@@ -25,7 +25,7 @@ def chocophlan():
 
     #download.download(config['download'], verbose=args.verbose)
     # ADD EXTRACT WHEN READY
-    process_proteomes.annotate_taxon_tree(config['process_proteomes'])
+    process_proteomes.process_proteomes(config['process_proteomes'])
 
 if __name__ == '__main__':
     t0 = time.time()

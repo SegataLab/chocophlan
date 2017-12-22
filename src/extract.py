@@ -1,3 +1,4 @@
+#! /usr/bin/env python3
 # 20171006: This script takes as input the downloaded refseq/uniprot files
 # and extracts information in such a manner that it can be conveniently
 # accessed.
@@ -6,10 +7,8 @@
 # (i.e. species), we create a contig_ID to tax_ID mapping from the refseq
 # catalogue file. We then read the bacterial genome files (data/refseq/genomes/*),
 #  use the contig_ID to tax_ID mapping to write contig sequences to tax_ID files.
-
-
-__author__ = ('Nicola Segata (nicola.segata@unitn.it), '
-              'Francesco Beghini (francesco.beghini@unitn.it)'
+__author__ = ('Nicola Segata (nicola.segata@unitn.it),'
+              'Francesco Beghini (francesco.beghini@unitn.it),'
               'Nicolai Karcher (karchern@gmail.com),'
               'Francesco Asnicar (f.asnicar@unitn.it)')
 __version__ = '0.01'
@@ -27,6 +26,7 @@ import re
 import copy
 import gzip
 import pickle
+import glob
 from collections import defaultdict
 from Bio import Phylo
 from Bio import SeqIO
@@ -417,9 +417,8 @@ class Names:
 
 def do_extraction(config, verbose=False):
     taxdump_dir = config['download_base_dir'] + config['relpath_taxdump']
-    catalogue_dir = config['download_base_dir'] + config['relpath_taxonomic_catalogue']
+    catalogue_dir = glob.glob('{}/{}/RefSeq-release*.catalog.gz'.format(config['download_base_dir'], config['relpath_taxonomic_catalogue']))[0]
     genomes_dir = config['download_base_dir'] + config['relpath_bacterial_genomes']
-
 
     taxid_contigid_dict = map_taxid_to_contigid(catalogue_dir)
     pickle.dump(taxid_contigid_dict,

@@ -25,16 +25,11 @@ import sys
 import shutil
 from itertools import zip_longest
 from lxml import etree
-from Bio import SeqIO
-from Bio.SeqRecord import SeqRecord
-from Bio.Seq import Seq
-from Bio.Phylo.BaseTree import Clade as BClade
-from Bio.Phylo.BaseTree import Tree as BTree
 from functools import partial
 
 kingdom_to_process = ['Bacteria','Archaea']
-dbReference = ['GeneID','Proteomes']
-#dbReference = ['EMBL','Ensembl','GeneID','GO','KEGG','KO','Pfam','Refseq','Proteomes']
+#dbReference = ['GeneID','Proteomes']
+dbReference = ['EMBL','EnsemblBacteria','GeneID','GO','KEGG','KO','Pfam','Refseq','Proteomes']
 
 def filt(e):
     return ('end' in e[0]) and ('entry' in e[1].tag)
@@ -70,16 +65,29 @@ def init_parse(terminating_, tree_,counter_):
     global counter
     counter = counter_
 
-def parse_uniprotkb_xml_elem(elem, config, db):
+
+# UniProtKB elemtes are mapped in a int-based id tuple
+#  0 accession
+#  1 taxid
+#  2 sequence
+#  3 RefSeq
+#  4 Proteomes
+#  5 EMBL
+#  6 Ensembl
+#  7 GeneID
+#  8 GO
+#  9 KO
+# 10 KEGG
+# 11 Pfam
+def parse_uniprotkb_xml_elem(elem, config):
     if not terminating.is_set() and elem is not None:
-        tag_to_parse = ['accession','name','dbReference','sequence','organism','sequence']
+        tag_to_parse = ['accession','dbReference','sequence','organism','sequence']
         try:
             d_prot = {}
             sequence = ''
             elem = etree.fromstring(elem)
             org = [x for x in elem.iterchildren('{http://uniprot.org/uniprot}organism')][0]
             kingdom = [x for x in org.iterchildren('{http://uniprot.org/uniprot}lineage')][0].getchildren()[0].text
-            proteome = [x.get("value") for x in elem.iterchildren('{http://uniprot.org/uniprot}dbReference') if x.get('id') == "Proteomes" ]
             
             if kingdom in kingdom_to_process:
                 global counter
@@ -87,27 +95,36 @@ def parse_uniprotkb_xml_elem(elem, config, db):
                     counter.value += 1
                 for children in tag_to_parse:
                     tag_children = '{http://uniprot.org/uniprot}'+children
-                    if children == 'sequence':
-                        sequence = [x for x in elem.iterchildren(tag=tag_children)][0].text
-                    if children == 'name' or children == 'accession':
+                    if children == 'name' or children == 'accession' or children == 'sequence':
                         d_prot[children] = [x for x in elem.iterchildren(tag=tag_children)][0].text
                     if children == 'organism':
                         org = [x for x in elem.iterchildren(tag_children)][0]
-                        d_prot['tax_id'] = [x.get('id') for x in org.iterchildren(tag='{http://uniprot.org/uniprot}dbReference')][0]
+                        d_prot['tax_id'] = int([x.get('id') for x in org.iterchildren(tag='{http://uniprot.org/uniprot}dbReference')][0])
                     if children == 'dbReference':
-                        if children not in d_prot:
-                            d_prot[children] = {}
                         for ref in elem.iterchildren(tag=tag_children):
                             if ref.get('type') in dbReference:
-                                if ref.get('type') not in d_prot[children]:
-                                    d_prot[children][ref.get('type')] = []
-                                d_prot[children][ref.get('type')].append(ref.get('id'))
+                                if ref.get('type') not in d_prot:
+                                    d_prot[ref.get('type')] = []
+                                d_prot[ref.get('type')].append(ref.get('id'))
                 elem.clear()
                 
+                t_prot = (d_prot.get('accession'),  #0
+                          d_prot.get('taxid'),      #1
+                          d_prot.get('sequence'),   #2
+                          d_prot.get('Refseq'),     #3
+                          int(d_prot.get('Proteomes')[2:]),  #4 UP000005640
+                          d_prot.get('EMBL'),       #5
+                          d_prot.get('EnsemblBacteria'),    #6
+                          d_prot.get('GeneID'),     #7
+                          d_prot.get('GO'),         #8
+                          int(d_prot.get('KO')[2:]),         #9 K09972
+                          d_prot.get('KEGG'),       #10
+                          d_prot.get('Pfam')        #11
+                         )
                 for ancestor in elem.xpath('ancestor-or-self::*'):
                     while ancestor.getprevious() is not None:
                         del ancestor.getparent()[0]
-                return(d_prot)
+                return(t_prot)
         except Exception as e:
             utils.error(str(e))
             raise
@@ -116,7 +133,7 @@ def parse_uniprotkb_xml_elem(elem, config, db):
     
 def parse_uniprotkb_xml(xml_input, config):
     terminating = mp.Event()
-    chunksize = config['nproc']
+    chunksize = int(config['nproc'])
     from multiprocessing import Value
     counter = Value('i',0)
 
@@ -131,12 +148,13 @@ def parse_uniprotkb_xml(xml_input, config):
     else:
         idmap={}
     
-    parse_uniprotkb_xml_elem_partial = partial(parse_uniprotkb_xml_elem, config=config, db=db)
+    parse_uniprotkb_xml_elem_partial = partial(parse_uniprotkb_xml_elem, config=config)
+    print(chunksize)
     with mp.Pool(initializer=init_parse, initargs=(terminating, tree,counter,), processes=chunksize) as pool:
         try:
             file_chunk = 1
-            for group in grouCper(yield_filtered_xml_string(tree), 1000000):
-                d={x['accession']:x for x in pool.imap(parse_uniprotkb_xml_elem_partial, group, chunksize=chunksize) if x is not None}
+            for group in grouper(yield_filtered_xml_string(tree), 1000000):
+                d={x[0]:x for x in pool.imap(parse_uniprotkb_xml_elem_partial, group, chunksize=chunksize) if x is not None}
                 idmap.update(dict.fromkeys(d.keys(), "{}_{}".format(db,file_chunk)))
                 pickle.dump(d, open("{}/pickled/{}_{}.pkl".format(config['download_base_dir'],db, file_chunk),'wb'), -1)
                 file_chunk+=1
@@ -150,13 +168,18 @@ def parse_uniprotkb_xml(xml_input, config):
     if config['verbose']:
         utils.info('Done processing UniProtKB\n')
 
+def get_uniprotkb_entry(config, accession):
+    idmap = pickle.load(open("{}/pickled/uniprotkb_idmap.pkl".format(config['download_base_dir']),'rb'))
+    fn = self.idmap[accession]
+    chunk = pickle.load(open('uniprot_{}.pkl','rb'))
+
 def process(f):
     if not terminating.is_set():
         x = pickle.load(open(f,'rb'))
         d_proteome = {}
         for k,v in x.items():
-            if 'Proteomes' in v['dbReference']: 
-                proteomes = v['dbReference']['Proteomes']
+            if 'Proteomes' in v: 
+                proteomes = v['Proteomes']
                 accession = k
                 taxid = v['tax_id']
                 for proteome in proteomes:
@@ -246,7 +269,7 @@ def parse_uniref_xml_elem(elem, config):
                 if tag == 'property':
                     for pro in elem.iterchildren(tag_children):
                         if pro.get('type') == 'common taxon ID':
-                            d_uniref['common_taxid'] = pro.get('value')
+                            d_uniref['common_taxid'] = int(pro.get('value'))
                 if tag == 'representativeMember' or tag == 'member':
                     member = [x for x in elem.iterchildren(tag_children)]
                     properties = [x.iterchildren('{http://uniprot.org/uniref}property') for y in member for x in y.iterchildren('{http://uniprot.org/uniref}dbReference')]
@@ -254,14 +277,14 @@ def parse_uniref_xml_elem(elem, config):
                         for pro in p:
                             if pro.get('type') == 'UniProtKB accession':
                                 accession = pro.get('value')
-                                isRepr = b"True" if tag == 'representativeMember' else b"False"
+                                isRepr = True if tag == 'representativeMember' else False
                                 d_uniref['members'].append((accession,isRepr))
                             if pro.get('type') == 'UniRef100 ID':
-                                d_uniref['UniRef100'] = pro.get('value')
+                                d_uniref['UniRef100'] = pro.get('value')[10:]
                             if pro.get('type') == 'UniRef90 ID':
-                                d_uniref['UniRef90'] = pro.get('value')
+                                d_uniref['UniRef90'] = pro.get('value')[9:]
                             if pro.get('type') == 'UniRef50 ID':
-                                d_uniref['UniRef50'] = pro.get('value')
+                                d_uniref['UniRef50'] = pro.get('value')[9:]
                 
             return d_uniref
             
@@ -307,20 +330,16 @@ def create_uniref_dataset(xml, config):
     if config['verbose']:
         utils.info('UniRef {} database processed successfully.\n'.format(cluster))
 
-if __name__ == '__main__':
-    t0=time.time()
-    args = utils.read_params()
-    utils.check_params(args, verbose=args.verbose)
+def unirefkb2uniprot():
+        return 
 
-    config = utils.read_configs(args.config_file, verbose=args.verbose)
-    config = utils.check_configs(config)
-    config = config['process_proteomes']
-    annotate_taxon_tree(config)
-    processes = [mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_sprot'], config,)),
-                 mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_trembl'], config,)),
-                 mp.Process(target=create_uniref_dataset, args=(config['download_base_dir']+config['relpath_uniref100'],config,)),
-                 mp.Process(target=create_uniref_dataset, args=(config['download_base_dir']+config['relpath_uniref90'],config,)),
-                 mp.Process(target=create_uniref_dataset, args=(config['download_base_dir']+config['relpath_uniref50'],config,)),
+def process_proteomes(config):
+    os.makedirs('{}/pickled'.format(config['download_base_dir']), exist_ok=True)
+    processes = [mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_sprot'], config)),
+                 mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_trembl'], config)),
+                 mp.Process(target=create_uniref_dataset, args=(config['download_base_dir']+config['relpath_uniref100'],config)),
+                 mp.Process(target=create_uniref_dataset, args=(config['download_base_dir']+config['relpath_uniref90'],config)),
+                 mp.Process(target=create_uniref_dataset, args=(config['download_base_dir']+config['relpath_uniref50'],config)),
                 ]
 
     for p in processes:
@@ -331,6 +350,16 @@ if __name__ == '__main__':
 
     create_proteomes(config)
     annotate_taxon_tree(config)
+
+if __name__ == '__main__':
+    t0=time.time()
+    args = utils.read_params()
+    utils.check_params(args, verbose=args.verbose)
+    
+    config = utils.read_configs(args.config_file, verbose=args.verbose)
+    config = utils.check_configs(config)
+    config = config['process_proteomes']
+    process_proteomes(config)
     t1=time.time()
 
     utils.info('Total elapsed time {}s\n'.format(float(t1 - t0)))

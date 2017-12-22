@@ -31,8 +31,7 @@ def read_params():
     group.add_argument('--refseq_bacterial_genomes',
                        default='/refseq/release/bacteria')
     group.add_argument('--refseq_taxonomic_catalogue',
-                       default=('/refseq/release/release-catalog/RefSeq-releas'
-                                'e84.catalog.gz'))
+                       default=('/refseq/release/release-catalog/'))
     group.add_argument('--refseq_taxdump',
                        default=('/pub/taxonomy/taxdump.tar.gz'))
 
@@ -68,7 +67,7 @@ def read_params():
                        default='/refseq/genomes',
                        help='Directory for genome files')
     group.add_argument('--relpath_taxonomic_catalogue',
-                       default='/refseq/catalogue/refseq_catalogue.gz',
+                       default='/refseq/catalogue/',
                        help='Directory for refseq catalogue file')
     group.add_argument('--relpath_taxdump',
                        default='/refseq/taxdump/refseq_taxdump.tar.gz',
