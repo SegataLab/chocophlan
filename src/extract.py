@@ -452,15 +452,15 @@ def do_extraction(config, verbose=False):
 def map_taxid_to_contigid(catalogue_file_dir):
     utils.info("Reading and processing catalogue file\n")
 
-    with gzip.open(catalogue_file_dir, 'r') as f:
-        catalogue = f.readlines()
+    with gzip.open(catalogue_file_dir, 'rt', encoding='utf-8') as f:
+        taxids_contigids = [(x[0], x[2] for x in (line.split('\t') for line in f)]
 
+    utils.info("Finished reading catalogue file\n")
     # We need to use the decode method on the file object not only here, but also in the ported RepoPhlAn code
     # (took me 1 or 2 hours to figure this out). Otherwise, it will read in the string in byte format.
     # If you know a more elegant solution to this problem, please lemme know.
-    catalogue = [x.decode('utf-8').strip().split("\t") for x in catalogue]
-    utils.info("Finished reading catalogue file\n")
-    taxids_contigids = [(x[0], x[2]) for x in catalogue]
+#    catalogue = [x.decode('utf-8').strip().split("\t") for x in catalogue]  
+#    taxids_contigids = [(x[0], x[2]) for x in catalogue]
     taxid_contigid_dict = defaultdict(list)
     utils.info("Creating taxid to contigid mapping\n")
 

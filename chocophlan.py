@@ -13,6 +13,7 @@ import src.utils as utils
 import src.download as download
 import src.process_proteomes as process_proteomes
 import time
+from src.extract import Nodes as Nodes
 import sys
 
 

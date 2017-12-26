@@ -111,6 +111,11 @@ def download(config, verbose=False):
     argument_list.append((config['uniprot_ftp_base'],
                           os.path.split(config['uniprot_sprot'])[0] + "/RELEASE.metalink",
                           config['download_base_dir'] + os.path.split(config['relpath_uniprot_sprot'])[0] + "/RELEASE.metalink"))
+    ### idmapping file ###
+    argument_list.append((config['uniprot_ftp_base'],
+                          config['uniprot_idmapping'],
+                          config['download_base_dir'] + config['relpath_idmapping']))
+                          
 
     ### Bacterial refseq genomes ###
     ftp = ftplib.FTP(config['refseq_ftp_base'])
@@ -152,18 +157,6 @@ def download(config, verbose=False):
         argument_list.append((config['uniprot_ftp_base'],
                           "{}/{}".format(config['uniprot_reference_proteomes'],f),
                           '{}{}/{}'.format(config['download_base_dir'],config['relpath_reference_proteomes'],f)))
-    ### Pan proteome download ###
-   # ftp = ftplib.FTP(config['uniprot_ftp_base'])
-   # ftp.login()
-   # ftp.cwd(config['uniprot_pan_proteomes'])
-   # ls = ftp.nlst()
-   # ftp.quit()
-   # argument_list = []
-   # argument_list += [(config['uniprot_ftp_base'],
-   #                    '/'.join([config['uniprot_pan_proteomes'], entry]),
-   #                    '/'.join([config['download_base_dir'], config['relpath_pan_proteomes'],
-   #                             entry]))
-   #                    for entry in ls if "fasta.gz" in entry]
     
     terminating = mp.Event()
     chunksize = math.floor(len(argument_list) / (int(config['nproc']) * 2))
