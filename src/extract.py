@@ -453,7 +453,7 @@ def map_taxid_to_contigid(catalogue_file_dir):
     utils.info("Reading and processing catalogue file\n")
 
     with gzip.open(catalogue_file_dir, 'rt', encoding='utf-8') as f:
-        taxids_contigids = [(x[0], x[2] for x in (line.split('\t') for line in f)]
+        taxids_contigids = [(x[0], x[2]) for x in (line.split('\t') for line in f)]
 
     utils.info("Finished reading catalogue file\n")
     # We need to use the decode method on the file object not only here, but also in the ported RepoPhlAn code
