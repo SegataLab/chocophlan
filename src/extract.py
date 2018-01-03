@@ -420,15 +420,15 @@ def do_extraction(config, verbose=False):
     catalogue_dir = glob.glob('{}/{}/RefSeq-release*.catalog.gz'.format(config['download_base_dir'], config['relpath_taxonomic_catalogue']))[0]
     genomes_dir = config['download_base_dir'] + config['relpath_bacterial_genomes']
 
-    taxid_contigid_dict = map_taxid_to_contigid(catalogue_dir)
-    pickle.dump(taxid_contigid_dict,
-                open(config['download_base_dir'] + config['relpath_pickle_taxid_contigid'], "wb" ))
+    taxid_contigid_dict = map_taxid_to_contigid(catalogue_dir) # TOREM
+    pickle.dump(taxid_contigid_dict,  # TOREM
+                open(config['download_base_dir'] + config['relpath_pickle_taxid_contigid'], "wb" ))  # TOREM
 
-    contigid_to_filename = map_contigid_to_filename(genomes_dir)
-    pickle.dump(contigid_to_filename,
-                open(config['download_base_dir'] + config['relpath_pickle_contigid_filename'], "wb" ))
+    contigid_to_filename = map_contigid_to_filename(genomes_dir)  # TOREM
+    pickle.dump(contigid_to_filename,  # TOREM
+                open(config['download_base_dir'] + config['relpath_pickle_contigid_filename'], "wb" ))  # TOREM
 
-    testrun = extract_contigs_from_taxid(515619, taxid_contigid_dict, contigid_to_filename)
+    testrun = extract_contigs_from_taxid(515619, taxid_contigid_dict, contigid_to_filename)  # TOREM
 
     names_buf, nodes_buf = read_taxdump(taxdump_dir)
 
@@ -440,9 +440,9 @@ def do_extraction(config, verbose=False):
     tax_tree = Nodes(nodes_buf, names.get_tax_ids_to_names())
     utils.info("Finished\n")
 
-    utils.info("Refining tree\n")
-    tax_tree.get_tree_with_reduced_taxonomy()
-    utils.info('Finished postprocessing the taxonomy\n')
+    utils.info("Refining tree\n")    # TOREM
+    tax_tree.get_tree_with_reduced_taxonomy()  # TOREM
+    utils.info('Finished postprocessing the taxonomy\n') # TOREM
 
     utils.info("Pickling tree\n")
     pickle.dump(tax_tree, 
