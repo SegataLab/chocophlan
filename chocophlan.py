@@ -10,8 +10,10 @@ __date__ = '28 Sep 2017'
 
 
 import src.utils as utils
+import src.extract as extract
 import src.download as download
 import src.process_proteomes as process_proteomes
+import src.panproteomes as panproteomes
 import time
 from src.extract import Nodes as Nodes
 import sys
@@ -23,11 +25,11 @@ def chocophlan():
 
     config = utils.read_configs(args.config_file, verbose=args.verbose)
     config = utils.check_configs(config, verbose=args.verbose)
-
     #download.download(config['download'], verbose=args.verbose)
     # ADD EXTRACT WHEN READY
-    process_proteomes.process_proteomes(config['process_proteomes'])
-
+    extract.do_extraction(config['extract'], verbose=config['extract']['verbose'])
+    #process_proteomes.process_proteomes(config['process_proteomes'])
+    panproteomes
 if __name__ == '__main__':
     t0 = time.time()
     chocophlan()

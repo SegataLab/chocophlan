@@ -90,6 +90,11 @@ def read_params():
     group.add_argument('--relpath_reference_proteomes',
                        default='/uniprot/reference_proteomes',
                        help='Directory for the reference proteomes file')
+    
+    group.add_argument('--relpath_panproteomes_dir',
+                       default='/pickled/panproteomes',
+                       help='')
+    
     group.add_argument('--relpath_idmapping',
                        default='/uniprot/idmapping_selected.tab.gz')
     group.add_argument('--relpath_pickle_taxid_contigid',
@@ -104,12 +109,27 @@ def read_params():
     group.add_argument('--relpath_pickle_proteomes',
                        default='/pickled/proteomes.pkl',
                        help='')
+
+    group.add_argument('--relpath_pickle_uniprotkb_idmap',
+                       default='/pickled/uniprotkb_idmap.pkl',
+                       help='')
+
+    group.add_argument('--relpath_pickle_uniprotkb_idmap',
+                       default='/pickled/idmapping.pkl',
+                       help='')
+
+    group.add_argument('--relpath_pickle_uniref100_idmap',
+                       default='/pickled/uniref100_idmap.pkl',
+                       help='')
+    group.add_argument('--relpath_pickle_uniref90_idmap',
+                       default='/pickled/uniref90_idmap.pkl',
+                       help='')
+    group.add_argument('--relpath_pickle_uniref50_idmap',
+                       default='/pickled/uniref50_idmap.pkl',
+                       help='')
     
     group.add_argument('--relpath_pickle_contigid_filename',
                        default='/pickled/contigid_filename.pkl',
-                       help='')
-    group.add_argument('--temp_folder',
-                       default='data/tmp',
                        help='')
 
     group.add_argument('--nproc', default=20,
@@ -214,8 +234,6 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.relpath_uniref50)
     configparser_object.set('process_proteomes', 'relpath_pickle_proteomes',
                             args.relpath_pickle_proteomes)
-    configparser_object.set('process_proteomes', 'temp_folder',
-                            args.temp_folder)
     configparser_object.set('process_proteomes', 'relpath_pickle_taxontree',
                             args.relpath_pickle_taxontree)
 
