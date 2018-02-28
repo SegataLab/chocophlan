@@ -121,13 +121,13 @@ def download(config, verbose=False):
     ### Bacterial refseq genomes ###
     ftp = ftplib.FTP(config['refseq_ftp_base'])
     ftp.login()
-    ftp.cwd(config['refseq_bacterial_genomes'])
-    ls = ftp.nlst()
-    argument_list += [(config['refseq_ftp_base'],
-                       '/'.join([config['refseq_bacterial_genomes'], entry]),
-                       '/'.join([config['download_base_dir'], config['relpath_bacterial_genomes'],
-                                 entry]))
-                      for entry in ls if "genomic.fna.gz" in entry]
+    # ftp.cwd(config['refseq_bacterial_genomes'])
+    # ls = ftp.nlst()
+    # argument_list += [(config['refseq_ftp_base'],
+    #                    '/'.join([config['refseq_bacterial_genomes'], entry]),
+    #                    '/'.join([config['download_base_dir'], config['relpath_bacterial_genomes'],
+    #                              entry]))
+    #                   for entry in ls if "genomic.fna.gz" in entry]
 
     ftp.cwd(config['refseq_taxonomic_catalogue'])
     ls = ftp.nlst()
