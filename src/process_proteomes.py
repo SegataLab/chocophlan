@@ -389,7 +389,7 @@ def create_proteomes(config):
         for k,v in chunk.items():
             if k not in d_proteomes:
                 d_proteomes[k] = {'members' : set(), 'isReference' : False, 'tax_id' : v['tax_id'], 'upi' : v['upi']}
-            d_proteomes[k]['members'].add(v['members'])
+            d_proteomes[k]['members'].update(v['members'])
 
     if config['verbose']:
         utils.info('Done processing\n')
@@ -583,10 +583,8 @@ def process_proteomes(config):
     os.makedirs('{}/pickled'.format(config['download_base_dir']), exist_ok=True)
     step1     = [mp.Process(target=create_uniref_dataset, args=(config['download_base_dir']+config['relpath_uniref100'],config)),
                  mp.Process(target=create_uniref_dataset, args=(config['download_base_dir']+config['relpath_uniref90'],config)),
-                 mp.Process(target=create_uniref_dataset, args=(config['download_base_dir']+config['relpath_uniref50'],config)),
-                 mp.Process(target=parse_uniprotkb_uniref_idmapping, args=(config,))]
-
-    step2     = [mp.Process(target=merge_uniparc_idmapping, args=(config,))]
+                 # mp.Process(target=create_uniref_dataset, args=(config['download_base_dir']+config['relpath_uniref50'],config))
+                ]
 
     step3     = [mp.Process(target=parse_uniparc_xml, args=(config['download_base_dir']+config['relpath_uniparc'],config)),
                  mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_sprot'], config)),
@@ -594,17 +592,14 @@ def process_proteomes(config):
                 ]
                 
 
-    for p in step1:
-       p.start()
+    # for p in step1:
+    #    p.start()
 
-    for p in step1:
-       p.join()
-
-    for p in step2:
-       p.start()
-
-    for p in step2:
-       p.join()
+    # for p in step1:
+    #    p.join()
+    create_uniref_dataset(config['download_base_dir']+config['relpath_uniref50'],config)
+    parse_uniprotkb_uniref_idmapping(config)
+    merge_uniparc_idmapping(config)
 
     for p in step3:
         p.start()

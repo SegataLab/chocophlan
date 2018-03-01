@@ -30,7 +30,8 @@ def init_parse(terminating_):
 class Panproteome:
     ranks = ('superkingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species')
     kingdom_to_process = ('Archaea', 'Bacteria')
-
+    coreness = 0.97
+    
     def __init__(self, config):
         self.uniparc = {}
         try:
@@ -74,13 +75,9 @@ class Panproteome:
         cluster = 0 if cluster == 100 else (1 if cluster == 90 else 2)
         uniref_proteome = set()
         proteome = self.proteomes[proteome_id]['members']
-        # chunks = set(self.uniprotkb_uniref_idmap.get(protein, None) for protein in proteome)
         for protein in proteome:
             uniref_cluster = self.idmapping.get(protein, None)
             if uniref_cluster is None:
-                # chunk = self.uniprotkb_uniref_idmap.get(protein, None)
-                # if chunk is not None:
-                    # uniparc_chunk = pickle.load(open('{}/pickled/uniparc_{}.pkl'.format(self.config['download_base_dir'], chunk),'rb'))
                 urefs = list(set(uref for uref in (self.idmapping.get(upkb) for upkb in self.uniparc.get(protein,['']*7)[6]) if uref is not None))
                 if len(urefs):
                     uniref_cluster = urefs[0][cluster]
@@ -91,21 +88,38 @@ class Panproteome:
         return list(uniref_proteome)
 
     def process_panproteome(self, item_rank):
-        panproteomes = Counter()
-        item, rank, cluster = item_rank
-        # Leaf with proteome, panproteome is the uniref of the proteome
-        if item.initially_terminal:
-            for proteome in item.proteomes:
-                panproteome.update(self.get_uniref_proteome(proteome, cluster))
-        else:
-            proteomes_to_process = self.get_child_proteomes(item)
-            processed_uniprot = {}
-            for proteome in proteomes_to_process:
-                processed_uniprot[proteome] = self.get_uniref_proteome(proteome, cluster)
+        # panproteomes = Counter()
+        # item, rank, cluster = item_rank
+        # # Leaf with proteome, panproteome is the uniref of the proteome
+        # if item.initially_terminal:
+        #     for proteome in item.proteomes:
+        #         panproteome.update(self.get_uniref_proteome(proteome, cluster))
+        # else:
+        #     proteomes_to_process = self.get_child_proteomes(item)
+
+        #     pnaproteome self.proteomes[proteome_id]['members']
+        #     processed_uniprot = {}
+        #     for proteome in proteomes_to_process:
+        #         processed_uniprot[proteome] = self.get_uniref_proteome(proteome, cluster)
             
-            [panproteome.update(pp) for pp in processed_uniprot.values()]
-        if len(panproteome):
-            pickle.dump(panproteome, open('{}/{}/{}/{}/{}.pkl'.format(self.config['download_base_dir'], self.config['relpath_panproteomes_dir'], rank, cluster, item.tax_id),'wb'))
+        #     [panproteomes.update(pp) for pp in processed_uniprot.values()]
+        item, rank, cluster = item_rank
+        proteomes_to_process = self.get_child_proteomes(item)
+        panproteome = set(entry for proteome_id in proteomes_to_process for entry in self.proteomes[proteome_id]['members'])
+        uniref_panproteome = Counter()
+        for protein in panproteome:
+            uniref_cluster = self.idmapping.get(protein, None)
+            if uniref_cluster is None:
+                urefs = list(set(uref for uref in (self.idmapping.get(upkb) for upkb in self.uniparc.get(protein,['']*7)[6]) if uref is not None))
+                if len(urefs):
+                    uniref_cluster = urefs[0][cluster]
+            else:
+                uniref_cluster = self.idmapping[protein][cluster]
+            if uniref_cluster is not None:
+                uniref_panproteome.update([uniref_cluster])
+
+        if len(panproteomes):
+            pickle.dump(panproteomes, open('{}/{}/{}/{}/{}.pkl'.format(self.config['download_base_dir'], self.config['relpath_panproteomes_dir'], rank, cluster, item.tax_id),'wb'))
 
     def create_panproteomes(self, cluster):
         if cluster == 100:
@@ -130,6 +144,16 @@ class Panproteome:
         except Exception as e:
             utils.error(str(e))
             raise
+
+        for cluster in uniref_proteomes.values():
+            panproteome.update(cluster)
+
+        coreness_threshold = round(len(uniref_proteomes) * self.coreness)
+        core_genes = [gene for gene, _ in filter(lambda gene:gene[1] > coreness_threshold, panproteome)]
+        accessory_genes = [gene for gene, _ in filter(lambda gene: gene[1] < coreness_threshold, panproteome)]
+
+    # def coreness(self,panproteome):
+        
 
 def generate_panproteomes(config):
     p = Panproteome(config)

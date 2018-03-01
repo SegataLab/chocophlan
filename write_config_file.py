@@ -53,7 +53,7 @@ def read_params():
                            '/knowledgebase/complete/uniprot_sprot.xml.gz'))
     group.add_argument('--uniprot_trembl',
                        default=('/pub/databases/uniprot/current_release'
-                           '/knowledgebase/complete/uniprot_sprot.xml.gz'))
+                           '/knowledgebase/complete/uniprot_trembl.xml.gz'))
     group.add_argument('--uniprot_idmapping',
                        default=('/pub/databases/uniprot/current_release'
                            '/knowledgebase/idmapping/idmapping_selected.tab.gz'))
