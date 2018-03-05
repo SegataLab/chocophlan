@@ -134,7 +134,7 @@ def read_params():
     group.add_argument('--relpath_pickle_contigid_filename',
                        default='/pickled/contigid_filename.pkl',
                        help='')
-    group.add_argument('--nproc', default=10,
+    group.add_argument('--nproc', default=7,
                        help='Number of parallel processes')
 
     return p.parse_args()

@@ -39,6 +39,11 @@ def grouper(iterable, n, fillvalue=None):
     args = [iter(iterable)] * n
     return zip_longest(*args, fillvalue=fillvalue)
 
+def yield_filtered_xml_string(tree):
+    for _, elem in tree:
+        yield etree.tostring(elem)
+        elem.clear()
+
 def initt(terminating_):
     # This places terminating in the global namespace of the worker subprocesses.
     # This allows the worker function to access `terminating` even though it is
@@ -149,7 +154,6 @@ def parse_uniprotkb_xml_elem(elem, config):
                         del ancestor.getparent()[0]
                 return(t_prot)
         except Exception as e:
-            print(d_prot)
             utils.error(str(e))
             raise
     else:
@@ -177,7 +181,7 @@ def parse_uniprotkb_xml(xml_input, config):
 
     parse_uniprotkb_xml_elem_partial = partial(parse_uniprotkb_xml_elem, config=config)
 
-    for file_chunk, group in enumerate(grouper((etree.tostring(v) for _, v in tree),group_chunk),1):
+    for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(tree), group_chunk),1):
         try:
             with mp.Pool(initializer=initt, initargs=(terminating, ), processes=chunksize) as pool:
                 d={x[0]:x for x in pool.imap_unordered(parse_uniprotkb_xml_elem_partial, group, chunksize=chunksize) if x is not None}
@@ -203,7 +207,7 @@ def parse_uniparc_xml_elem(elem, config, uniprotkb_uniref_idmap):
                 d_prot[children] = [x for x in elem.iterchildren(tag=tag_children)][0].text.replace('\n','')
             if children == 'dbReference':
                 active_entries = [x for x in elem.iterchildren(tag=tag_children) if x.get('active') == 'Y']
-                d_prot['uniprotkb_ids'] = [x.get('id') for x in active_entries if 'UniProtKB' in x.get('type') ]
+                d_prot['uniprotkb_ids'] = list(set(x.get('id') for x in active_entries if 'UniProtKB' in x.get('type')))
                 entry_with_protid = [x for x in active_entries for y in x.iterchildren('{http://uniprot.org/uniparc}property') if y.get('type') == 'proteome_id']
                 d_prot['Proteomes'] = set()
                 for entry in entry_with_protid:
@@ -354,8 +358,10 @@ def process(f):
                     for proteome, taxid in (("UP{}{}".format("0"*(9-len(str(upi))),upi),taxid) for upi, taxid in entry[1]):
                         if proteome not in d_proteome:
                             d_proteome[proteome] = {'members' : [], 'isReference' : False, 'tax_id' : taxid, 'upi' : True}
-                        d_proteome[proteome]['members'].append(entry[0])
+                        if d_proteome[proteome]['upi']:
+                            d_proteome[proteome]['members'].append(entry[0])
         except Exception as e:
+            utils.error(f)
             utils.error(str(e))
             utils.error('Processing failed',  exit=True)
             raise
@@ -506,7 +512,7 @@ def create_uniref_dataset(xml, config):
 
     parse_uniref_xml_elem_partial = partial(parse_uniref_xml_elem, config=config)
 
-    for file_chunk, group in enumerate(grouper((etree.tostring(v) for _, v in uniref_xml),group_chunk),1):
+    for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(uniref_xml), group_chunk),1):
         try:
             with mp.Pool(initializer=init_parse, initargs=(terminating, uniref_xml, None,), processes=chunksize) as pool:
                 d={x[0]:x for x in pool.imap_unordered(parse_uniref_xml_elem_partial, group, chunksize=chunksize) if x is not None}
@@ -583,23 +589,22 @@ def process_proteomes(config):
     os.makedirs('{}/pickled'.format(config['download_base_dir']), exist_ok=True)
     step1     = [mp.Process(target=create_uniref_dataset, args=(config['download_base_dir']+config['relpath_uniref100'],config)),
                  mp.Process(target=create_uniref_dataset, args=(config['download_base_dir']+config['relpath_uniref90'],config)),
-                 # mp.Process(target=create_uniref_dataset, args=(config['download_base_dir']+config['relpath_uniref50'],config))
+                 mp.Process(target=create_uniref_dataset, args=(config['download_base_dir']+config['relpath_uniref50'],config))
                 ]
 
-    step3     = [mp.Process(target=parse_uniparc_xml, args=(config['download_base_dir']+config['relpath_uniparc'],config)),
+    step3     = [#mp.Process(target=parse_uniparc_xml, args=(config['download_base_dir']+config['relpath_uniparc'],config)),
                  mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_sprot'], config)),
                  mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_trembl'], config))
                 ]
                 
 
     # for p in step1:
-    #    p.start()
+    #     p.start()
 
     # for p in step1:
-    #    p.join()
-    create_uniref_dataset(config['download_base_dir']+config['relpath_uniref50'],config)
-    parse_uniprotkb_uniref_idmapping(config)
-    merge_uniparc_idmapping(config)
+    #     p.join()
+    # parse_uniprotkb_uniref_idmapping(config)
+    # merge_uniparc_idmapping(config)
 
     for p in step3:
         p.start()
@@ -607,9 +612,9 @@ def process_proteomes(config):
     for p in step3:
         p.join()
 
-    merge_idmap(config)
-    create_proteomes(config)
-    annotate_taxon_tree(config)
+    # merge_idmap(config)
+    # create_proteomes(config)
+    # annotate_taxon_tree(config)
 
 if __name__ == '__main__':
     t0=time.time()

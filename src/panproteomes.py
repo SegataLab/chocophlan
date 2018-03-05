@@ -88,37 +88,28 @@ class Panproteome:
         return list(uniref_proteome)
 
     def process_panproteome(self, item_rank):
-        # panproteomes = Counter()
-        # item, rank, cluster = item_rank
-        # # Leaf with proteome, panproteome is the uniref of the proteome
-        # if item.initially_terminal:
-        #     for proteome in item.proteomes:
-        #         panproteome.update(self.get_uniref_proteome(proteome, cluster))
-        # else:
-        #     proteomes_to_process = self.get_child_proteomes(item)
-
-        #     pnaproteome self.proteomes[proteome_id]['members']
-        #     processed_uniprot = {}
-        #     for proteome in proteomes_to_process:
-        #         processed_uniprot[proteome] = self.get_uniref_proteome(proteome, cluster)
-            
-        #     [panproteomes.update(pp) for pp in processed_uniprot.values()]
         item, rank, cluster = item_rank
+        cluster = 0 if cluster == 100 else (1 if cluster == 90 else 2)
         proteomes_to_process = self.get_child_proteomes(item)
-        panproteome = set(entry for proteome_id in proteomes_to_process for entry in self.proteomes[proteome_id]['members'])
+        panproteome = Counter(entry for proteome_id in proteomes_to_process for entry in self.proteomes[proteome_id]['members'])
         uniref_panproteome = Counter()
-        for protein in panproteome:
+
+        for protein, count in panproteome.items():
             uniref_cluster = self.idmapping.get(protein, None)
             if uniref_cluster is None:
                 urefs = list(set(uref for uref in (self.idmapping.get(upkb) for upkb in self.uniparc.get(protein,['']*7)[6]) if uref is not None))
                 if len(urefs):
                     uniref_cluster = urefs[0][cluster]
             else:
-                uniref_cluster = self.idmapping[protein][cluster]
+                uniref_cluster = uniref_cluster[cluster]
             if uniref_cluster is not None:
-                uniref_panproteome.update([uniref_cluster])
-
+                if uniref_cluster not in uniref_panproteome:
+                    uniref_panproteome[(uniref_cluster)] = [0,set()]
+                uniref_panproteome[uniref_cluster][0] = uniref_panproteome[uniref_cluster][0] + count
+                uniref_panproteome[uniref_cluster][1].add(protein)
+                # uniref_panproteome.update([uniref_cluster])
         if len(panproteomes):
+            ##ospathjoin
             pickle.dump(panproteomes, open('{}/{}/{}/{}/{}.pkl'.format(self.config['download_base_dir'], self.config['relpath_panproteomes_dir'], rank, cluster, item.tax_id),'wb'))
 
     def create_panproteomes(self, cluster):
