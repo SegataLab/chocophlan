@@ -54,12 +54,15 @@ def read_params():
     group.add_argument('--uniprot_trembl',
                        default=('/pub/databases/uniprot/current_release'
                            '/knowledgebase/complete/uniprot_trembl.xml.gz'))
+    group.add_argument('--uniparc',
+                       default=('/pub/databases/uniprot/current_release'
+                           '/uniparc/uniparc_all.xml.gz'))
     group.add_argument('--uniprot_idmapping',
                        default=('/pub/databases/uniprot/current_release'
                            '/knowledgebase/idmapping/idmapping_selected.tab.gz'))
     group.add_argument('--download_base_dir', default='data/',
                        help='Base directory for raw files to be downloaded to')
-
+    
     group.add_argument('--relpath_chocophlan_database',
                        default='/chocophlan.hdf5',
                        help='')
@@ -166,6 +169,8 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.uniprot_sprot)
     configparser_object.set('download', 'uniprot_trembl',
                             args.uniprot_trembl)
+    configparser_object.set('download', 'uniparc',
+                            args.uniparc)
     configparser_object.set('download', 'download_base_dir',
                             args.download_base_dir)
     configparser_object.set('download', 'relpath_bacterial_genomes',

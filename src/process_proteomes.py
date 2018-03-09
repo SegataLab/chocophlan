@@ -29,9 +29,13 @@ from functools import partial
 
 kingdom_to_process = ['Bacteria','Archaea']
 genus_to_process = ['Candida', 'Blastocystis', 'Saccharomyces']
-#dbReference = ['GeneID','Proteomes']
 dbReference = ['EMBL','EnsemblBacteria','GeneID','GO','KEGG','KO','Pfam','RefSeq','Proteomes']
 group_chunk = 1000000
+
+taxid_to_process = []
+d_taxids = {}
+uniprotkb_uniref_idmap = {}
+
 
 def grouper(iterable, n, fillvalue=None):
     #"Collect data into fixed-length chunks or blocks"
@@ -61,18 +65,19 @@ def init_parse(terminating_, tree_,uniprotkb_uniref_idmap_):
 
 
 def taxon_to_process(config, taxontree):
-    d_ranks = taxontree.lookup_by_rank()
     global taxid_to_process
-    taxid_to_process = []
+    d_ranks = taxontree.lookup_by_rank()
     with open(config['relpath_taxon_to_process'],'rt') as taxa:
         for line in taxa:
             name, rank = line.strip().split('\t')
             taxid_to_process.extend([x.tax_id for x in d_ranks[rank] if name == x.name])
 
-def is_taxon_processable(taxid, taxon_to_process):
-    for x in taxon_to_process:
-        if d_taxids[x].is_parent_of(d_taxids[taxid]):
-            return True
+def is_taxon_processable(tax_id):
+    global taxid_to_process, d_taxids
+    for x in taxid_to_process:
+        if tax_id in d_taxids:
+            if d_taxids[x].is_parent_of(d_taxids[tax_id]):
+                return True
     return False
 
 def uniprot_tuple_to_dict(v):
@@ -108,6 +113,7 @@ def uniprot_tuple_to_dict(v):
 # 11 Pfam
 def parse_uniprotkb_xml_elem(elem, config):
     if not terminating.is_set() and elem is not None:
+        global uniprotkb_uniref_idmap
         tag_to_parse = ['accession','dbReference','sequence','organism','sequence']
         try:
             d_prot = {}
@@ -116,7 +122,7 @@ def parse_uniprotkb_xml_elem(elem, config):
             org = [x for x in elem.iterchildren('{http://uniprot.org/uniprot}organism')][0]
             taxid = int([x.get('id') for x in org.iterchildren(tag='{http://uniprot.org/uniprot}dbReference')][0])
 
-            if is_taxon_processable(taxid,taxid_to_process): #or len([t.text for t in taxon if t.text in genus_to_process]):
+            if is_taxon_processable(taxid): #or len([t.text for t in taxon if t.text in genus_to_process]):
                 for children in tag_to_parse:
                     tag_children = '{http://uniprot.org/uniprot}'+children
                     if children == 'name' or children == 'sequence' or children == 'accession':
@@ -130,7 +136,6 @@ def parse_uniprotkb_xml_elem(elem, config):
                                 if ref.get('type') not in d_prot:
                                     d_prot[ref.get('type')] = []
                                 d_prot[ref.get('type')].append(ref.get('id'))
-
 
                 elem.clear()
                 t_prot = (d_prot.get('accession'),  #0
@@ -172,13 +177,7 @@ def parse_uniprotkb_xml(xml_input, config):
     tree = etree.iterparse(gzip.GzipFile(xml_input), events = ('end',), tag = '{http://uniprot.org/uniprot}entry', huge_tree = True)
 
     idmap = {}
-    global uniprotkb_uniref_idmap
-    uniprotkb_uniref_idmap = pickle.load(open('{}{}'.format(config['download_base_dir'],config['relpath_pickle_uniprotkb_uniref_idmap']),'rb'))
-    taxontree = pickle.load(open("{}/{}".format(config['download_base_dir'],config['relpath_pickle_taxontree']),'rb'))
-    taxon_to_process(config, taxontree)
-    global d_taxids
-    d_taxids = taxontree.lookup_by_taxid()
-
+    d = {}
     parse_uniprotkb_xml_elem_partial = partial(parse_uniprotkb_xml_elem, config=config)
 
     for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(tree), group_chunk),1):
@@ -189,9 +188,12 @@ def parse_uniprotkb_xml(xml_input, config):
             utils.error(str(e))
             utils.error('Processing failed',  exit=True)
             raise
-        idmap.update(dict.fromkeys(d.keys(), db*file_chunk))
-        pickle.dump(d, open("{}/pickled/{}_{}.pkl".format(config['download_base_dir'],db_name, file_chunk),'wb'), -1)
-    pickle.dump(idmap, open("{}/pickled/uniprotkb_{}_idmap.pkl".format(config['download_base_dir'],db_name),'wb'), -1)
+        if len(d):
+            idmap.update(dict.fromkeys(d.keys(), db*file_chunk))
+            pickle.dump(d, open("{}/pickled/{}_{}.pkl".format(config['download_base_dir'],db_name, file_chunk),'wb'), -1)
+
+    if len(idmap):
+        pickle.dump(idmap, open("{}/pickled/uniprotkb_{}_idmap.pkl".format(config['download_base_dir'],db_name),'wb'), -1)
     if config['verbose']:
         utils.info('Done processing {} file!\n'.format(xml_input))
 
@@ -216,7 +218,7 @@ def parse_uniparc_xml_elem(elem, config, uniprotkb_uniref_idmap):
                             proteome_id = int(p.get('value')[2:])
                         elif p.get('type') == 'NCBI_taxonomy_id':
                             tax_id = int(p.get('value'))
-                    if is_taxon_processable(tax_id,taxid_to_process):
+                    if is_taxon_processable(tax_id):
                         d_prot['Proteomes'].add((proteome_id, tax_id))
         elem.clear()
         t_prot = (d_prot.get('accession'),  
@@ -248,14 +250,6 @@ def parse_uniparc_xml(xml_input, config):
     terminating = mp.Event()
     chunksize = config['nproc']*6
 
-    if config['verbose']:
-        utils.info('Loading UniParc-UniRef cross-reference map...\n')
-    t0 = time.time()
-    uniprotkb_uniref_idmap = pickle.load(open('{}{}'.format(config['download_base_dir'],config['relpath_pickle_uniprotkb_uniref_idmap']),'rb'))
-    t1 = time.time()
-    if config['verbose']:
-        utils.info('Cross-reference map loaded in {} seconds\n'.format(int(t1-t0)))
-
     tree = etree.iterparse(gzip.GzipFile(xml_input), events = ('end',), tag = '{http://uniprot.org/uniparc}entry', huge_tree = True)
     idmap = {}
     #parse_uniparc_xml_elem_partial = partial(parse_uniparc_xml_elem, config=config)
@@ -276,8 +270,9 @@ def parse_uniparc_xml(xml_input, config):
         #    utils.error('Processing failed',  exit=True)
         #    raise
             print('{} entry processed.'.format(file_chunk, flush = True))
-            idmap.update(dict.fromkeys(d.keys(), int(file_chunk/1000000)+1000))
-            pickle.dump(d, open("{}/pickled/uniparc_{}.pkl".format(config['download_base_dir'], int(file_chunk/1000000)+1000),'wb'), -1)
+            if len(d):
+                idmap.update(dict.fromkeys(d.keys(), int(file_chunk/1000000)+1000))
+                pickle.dump(d, open("{}/pickled/uniparc_{}.pkl".format(config['download_base_dir'], int(file_chunk/1000000)+1000),'wb'), -1)
             d = []
     pickle.dump(idmap, open("{}/pickled/uniparc_idmap.pkl".format(config['download_base_dir']),'wb'), -1)
     if config['verbose']:
@@ -594,7 +589,7 @@ def process_proteomes(config):
 
     step3     = [#mp.Process(target=parse_uniparc_xml, args=(config['download_base_dir']+config['relpath_uniparc'],config)),
                  mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_sprot'], config)),
-                 mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_trembl'], config))
+                 # mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_trembl'], config))
                 ]
                 
 
@@ -605,6 +600,12 @@ def process_proteomes(config):
     #     p.join()
     # parse_uniprotkb_uniref_idmapping(config)
     # merge_uniparc_idmapping(config)
+    
+    global d_taxids, uniprotkb_uniref_idmap
+    # uniprotkb_uniref_idmap = pickle.load(open('{}{}'.format(config['download_base_dir'],config['relpath_pickle_uniprotkb_uniref_idmap']),'rb'))
+    taxontree = pickle.load(open("{}/{}".format(config['download_base_dir'],config['relpath_pickle_taxontree']),'rb'))
+    d_taxids = taxontree.lookup_by_taxid()
+    taxon_to_process(config, taxontree)
 
     for p in step3:
         p.start()
@@ -614,7 +615,7 @@ def process_proteomes(config):
 
     # merge_idmap(config)
     # create_proteomes(config)
-    # annotate_taxon_tree(config)
+    # annotate_taxon_tree(config)   
 
 if __name__ == '__main__':
     t0=time.time()
