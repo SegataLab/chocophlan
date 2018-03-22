@@ -36,6 +36,10 @@ def read_params():
                        default=('/pub/taxonomy/taxdump.tar.gz'))
 
     group.add_argument('--uniprot_ftp_base', default='ftp.uniprot.org')
+    group.add_argument('--ebi_ftp_base', default='ftp.ebi.ac.uk')
+    group.add_argument('--uniprot_protomes',
+                       default=('/pub/contrib/UniProtKB/'
+                               'Proteome_DS/proteome_ds.xml.gz'))
     group.add_argument('--uniprot_uniref100',
                        default=('/pub/databases/uniprot/current_release/uniref'
                                 '/uniref100/uniref100.xml.gz'))
@@ -63,8 +67,8 @@ def read_params():
     group.add_argument('--download_base_dir', default='data/',
                        help='Base directory for raw files to be downloaded to')
     
-    group.add_argument('--relpath_chocophlan_database',
-                       default='/chocophlan.hdf5',
+    group.add_argument('--relpath_proteomes_xml',
+                       default='/uniprot/proteome_ds.xml.gz',
                        help='')
     group.add_argument('--relpath_bacterial_genomes',
                        default='/refseq/genomes',
@@ -153,6 +157,10 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.refseq_taxonomic_catalogue)
     configparser_object.set('download', 'refseq_taxdump',
                             args.refseq_taxdump)
+    configparser_object.set('download', 'ebi_ftp_base',
+                            args.ebi_ftp_base)
+    configparser_object.set('download', 'uniprot_protomes',
+                            args.uniprot_protomes)
     configparser_object.set('download', 'uniprot_ftp_base',
                             args.uniprot_ftp_base)
     configparser_object.set('download', 'uniprot_uniref100',
@@ -187,6 +195,8 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.relpath_uniref50)
     configparser_object.set('download', 'relpath_reference_proteomes',
                             args.relpath_reference_proteomes)
+    configparser_object.set('download','relpath_proteomes_xml',
+                            args.relpath_proteomes_xml)
     configparser_object.set('download', 'relpath_idmapping',
                             args.relpath_idmapping)
     configparser_object.set('download', 'relpath_uniprot_sprot',
@@ -239,6 +249,8 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.relpath_uniref50)
     configparser_object.set('process_proteomes', 'relpath_uniparc',
                             args.relpath_uniparc)
+    configparser_object.set('process_proteomes','relpath_proteomes_xml',
+                            args.relpath_proteomes_xml)
     configparser_object.set('process_proteomes', 'relpath_pickle_proteomes',
                             args.relpath_pickle_proteomes)
     configparser_object.set('process_proteomes', 'relpath_pickle_taxontree',

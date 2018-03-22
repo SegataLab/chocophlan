@@ -17,12 +17,15 @@ import os
 import gzip
 import pickle
 import re
+# Need to use the threaded version of pool
 import multiprocessing as mp
 import glob
 import time
 import math
 import sys
 import shutil
+import copyreg
+from io import BytesIO
 from itertools import zip_longest
 from lxml import etree
 from functools import partial
@@ -43,6 +46,12 @@ def grouper(iterable, n, fillvalue=None):
     args = [iter(iterable)] * n
     return zip_longest(*args, fillvalue=fillvalue)
 
+def clear_node(elem):
+    elem.clear()
+    for ancestor in elem.xpath('ancestor-or-self::*'):
+        while ancestor.getprevious() is not None:
+            del ancestor.getparent()[0]
+
 def yield_filtered_xml_string(tree):
     for _, elem in tree:
         yield etree.tostring(elem)
@@ -55,30 +64,31 @@ def initt(terminating_):
     global terminating
     terminating = terminating_
 
-def init_parse(terminating_, tree_,uniprotkb_uniref_idmap_):
-    global terminating
-    terminating = terminating_
-    global tree
-    tree = tree_
-    global uniprotkb_uniref_idmap
-    uniprotkb_uniref_idmap = uniprotkb_uniref_idmap_
+def element_unpickler(data):
+   # return etree.parse(BytesIO(data[0]))
+   return etree.fromstring(data.decode())
 
+def element_pickler(tree):
+   return element_unpickler, (etree.tostring(tree),)
+
+copyreg.pickle(etree._Element, element_pickler, element_unpickler)
 
 def taxon_to_process(config, taxontree):
-    global taxid_to_process
+    global taxid_to_process, d_taxids
     d_ranks = taxontree.lookup_by_rank()
+    taxons = []
     with open(config['relpath_taxon_to_process'],'rt') as taxa:
         for line in taxa:
             name, rank = line.strip().split('\t')
-            taxid_to_process.extend([x.tax_id for x in d_ranks[rank] if name == x.name])
+            taxons.extend([x.tax_id for x in d_ranks[rank] if name == x.name])
+
+    
+    [taxid_to_process.extend([x.tax_id for x in d_taxids[t].get_nonterminals()]) for t in taxons]
+    [taxid_to_process.extend([x.tax_id for x in d_taxids[t].get_terminals()]) for t in taxons]
 
 def is_taxon_processable(tax_id):
-    global taxid_to_process, d_taxids
-    for x in taxid_to_process:
-        if tax_id in d_taxids:
-            if d_taxids[x].is_parent_of(d_taxids[tax_id]):
-                return True
-    return False
+    global taxid_to_process
+    return tax_id in taxid_to_process
 
 def uniprot_tuple_to_dict(v):
     return {'accession' : v[0],
@@ -98,6 +108,91 @@ def uniprot_tuple_to_dict(v):
              'UniRef50' : v[14]
             }
 
+def parse_uniref_xml_elem(elem, config):
+    if not terminating.is_set() and elem is not None:
+        elem = etree.fromstring(elem)
+        tag_to_parse = ['member', 'representativeMember', 'property'] 
+        try:
+            d_uniref = {}
+            d_uniref['id'] = elem.get('id')
+            d_uniref['members'] =[]
+            for tag in tag_to_parse:
+                tag_children = '{http://uniprot.org/uniref}'+tag
+                if tag == 'property':
+                    for pro in elem.iterchildren(tag_children):
+                        if pro.get('type') == 'common taxon ID':
+                            d_uniref['common_taxid'] = int(pro.get('value'))
+                if tag == 'representativeMember' or tag == 'member':
+                    member = [x for x in elem.iterchildren(tag_children)]
+                    ref = [x for y in member for x in y.iterchildren('{http://uniprot.org/uniref}dbReference')]
+                    for r in ref:
+                        tax_id = 0
+                        if r.get('type') == 'UniProtKB ID':
+                            accession = [y.get('value') for y in r if y.get('type') == 'UniProtKB accession'][0]
+                            uniparc_cluster = [y.get('value') for y in r if y.get('type') == 'UniParc ID'][0]
+                        elif r.get('type') == 'UniParc ID':
+                            accession = r.get('id')
+                            uniparc_cluster = None
+                        isRepr = True if tag == 'representativeMember' else False
+
+                        for pro in r:
+                            if pro.get('type') == 'UniRef100 ID':
+                                d_uniref['UniRef100'] = pro.get('value')[10:]
+                            elif pro.get('type') == 'UniRef90 ID':
+                                d_uniref['UniRef90'] = pro.get('value')[9:]
+                            elif pro.get('type') == 'UniRef50 ID':
+                                d_uniref['UniRef50'] = pro.get('value')[9:]
+                            elif pro.get('type') == 'NCBI taxonomy':
+                                tax_id = int(pro.get('value'))
+                        d_uniref['members'].append((accession,tax_id, isRepr))
+                        if uniparc_cluster is not None:
+                            d_uniref['members'].append((uniparc_cluster,tax_id, isRepr))
+            t_uniref = (d_uniref['id'],
+                        d_uniref.get('common_taxid',None),
+                        tuple(d_uniref['members']),
+                        d_uniref.get('UniRef100',''),
+                        d_uniref.get('UniRef90', ''),
+                        d_uniref.get('UniRef50','')
+                        )
+            clear_node(elem)
+            return t_uniref
+            
+        except Exception as e:
+            utils.error('Failed to elaborate item: '+ elem.get('id'))
+            raise
+    else:
+        terminating.set()
+
+
+def create_uniref_dataset(xml, config):  
+    uniref_xml = etree.iterparse(gzip.GzipFile(xml), events = ('end',), tag = '{http://uniprot.org/uniref}entry', huge_tree = True)
+
+    terminating = mp.Event()
+    chunksize = config['nproc']
+    cluster = os.path.basename(xml).split('.')[0]
+    if config['verbose']:
+        utils.info("Starting processing UniRef {} database\n".format(cluster))
+
+    idmap={}
+    upids = []
+
+    parse_uniref_xml_elem_partial = partial(parse_uniref_xml_elem, config=config)
+    with mp.Pool(initializer=initt, initargs=(terminating, ), processes=chunksize) as pool:
+        try:
+            for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(uniref_xml), group_chunk),1):
+                d={x[0]:x for x in pool.imap_unordered(parse_uniref_xml_elem_partial, group, chunksize=chunksize) if x is not None}
+                upids.extend([(m[0],c[0]) for c in d.values() for m in c[2] if 'UPI' in m[0]])
+                pickle.dump(d, open("{}/pickled/{}_{}.pkl".format(config['download_base_dir'],cluster, file_chunk),'wb'), -1)
+                idmap.update(dict.fromkeys(d.keys(), file_chunk))
+        except Exception as e:
+            utils.error(str(e))
+            raise
+    pickle.dump(upids, open("{}/pickled/{}_uniparc_idmap.pkl".format(config['download_base_dir'],cluster),'wb'), -1)
+    pickle.dump(idmap, open("{}/pickled/{}_idmap.pkl".format(config['download_base_dir'],cluster),'wb'), -1)
+    if config['verbose']:
+        utils.info('UniRef {} database processed successfully.\n'.format(cluster))
+
+
 # UniProtKB elemtes are mapped in a int-based id tuple
 #  0 accession
 #  1 tax_id
@@ -114,30 +209,26 @@ def uniprot_tuple_to_dict(v):
 def parse_uniprotkb_xml_elem(elem, config):
     if not terminating.is_set() and elem is not None:
         global uniprotkb_uniref_idmap
+        elem = etree.fromstring(elem)
         tag_to_parse = ['accession','dbReference','sequence','organism','sequence']
         try:
             d_prot = {}
             sequence = ''
-            elem = etree.fromstring(elem)
             org = [x for x in elem.iterchildren('{http://uniprot.org/uniprot}organism')][0]
             taxid = int([x.get('id') for x in org.iterchildren(tag='{http://uniprot.org/uniprot}dbReference')][0])
+            t0=time.time()
+            if is_taxon_processable(taxid):
+                t0=time.time()
+                d_prot['name'] = [x for x in elem.iterchildren(tag='{http://uniprot.org/uniprot}name')][0].text
+                d_prot['sequence'] = [x for x in elem.iterchildren(tag='{http://uniprot.org/uniprot}sequence')][0].text
+                d_prot['accession'] = [x for x in elem.iterchildren(tag='{http://uniprot.org/uniprot}accession')][0].text
+                d_prot['tax_id'] = taxid
+                for ref in elem.iterchildren(tag='{http://uniprot.org/uniprot}dbReference'):
+                    if ref.get('type') in dbReference:
+                        if ref.get('type') not in d_prot:
+                            d_prot[ref.get('type')] = []
+                        d_prot[ref.get('type')].append(ref.get('id'))
 
-            if is_taxon_processable(taxid): #or len([t.text for t in taxon if t.text in genus_to_process]):
-                for children in tag_to_parse:
-                    tag_children = '{http://uniprot.org/uniprot}'+children
-                    if children == 'name' or children == 'sequence' or children == 'accession':
-                        d_prot[children] = [x for x in elem.iterchildren(tag=tag_children)][0].text
-                    if children == 'organism':
-                        org = [x for x in elem.iterchildren(tag_children)][0]
-                        d_prot['tax_id'] = int([x.get('id') for x in org.iterchildren(tag='{http://uniprot.org/uniprot}dbReference')][0])
-                    if children == 'dbReference':
-                        for ref in elem.iterchildren(tag=tag_children):
-                            if ref.get('type') in dbReference:
-                                if ref.get('type') not in d_prot:
-                                    d_prot[ref.get('type')] = []
-                                d_prot[ref.get('type')].append(ref.get('id'))
-
-                elem.clear()
                 t_prot = (d_prot.get('accession'),  #0
                           d_prot.get('tax_id'),      #1
                           d_prot.get('sequence',''),   #2
@@ -154,12 +245,13 @@ def parse_uniprotkb_xml_elem(elem, config):
                           uniprotkb_uniref_idmap.get(d_prot.get('accession'),['','',''])[1],
                           uniprotkb_uniref_idmap.get(d_prot.get('accession'),['','',''])[2]
                          )
-                for ancestor in elem.xpath('ancestor-or-self::*'):
-                    while ancestor.getprevious() is not None:
-                        del ancestor.getparent()[0]
+
+                clear_node(elem)
+                print(t1-t0)
                 return(t_prot)
+
         except Exception as e:
-            utils.error(str(e))
+            utils.error('Failed to elaborate item: '+ elem.get('id'))
             raise
     else:
         terminating.set()
@@ -179,101 +271,104 @@ def parse_uniprotkb_xml(xml_input, config):
     idmap = {}
     d = {}
     parse_uniprotkb_xml_elem_partial = partial(parse_uniprotkb_xml_elem, config=config)
-
-    for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(tree), group_chunk),1):
+    
+    with mp.Pool(initializer=initt, initargs=(terminating, ), processes=chunksize) as pool:
         try:
-            with mp.Pool(initializer=initt, initargs=(terminating, ), processes=chunksize) as pool:
+            for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(tree), group_chunk),1):
                 d={x[0]:x for x in pool.imap_unordered(parse_uniprotkb_xml_elem_partial, group, chunksize=chunksize) if x is not None}
+                if len(d):
+                    idmap.update(dict.fromkeys(d.keys(), db*file_chunk))
+                    pickle.dump(d, open("{}/pickled/{}_{}.pkl".format(config['download_base_dir'],db_name, file_chunk),'wb'), -1)
         except Exception as e:
             utils.error(str(e))
             utils.error('Processing failed',  exit=True)
             raise
-        if len(d):
-            idmap.update(dict.fromkeys(d.keys(), db*file_chunk))
-            pickle.dump(d, open("{}/pickled/{}_{}.pkl".format(config['download_base_dir'],db_name, file_chunk),'wb'), -1)
 
+    # with mp.Pool(initializer=initt, initargs=(terminating, ), processes=chunksize) as pool:
+    #     try:
+    #         for file_chunk, group in enumerate(grouper(pool.imap_unordered(parse_uniprotkb_xml_elem_partial, tree, chunksize=chunksize), group_chunk),1):
+    #             d={x[0]:x for x in filter(None, group)}
+    #             if len(d):
+    #                 idmap.update(dict.fromkeys(d.keys(), db*file_chunk))
+    #                 pickle.dump(d, open("{}/pickled/{}_{}.pkl".format(config['download_base_dir'],db_name, file_chunk),'wb'), -1)
+    #     except Exception as e:
+    #         utils.error(str(e))
+    #         utils.error('Processing failed',  exit=True)
+    #         raise
     if len(idmap):
         pickle.dump(idmap, open("{}/pickled/uniprotkb_{}_idmap.pkl".format(config['download_base_dir'],db_name),'wb'), -1)
     if config['verbose']:
         utils.info('Done processing {} file!\n'.format(xml_input))
 
-def parse_uniparc_xml_elem(elem, config, uniprotkb_uniref_idmap):
-    #if not terminating.is_set() and elem is not None:
-    tag_to_parse = ['accession','dbReference', 'sequence']
-    try:
-        d_prot = {}
-        # elem = etree.fromstring(elem)
-        for children in tag_to_parse:
-            tag_children = '{http://uniprot.org/uniparc}'+children
-            if children == 'accession' or children == 'sequence':
-                d_prot[children] = [x for x in elem.iterchildren(tag=tag_children)][0].text.replace('\n','')
-            if children == 'dbReference':
-                active_entries = [x for x in elem.iterchildren(tag=tag_children) if x.get('active') == 'Y']
-                d_prot['uniprotkb_ids'] = list(set(x.get('id') for x in active_entries if 'UniProtKB' in x.get('type')))
-                entry_with_protid = [x for x in active_entries for y in x.iterchildren('{http://uniprot.org/uniparc}property') if y.get('type') == 'proteome_id']
-                d_prot['Proteomes'] = set()
-                for entry in entry_with_protid:
-                    for p in entry:
-                        if p.get('type') == 'proteome_id':
-                            proteome_id = int(p.get('value')[2:])
-                        elif p.get('type') == 'NCBI_taxonomy_id':
-                            tax_id = int(p.get('value'))
-                    if is_taxon_processable(tax_id):
-                        d_prot['Proteomes'].add((proteome_id, tax_id))
-        elem.clear()
-        t_prot = (d_prot.get('accession'),  
-                  tuple(d_prot.get('Proteomes',[])),
-                  d_prot.get('sequence'),
-                  uniprotkb_uniref_idmap.get(d_prot.get('accession'),['','',''])[0],
-                  uniprotkb_uniref_idmap.get(d_prot.get('accession'),['','',''])[1],
-                  uniprotkb_uniref_idmap.get(d_prot.get('accession'),['','',''])[2],
-                  d_prot.get('uniprotkb_ids',[])
-                 )
+def parse_uniparc_xml_elem(elem, config):
+    if not terminating.is_set() and elem is not None:
+        elem = etree.fromstring(elem)
+        tag_to_parse = ['accession','dbReference', 'sequence']
+        try:
+            d_prot = {}
+            for children in tag_to_parse:
+                tag_children = '{http://uniprot.org/uniparc}'+children
+                if children == 'accession' or children == 'sequence':
+                    d_prot[children] = [x for x in elem.iterchildren(tag=tag_children)][0].text.replace('\n','')
+                if children == 'dbReference':
+                    active_entries = [x for x in elem.iterchildren(tag=tag_children) if x.get('active') == 'Y']
+                    d_prot['uniprotkb_ids'] = list(set(x.get('id') for x in active_entries if 'UniProtKB' in x.get('type')))
+                    entry_with_protid = [x for x in active_entries for y in x.iterchildren('{http://uniprot.org/uniparc}property') if y.get('type') == 'proteome_id']
+                    d_prot['Proteomes'] = set()
+                    for entry in entry_with_protid:
+                        for p in entry:
+                            if p.get('type') == 'proteome_id':
+                                proteome_id = int(p.get('value')[2:])
+                            elif p.get('type') == 'NCBI_taxonomy_id':
+                                tax_id = int(p.get('value'))
+                        if is_taxon_processable(tax_id):
+                            d_prot['Proteomes'].add((proteome_id, tax_id))
 
-        for ancestor in elem.xpath('ancestor-or-self::*'):
-            while ancestor.getprevious() is not None:
-                del ancestor.getparent()[0]
+            global uniprotkb_uniref_idmap
+            t_prot = (d_prot.get('accession'),  
+                      tuple(d_prot.get('Proteomes',[])),
+                      d_prot.get('sequence'),
+                      uniprotkb_uniref_idmap.get(d_prot.get('accession'),['','',''])[0],
+                      uniprotkb_uniref_idmap.get(d_prot.get('accession'),['','',''])[1],
+                      uniprotkb_uniref_idmap.get(d_prot.get('accession'),['','',''])[2],
+                      d_prot.get('uniprotkb_ids',[])
+                     )
 
-        ## If entry does not belong to a proteome, just throw it, wont need.
-        if not len(t_prot[1]):
-            return None
-            
-        return(t_prot)
-    except Exception as e:
-        print(d_prot)
-        utils.error(str(e))
-        raise
-    #else:
-    #    terminating.set()
+            clear_node(elem)
+            ## If entry does not belong to a proteome, just throw it, wont need.
+            if not len(t_prot[1]):
+                return None
+                
+            return(t_prot)
+        except Exception as e:
+            utils.error('Failed to elaborate item: '+ elem.get('id'))
+            raise
+    else:
+        terminating.set()
 
 def parse_uniparc_xml(xml_input, config):
     terminating = mp.Event()
-    chunksize = config['nproc']*6
+    chunksize = config['nproc']
+    global tree
+    if config['verbose']:
+        utils.info('Starting processing {} file...\n'.format(xml_input))
 
     tree = etree.iterparse(gzip.GzipFile(xml_input), events = ('end',), tag = '{http://uniprot.org/uniparc}entry', huge_tree = True)
     idmap = {}
-    #parse_uniparc_xml_elem_partial = partial(parse_uniparc_xml_elem, config=config)
+    parse_uniparc_xml_elem_partial = partial(parse_uniparc_xml_elem, config=config)
     d = []
-    for file_chunk, group in enumerate(tree):  #Offset for identify UniParc entries in the id:chunk map file
-        if file_chunk == 0 or file_chunk % 1000000:
-            res = parse_uniparc_xml_elem(group[1], config, uniprotkb_uniref_idmap)
-            if res is not None:
-                d.append(res)
-        else:
-            d = {x[0]:x for x in d}
-        #try:
-        #    with mp.Pool(initializer=initt, initargs=(terminating,), processes=chunksize) as pool:
-        #        print('In pool')
-        #        d={x[0]:x for x in pool.imap_unordered(parse_uniparc_xml_elem_partial, group, chunksize=chunksize) if x is not None}
-        #except Exception as e:
-        #    utils.error(str(e))
-        #    utils.error('Processing failed',  exit=True)
-        #    raise
-            print('{} entry processed.'.format(file_chunk, flush = True))
-            if len(d):
-                idmap.update(dict.fromkeys(d.keys(), int(file_chunk/1000000)+1000))
-                pickle.dump(d, open("{}/pickled/uniparc_{}.pkl".format(config['download_base_dir'], int(file_chunk/1000000)+1000),'wb'), -1)
-            d = []
+
+    with mp.Pool(initializer=initt, initargs=(terminating,), processes=chunksize) as pool:
+        try:
+            for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(tree), group_chunk),1):
+                d={x[0]:x for x in pool.imap_unordered(parse_uniparc_xml_elem_partial, group, chunksize=chunksize) if x is not None}
+        except Exception as e:
+            utils.error(str(e))
+            utils.error('Processing failed',  exit=True)
+            raise
+        if len(d):
+            idmap.update(dict.fromkeys(d.keys(), file_chunk))
+            pickle.dump(d, open("{}/pickled/uniparc_{}.pkl".format(config['download_base_dir'], file_chunk),'wb'), -1)
     pickle.dump(idmap, open("{}/pickled/uniparc_idmap.pkl".format(config['download_base_dir']),'wb'), -1)
     if config['verbose']:
         utils.info('Done processing {} file!\n'.format(xml_input))
@@ -353,8 +448,7 @@ def process(f):
                     for proteome, taxid in (("UP{}{}".format("0"*(9-len(str(upi))),upi),taxid) for upi, taxid in entry[1]):
                         if proteome not in d_proteome:
                             d_proteome[proteome] = {'members' : [], 'isReference' : False, 'tax_id' : taxid, 'upi' : True}
-                        if d_proteome[proteome]['upi']:
-                            d_proteome[proteome]['members'].append(entry[0])
+                        d_proteome[proteome]['members'].append(entry[0])
         except Exception as e:
             utils.error(f)
             utils.error(str(e))
@@ -364,7 +458,38 @@ def process(f):
     else:
         terminating.set()
 
-def create_proteomes(config):
+def parse_proteomes_xml_elem(elem, config):
+    if not terminating.is_set() and elem is not None:
+        # tag_to_parse = ['dbReference','component']
+        try:
+            d_prot = {}
+            taxid = int(elem.attrib['taxonomy'])
+            upi = True if len(list(elem.iterchildren(tag='redundantTo'))) else False
+            if is_taxon_processable(taxid):
+                accession = elem.attrib['upid']
+                d_prot[accession] = {}
+                d_prot[accession]['members'] = []
+                d_prot[accession]['upi'] = upi
+                d_prot[accession]['tax_id'] = taxid
+                d_prot[accession]['isReference'] = True if elem.getchildren()[2].text == 'true' else False
+                # d_prot[accession]['AssemblyId'] = [c.get('id') for c in elem.iterchildren(tag='dbReference') if c.get('type') == 'AssemblyId'][0]
+                d_prot[accession]['ncbi_ids'] = [(c.get('type'),c.get('id')) for c in elem.iterchildren(tag='dbReference')]
+                if not upi:
+                    d_prot[accession]['members'] = [x.get('accession') for k in elem.iterchildren(tag='component') for x in k.iterchildren(tag='protein')]
+                
+                elem.clear()
+                for ancestor in elem.xpath('ancestor-or-self::*'):
+                    while ancestor.getprevious() is not None:
+                        del ancestor.getparent()[0]
+                return(d_prot)
+        except Exception as e:
+            utils.error('Failed to elaborate item: '+str(e))
+            utils.error(elem.attrib['upid'])
+            raise
+    else:
+        terminating.set()
+    
+def create_proteomes(xml_input, config):
     if config['verbose']:
         utils.info('Starting proteomes processing...\n')
     d_proteomes = {}
@@ -372,25 +497,37 @@ def create_proteomes(config):
     terminating = mp.Event()
     chunksize = config['nproc']
     
-    
-    r = re.compile('.*(trembl|sprot|uniparc).*')
+    # r = re.compile('.*(trembl|sprot|uniparc).*')
+    r = re.compile('.*(uniparc).*')
     chunks = []
+
+    tree = etree.iterparse(gzip.GzipFile(xml_input), events = ('end',), tag = 'proteome', huge_tree = True)
+    parse_proteomes_xml_elem_partial = partial(parse_proteomes_xml_elem, config = config)
+    try:
+        with mp.Pool(initializer=initt, initargs=(terminating, ), processes=chunksize) as pool:
+            for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(tree), group_chunk),1):
+                chunks=[x for x in pool.imap_unordered(parse_proteomes_xml_elem_partial, group, chunksize=chunksize)]
+    except Exception as e:
+        utils.error(str(e))
+        utils.error('Processing failed')
+        raise
 
     try:
         with mp.Pool(initializer=initt, initargs=(terminating,), processes=chunksize) as pool:
-            chunks = [x for x in pool.imap_unordered(process, 
+            chunks.extend([x for x in pool.imap_unordered(process, 
                         (x for x in filter(r.match,glob.iglob("{}/pickled/*".format(config['download_base_dir']))))
-                          , chunksize = chunksize)]
+                          , chunksize = chunksize)])
     except Exception as e:
         utils.error(str(e))
-        utils.error('Processing failed',  exit=True)
+        utils.error('Processing failed')
         raise
 
     for chunk in chunks:
         for k,v in chunk.items():
             if k not in d_proteomes:
                 d_proteomes[k] = {'members' : set(), 'isReference' : False, 'tax_id' : v['tax_id'], 'upi' : v['upi']}
-            d_proteomes[k]['members'].update(v['members'])
+            if v['upi']:
+                d_proteomes[k]['members'].update(v['members'])
 
     if config['verbose']:
         utils.info('Done processing\n')
@@ -401,14 +538,14 @@ def create_proteomes(config):
     if config['verbose']:
         utils.info('Starting reference proteomes processing...\n',)
 
-    for k in kingdom_to_process:
-        basepath = '{}/{}/{}/*.idmapping.gz'.format(config['download_base_dir'],config['relpath_reference_proteomes'], k)
-        ls = glob.glob(basepath)
-        for protid, taxid in [os.path.split(file)[1].split('.')[0].split('_') for file in ls]:
-            if protid in d_proteomes:
-                d_proteomes[protid]['isReference'] = True
-            else:
-                utils.info(protid+"\n")
+    # for k in kingdom_to_process:
+    #     basepath = '{}/{}/{}/*.idmapping.gz'.format(config['download_base_dir'],config['relpath_reference_proteomes'], k)
+    #     ls = glob.glob(basepath)
+    #     for protid, taxid in [os.path.split(file)[1].split('.')[0].split('_') for file in ls]:
+    #         if protid in d_proteomes:
+    #             d_proteomes[protid]['isReference'] = True
+    #         else:
+    #             utils.info(protid+"\n")
                 
     pickle.dump(d_proteomes, open("{}{}".format(config['download_base_dir'],config['relpath_pickle_proteomes']),'wb'), -1)
     if config['verbose']:
@@ -440,88 +577,6 @@ def uniref_tuple_to_dict(v):
             'UniRef90': 'UniRef90_{}'.format(v[4]) if len(v[4])>0 else '',
             'UniRef50': 'UniRef50_{}'.format(v[5]) if len(v[5])>0 else ''
            }
-
-def parse_uniref_xml_elem(elem, config):
-    if not terminating.is_set() and elem is not None:
-        tag_to_parse = ['member', 'representativeMember', 'property'] 
-        try:
-            elem = etree.fromstring(elem)
-            d_uniref = {}
-            d_uniref['id'] = elem.get('id')
-            d_uniref['members'] =[]
-            for tag in tag_to_parse:
-                tag_children = '{http://uniprot.org/uniref}'+tag
-                if tag == 'property':
-                    for pro in elem.iterchildren(tag_children):
-                        if pro.get('type') == 'common taxon ID':
-                            d_uniref['common_taxid'] = int(pro.get('value'))
-                if tag == 'representativeMember' or tag == 'member':
-                    member = [x for x in elem.iterchildren(tag_children)]
-                    ref = [x for y in member for x in y.iterchildren('{http://uniprot.org/uniref}dbReference')]
-                    for r in ref:
-                        if r.get('type') == 'UniProtKB ID':
-                            accession = [y.get('value') for y in r if y.get('type') == 'UniProtKB accession'][0]
-                            uniparc_cluster = [y.get('value') for y in r if y.get('type') == 'UniParc ID'][0]
-                        elif r.get('type') == 'UniParc ID':
-                            accession = r.get('id')
-                            uniparc_cluster = None
-                        isRepr = True if tag == 'representativeMember' else False
-                        d_uniref['members'].append((accession,isRepr))
-                        if uniparc_cluster is not None:
-                            d_uniref['members'].append((uniparc_cluster,isRepr))
-                        for pro in r:
-                            if pro.get('type') == 'UniRef100 ID':
-                                d_uniref['UniRef100'] = pro.get('value')[10:]
-                            if pro.get('type') == 'UniRef90 ID':
-                                d_uniref['UniRef90'] = pro.get('value')[9:]
-                            if pro.get('type') == 'UniRef50 ID':
-                                d_uniref['UniRef50'] = pro.get('value')[9:]
-            t_uniref = (d_uniref['id'],
-                        d_uniref.get('common_taxid',None),
-                        tuple(d_uniref['members']),
-                        d_uniref.get('UniRef100',''),
-                        d_uniref.get('UniRef90', ''),
-                        d_uniref.get('UniRef50','')
-                        )
-            return t_uniref
-            
-        except Exception as e:
-            utils.error(str(e))
-            with open("{}/uniref/FAILED".format(config['temp_folder']),'w+') as out:
-                out.write(elem.get('id')+"\n")
-            raise
-    else:
-        terminating.set()
-
-def create_uniref_dataset(xml, config):
-    uniref_xml = etree.iterparse(gzip.GzipFile(xml), events = ('end',), tag = '{http://uniprot.org/uniref}entry', huge_tree = True)
-    
-    terminating = mp.Event()
-    chunksize = config['nproc']
-    cluster = os.path.basename(xml).split('.')[0]
-
-    idmap={}
-    upids = []
-    if config['verbose']:
-        utils.info("Starting processing UniRef {} database\n".format(cluster))
-
-    parse_uniref_xml_elem_partial = partial(parse_uniref_xml_elem, config=config)
-
-    for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(uniref_xml), group_chunk),1):
-        try:
-            with mp.Pool(initializer=init_parse, initargs=(terminating, uniref_xml, None,), processes=chunksize) as pool:
-                d={x[0]:x for x in pool.imap_unordered(parse_uniref_xml_elem_partial, group, chunksize=chunksize) if x is not None}
-        except Exception as e:
-            utils.error(str(e))
-            raise
-        upids.extend([(m[0],c[0]) for c in d.values() for m in c[2] if 'UPI' in m[0]])
-        pickle.dump(d, open("{}/pickled/{}_{}.pkl".format(config['download_base_dir'],cluster, file_chunk),'wb'), -1)
-        idmap.update(dict.fromkeys(d.keys(), file_chunk))
-
-    pickle.dump(upids, open("{}/pickled/{}_uniparc_idmap.pkl".format(config['download_base_dir'],cluster),'wb'), -1)
-    pickle.dump(idmap, open("{}/pickled/{}_idmap.pkl".format(config['download_base_dir'],cluster),'wb'), -1)
-    if config['verbose']:
-        utils.info('UniRef {} database processed successfully.\n'.format(cluster))
 
 def merge_uniparc_idmapping(config):
     if config['verbose']:
@@ -587,35 +642,43 @@ def process_proteomes(config):
                  mp.Process(target=create_uniref_dataset, args=(config['download_base_dir']+config['relpath_uniref50'],config))
                 ]
 
-    step3     = [#mp.Process(target=parse_uniparc_xml, args=(config['download_base_dir']+config['relpath_uniparc'],config)),
+    step3     = [mp.Process(target=parse_uniparc_xml, args=(config['download_base_dir']+config['relpath_uniparc'],config)),
                  mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_sprot'], config)),
-                 # mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_trembl'], config))
+                 mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_trembl'], config))
                 ]
                 
+    for p in step1:
+        p.start()
 
-    # for p in step1:
-    #     p.start()
+    for p in step1:
+        p.join()
 
-    # for p in step1:
-    #     p.join()
-    # parse_uniprotkb_uniref_idmapping(config)
-    # merge_uniparc_idmapping(config)
-    
     global d_taxids, uniprotkb_uniref_idmap
-    # uniprotkb_uniref_idmap = pickle.load(open('{}{}'.format(config['download_base_dir'],config['relpath_pickle_uniprotkb_uniref_idmap']),'rb'))
-    taxontree = pickle.load(open("{}/{}".format(config['download_base_dir'],config['relpath_pickle_taxontree']),'rb'))
-    d_taxids = taxontree.lookup_by_taxid()
-    taxon_to_process(config, taxontree)
+    uniprotkb_uniref_idmap = pickle.load(open('{}{}'.format(config['download_base_dir'],config['relpath_pickle_uniprotkb_uniref_idmap']),'rb'))
 
+    taxontree_path = "{}/{}".format(config['download_base_dir'],config['relpath_pickle_taxontree'])
+    if os.path.exists(taxontree_path):
+        taxontree = pickle.load(open(taxontree_path,'rb'))
+        d_taxids = taxontree.lookup_by_taxid()
+        taxon_to_process(config, taxontree)
+    else:
+        utils.error('NCBI taxonomic tree not found. Exiting...', exit = True)
+        
+    #parse_uniprotkb_uniref_idmapping(config)
+    if all([os.path.exists("{}/pickled/{}_uniparc_idmap.pkl".format(config['download_base_dir'],c)) for c in ('uniref100','uniref90','uniref50')]) and os.path.exists('{}{}'.format(config['download_base_dir'],config['relpath_pickle_uniprotkb_uniref_idmap'])):
+        merge_uniparc_idmapping(config)
+    else:
+        utils.error('Failed to process UniRef database. Exiting...', exit = True)
+            
     for p in step3:
         p.start()
 
     for p in step3:
         p.join()
 
-    # merge_idmap(config)
-    # create_proteomes(config)
-    # annotate_taxon_tree(config)   
+    merge_idmap(config)
+    create_proteomes(config['download_base_dir']+config['relpath_proteomes_xml'], config)
+    annotate_taxon_tree(config)   
 
 if __name__ == '__main__':
     t0=time.time()

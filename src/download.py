@@ -113,6 +113,15 @@ def download(config, verbose=False):
     argument_list.append((config['uniprot_ftp_base'],
                           os.path.split(config['uniprot_sprot'])[0] + "/RELEASE.metalink",
                           config['download_base_dir'] + os.path.split(config['relpath_uniprot_sprot'])[0] + "/RELEASE.metalink"))
+
+    argument_list.append((config['uniprot_ftp_base'],
+                          config['uniparc'],
+                          config['download_base_dir'] + config['relpath_uniparc']))
+    
+    argument_list.append((config['uniprot_ftp_base'],
+                          os.path.split(config['uniparc'])[0] + "/RELEASE.metalink",
+                          config['download_base_dir'] + os.path.split(config['relpath_uniparc'])[0] + "/RELEASE.metalink"))
+
     ### idmapping file ###
     argument_list.append((config['uniprot_ftp_base'],
                           config['uniprot_idmapping'],

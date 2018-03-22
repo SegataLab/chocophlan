@@ -17,6 +17,8 @@ import multiprocessing as mp
 from collections import Counter
 from functools import partial
 import copy
+import src.process_proteomes as process_proteomes
+from operator import itemgetter
 
 if __name__ == '__main__':
     import utils
@@ -30,7 +32,7 @@ def init_parse(terminating_):
 class Panproteome:
     ranks = ('superkingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species')
     kingdom_to_process = ('Archaea', 'Bacteria')
-    coreness = 0.97
+    coreness = 0.99
     
     def __init__(self, config):
         self.uniparc = {}
@@ -39,11 +41,10 @@ class Panproteome:
                 utils.info('Loading pickled databases...')
             import gc
             gc.disable()
-            # self.uniref100 = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_uniref100_idmap']),'rb'))
-            # self.uniref90 = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_uniref90_idmap']),'rb'))
-            # self.uniref50 = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_uniref50_idmap']),'rb'))
+            self.uniref100 = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_uniref100_idmap']),'rb'))
+            self.uniref90 = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_uniref90_idmap']),'rb'))
+            self.uniref50 = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_uniref50_idmap']),'rb'))
 
-            # self.uniprotkb_uniref_idmap = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_uniprotkb_idmap']), 'rb'))
             self.idmapping = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_uniprotkb_uniref_idmap']), 'rb'))
             self.taxontree = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_taxontree']), 'rb'))
             self.proteomes = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_proteomes']), 'rb'))
@@ -74,33 +75,41 @@ class Panproteome:
     # with all the UniRef clusters and the proteomes in which are present
     def process_panproteome(self, item_rank):
         item, rank, cluster = item_rank
-        cluster = 0 if cluster == 100 else (1 if cluster == 90 else 2)
+        cluster_index = 0 if cluster == 100 else (1 if cluster == 90 else 2)
         proteomes_to_process = self.get_child_proteomes(item)
         panproteome = {}
         uniref_panproteome = {}
-        
-        for protein, proteome_id in ((entry,proteome_id) for proteome_id in proteomes_to_process for entry in self.proteomes[proteome_id]['members']):
-            if protein not in panproteome:
-                panproteome[protein] = set()
-            panproteome[protein].add(proteome_id)
+        uniref_panproteome['cluster'] = cluster
+        uniref_panproteome['tax_id'] = item.tax_id
+        uniref_panproteome['rank'] = rank
+        uniref_panproteome['number_proteomes'] = len(proteomes_to_process)
+        uniref_panproteome['coreness_threshold'] = round(uniref_panproteome['number_proteomes'] * self.coreness)
 
-        for protein, proteomes in panproteome.items():
-            uniref_cluster = self.idmapping.get(protein, None)
-            if uniref_cluster is None:
-                urefs = list(set(uref for uref in (self.idmapping.get(upkb) for upkb in self.uniparc.get(protein,['']*7)[6]) if uref is not None))
-                if len(urefs):
-                    uniref_cluster = urefs[0][cluster]
-            else:
-                uniref_cluster = uniref_cluster[cluster]
-            if uniref_cluster is not None:
-                if uniref_cluster not in uniref_panproteome:
-                    uniref_panproteome[uniref_cluster] = [0, set()]
-                uniref_panproteome[uniref_cluster][1].update(proteomes)
-                uniref_panproteome[uniref_cluster][0] = len(uniref_panproteome[uniref_cluster][1])
 
-        if len(panproteomes):
-            ##ospathjoin
-            pickle.dump(panproteomes, open('{}/{}/{}/{}/{}.pkl'.format(self.config['download_base_dir'], self.config['relpath_panproteomes_dir'], rank, cluster, item.tax_id),'wb'))
+        if len(proteomes_to_process):
+            for protein, proteome_id in ((entry,proteome_id) for proteome_id in proteomes_to_process for entry in self.proteomes[proteome_id]['members']):
+                uniref_cluster = self.idmapping.get(protein, None)
+                if uniref_cluster is None:
+                    urefs = list(set(uref for uref in (self.idmapping.get(upkb) for upkb in self.uniparc.get(protein,['']*7)[6]) if uref is not None))
+                    if len(urefs):
+                        uniref_cluster = urefs[0][cluster_index]
+                else:
+                    uniref_cluster = uniref_cluster[cluster_index]
+                if uniref_cluster is not None:
+                    if uniref_cluster not in uniref_panproteome:
+                        uniref_panproteome['members'][uniref_cluster] = { 'coreness': 0,
+                                                               'uniqueness': {},
+                                                               'copy_number': [],
+                                                               'proteomes_present': set(),
+                                                               'external_hits' : []
+                                                             }
+                    uniref_panproteome['members'][uniref_cluster]['proteomes_present'].add(proteome_id)
+                    uniref_panproteome['members'][uniref_cluster]['coreness'] = len(uniref_panproteome['members'][uniref_cluster]['proteomes_present'])
+                    uniref_panproteome['members'][uniref_cluster]['copy_number'].append(protein)
+                    uniqueness(uniref_panproteome)
+
+            if len(uniref_panproteome):
+                pickle.dump(uniref_panproteome, open('{}{}/{}/{}/{}.pkl'.format(self.config['download_base_dir'], self.config['relpath_panproteomes_dir'], rank, cluster, item.tax_id),'wb'))
 
     def create_panproteomes(self, cluster):
         if cluster == 100:
@@ -126,15 +135,73 @@ class Panproteome:
             utils.error(str(e))
             raise
 
-        for cluster in uniref_proteomes.values():
-            panproteome.update(cluster)
 
-        coreness_threshold = round(len(uniref_proteomes) * self.coreness)
-        core_genes = [gene for gene, _ in filter(lambda gene:gene[1] > coreness_threshold, panproteome)]
-        accessory_genes = [gene for gene, _ in filter(lambda gene: gene[1] < coreness_threshold, panproteome)]
+    def uniqueness(self, panproteome):
+        current_cluster = panproteome['cluster']
+        external_clusters = {}
+        t_external_clusters = {}
 
-    # def coreness(self,panproteome):
-        
+        uniref = globals()['uniref{}'.format(current_cluster)]
+        files_to_load = [(prot,uniref['UniRef{}_{}'.format(current_cluster, prot)]) for prot in panproteome['members'] if len(prot)]
+        files_to_load.sort(key = lambda x:x[1])
+
+        item_descendant = [x.tax_id for k in (self.taxontree[panproteome['tax_id']].get_terminals(), self.taxontree[panproteome['tax_id']].get_nonterminals()) for x in k]
+
+        # Intra cluster uniqueness
+        handle = open('{}/pickled/uniref{}_{}.pkl'.format(self.config['download_base_dir'], current_cluster, files_to_load[0][1]), 'rb')
+        chunk = pickle.load(handle)
+        for uniref_id, chunk_id in files_to_load:
+            if '{}/pickled/uniref{}_{}.pkl'.format(self.config['download_base_dir'], current_cluster, chunk_id) != handle.name:
+                handle = open('{}/pickled/uniref{}_{}.pkl'.format(self.config['download_base_dir'], current_cluster, chunk_id), 'rb')
+                chunk = pickle.load(handle)
+            
+            uniref_entry = process_proteomes.uniref_tuple_to_dict(chunk['UniRef{}_{}'.format(current_cluster, uniref_id)])
+            external_clusters[uniref_id] = dict(zip(['UniRef100','UniRef90','UniRef50'],itemgetter(*['UniRef100','UniRef90','UniRef50'])(uniref_entry)))
+            
+            taxa_is_present = [x[1] for x in uniref_entry['members']]
+            internal_hits = [x for x in taxa_is_present if x in item_descendant]
+            external_hits = [x for x in taxa_is_present if x not in item_descendant]
+
+            panproteome[uniref_id]['{}_{}'.format(current_cluster,current_cluster)] = len(external_hits)
+
+        for cluster, ext_unirefs in external_clusters.items():
+            for uniref, ids in ext_unirefs.items():
+                if uniref not in t_external_clusters:
+                    t_external_clusters[uniref] = {}
+                if cluster not in t_external_clusters[uniref]:
+                    t_external_clusters[uniref][cluster] = ''
+                t_external_clusters[uniref][cluster] = ids
+
+        for uniref in t_external_clusters:
+            cluster = int(uniref.replace('UniRef',''))
+            uniref_map = globals()['uniref{}'.format(cluster)]
+
+            files_to_load = [(prot,ortholog, uniref['UniRef{}_{}'.format(cluster, ortholog)]) for prot, ortholog in t_external_clusters[uniref].items() if len(prot)]
+            files_to_load.sort(key = lambda x:x[2])
+            
+            handle = open('{}/pickled/uniref{}_{}.pkl'.format(self.config['download_base_dir'], cluster, files_to_load[0][1]), 'rb')            
+            chunk = pickle.load(handle)
+
+            for prot, ortholog, chunk_id in files_to_load:
+                if '{}/pickled/uniref{}_{}.pkl'.format(self.config['download_base_dir'], cluster, chunk_id) != handle.name:
+                    handle = open('{}/pickled/uniref{}_{}.pkl'.format(self.config['download_base_dir'], cluster, chunk_id), 'rb')
+                    chunk = pickle.load(handle)
+
+                uniref_entry = process_proteomes.uniref_tuple_to_dict(chunk['UniRef{}_{}'.format(current_cluster, ortholog)])
+                taxa_is_present = [x[1] for x in uniref_entry['members']]
+                internal_hits = [x for x in taxa_is_present if x in item_descendant]
+                external_hits = [x for x in taxa_is_present if x not in item_descendant]
+
+                panproteome[prot]['{}_{}'.format(current_cluster, cluster)] = len(external_hits)
+
+
+    def find_core_genes(self, panproteome):
+        proteomes_in_panproteome = panproteome['number_proteomes']
+        coreness_threshold = round(proteomes_in_panproteome * self.coreness)
+        return [gene for gene, _ in filter(lambda gene:gene[1]['coreness'] > coreness_threshold, panproteome['members'].items())]
+
+    def rank_genes(self, panproteome):
+        pass
 
 def generate_panproteomes(config):
     p = Panproteome(config)
