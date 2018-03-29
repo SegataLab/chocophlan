@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+    #!/usr/bin/env python3
 
 
 __author__ = ('Nicola Segata (nicola.segata@unitn.it), '
@@ -16,6 +16,7 @@ import math
 import sys
 import os
 import hashlib
+import tarfile
 if __name__ == '__main__':
     import utils
 else:
@@ -74,6 +75,7 @@ def download(config, verbose=False):
     os.makedirs(config['download_base_dir']+os.path.split(config['relpath_taxdump'])[0], exist_ok=True)
     os.makedirs(config['download_base_dir']+os.path.split(config['relpath_taxonomic_catalogue'])[0], exist_ok=True)
     os.makedirs(config['download_base_dir']+os.path.split(config['relpath_uniprot_trembl'])[0], exist_ok=True)
+    os.makedirs(config['download_base_dir']+os.path.split(config['relpath_uniparc'])[0], exist_ok=True)
 
     ### uniprot XML ###
     argument_list = [(config['uniprot_ftp_base'],
@@ -111,6 +113,15 @@ def download(config, verbose=False):
     argument_list.append((config['uniprot_ftp_base'],
                           os.path.split(config['uniprot_sprot'])[0] + "/RELEASE.metalink",
                           config['download_base_dir'] + os.path.split(config['relpath_uniprot_sprot'])[0] + "/RELEASE.metalink"))
+
+    argument_list.append((config['uniprot_ftp_base'],
+                          config['uniparc'],
+                          config['download_base_dir'] + config['relpath_uniparc']))
+    
+    argument_list.append((config['uniprot_ftp_base'],
+                          os.path.split(config['uniparc'])[0] + "/RELEASE.metalink",
+                          config['download_base_dir'] + os.path.split(config['relpath_uniparc'])[0] + "/RELEASE.metalink"))
+
     ### idmapping file ###
     argument_list.append((config['uniprot_ftp_base'],
                           config['uniprot_idmapping'],
@@ -120,13 +131,13 @@ def download(config, verbose=False):
     ### Bacterial refseq genomes ###
     ftp = ftplib.FTP(config['refseq_ftp_base'])
     ftp.login()
-    ftp.cwd(config['refseq_bacterial_genomes'])
-    ls = ftp.nlst()
-    argument_list += [(config['refseq_ftp_base'],
-                       '/'.join([config['refseq_bacterial_genomes'], entry]),
-                       '/'.join([config['download_base_dir'], config['relpath_bacterial_genomes'],
-                                 entry]))
-                      for entry in ls if "genomic.fna.gz" in entry]
+    # ftp.cwd(config['refseq_bacterial_genomes'])
+    # ls = ftp.nlst()
+    # argument_list += [(config['refseq_ftp_base'],
+    #                    '/'.join([config['refseq_bacterial_genomes'], entry]),
+    #                    '/'.join([config['download_base_dir'], config['relpath_bacterial_genomes'],
+    #                              entry]))
+    #                   for entry in ls if "genomic.fna.gz" in entry]
 
     ftp.cwd(config['refseq_taxonomic_catalogue'])
     ls = ftp.nlst()
@@ -211,7 +222,14 @@ def download(config, verbose=False):
             sys.exit("MD5 checksums do not correspond! Delete previously downloaded files so they are re-downloaded")
         else:
             utils.info("{} checksum correspond\n".format(d))
-                              
+    
+def decompress(config, verbose):
+    ls = glob.glob(config['download_base_dir']+config['relpath_reference_proteomes']+'/*')
+    r = re.compile(".*Reference_Proteomes_.*\.tar\.gz")
+    ref_prot = [x for x in filter(r.match, ls)][0]
+    with tarfile.open(ref_prot) as tar_f:
+        tar_f.extractall(path=config['download_base_dir']+config['relpath_reference_proteomes'])
+
 if __name__ == '__main__':
     t0 = time.time()
 
@@ -222,7 +240,8 @@ if __name__ == '__main__':
     config = utils.check_configs(config)
     
     download(config['download'], verbose=config['download']['verbose'])
-    
+    decompress(config['download'], verbose=config['download']['verbose'])
+
     t1 = time.time()
 
     utils.info('Total elapsed time {}s\n'.format(int(t1 - t0)))

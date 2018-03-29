@@ -133,6 +133,21 @@ class Nodes:
         clade.clades = [c for c in clade.clades if len(c.all_accessions)]
         for c in clade.clades:
             self.remove_subtrees_without_accessions(c)
+    
+    def remove_subtree_taxonomy_by_level(self, rank, names, clade=None):
+        if not clade:
+            clade = self.tree.root
+        if clade.rank == rank:
+            clade.clades = [c for c in clade.clades if clade.name in names]
+        for c in clade.clades:
+            self.remove_subtree_taxonomy_by_level(rank,names,c)
+    
+    def remove_leaves_without_proteomes(self,clade=None):
+        if not clade:
+            clade = self.tree.root
+        clade.clades = [c for c in clade.clades if not (c.initially_terminal and not hasattr(c,'proteome'))]
+        for c in clade.clades:
+            self.remove_leaves_without_proteomes(c)
 
     # Recursively go through the tree, and at each node remove references to
     # child clades pertaining to plasmid DNA.
@@ -151,6 +166,15 @@ class Nodes:
                     raise ValueError("Duplicate key: %s" % clade.tax_id)
                 taxid[clade.tax_id] = clade
         return taxid
+
+    def lookup_by_rank(self):
+        rankid={}
+        for clade in self.tree.find_clades():
+            if clade.rank:
+                if clade.rank not in rankid:
+                    rankid[clade.rank] = []
+                rankid[clade.rank].append(clade)
+        return rankid
 
     def determine_initial_leaves(self, clade=None):
         if not clade:
@@ -214,7 +238,14 @@ class Nodes:
             self.leaves_taxids.append(clade.tax_id)
         for c in clade.clades:
             self.get_leave_ids(c, recur=True)
-
+    
+    def get_child_proteomes(clade):
+        if clade.initially_terminal and hasattr(clade,'proteome'):
+            return [clade.proteome]
+        p = [clade.proteome] if hasattr(clade,'proteome') else []
+        for c in clade.clades:
+            p.extend(get_child_proteomes(c))
+        return p
 
     def print_tree(self, out_file_name, reduced=False):
 
@@ -375,7 +406,7 @@ class Nodes:
         #add_noranks( self.reduced_tree.root)
         utils.info('Adding taxon names to the taxonomyn\n')
         add_taxa(self.reduced_tree.root)
-        utils.info('Adding nternal missing taxonomic levels\n')
+        utils.info('Adding internal missing taxonomic levels\n')
         add_internal_missing_levels(self.reduced_tree.root, lev=-1)
         utils.info('Removing duplicated taxa\n')
         reduce_double_taxa(self.reduced_tree.root)
@@ -420,16 +451,6 @@ def do_extraction(config, verbose=False):
     catalogue_dir = glob.glob('{}/{}/RefSeq-release*.catalog.gz'.format(config['download_base_dir'], config['relpath_taxonomic_catalogue']))[0]
     genomes_dir = config['download_base_dir'] + config['relpath_bacterial_genomes']
 
-    taxid_contigid_dict = map_taxid_to_contigid(catalogue_dir) # TOREM
-    pickle.dump(taxid_contigid_dict,  # TOREM
-                open(config['download_base_dir'] + config['relpath_pickle_taxid_contigid'], "wb" ))  # TOREM
-
-    contigid_to_filename = map_contigid_to_filename(genomes_dir)  # TOREM
-    pickle.dump(contigid_to_filename,  # TOREM
-                open(config['download_base_dir'] + config['relpath_pickle_contigid_filename'], "wb" ))  # TOREM
-
-    testrun = extract_contigs_from_taxid(515619, taxid_contigid_dict, contigid_to_filename)  # TOREM
-
     names_buf, nodes_buf = read_taxdump(taxdump_dir)
 
     utils.info("Starting extraction of taxonomic names\n")
@@ -440,11 +461,12 @@ def do_extraction(config, verbose=False):
     tax_tree = Nodes(nodes_buf, names.get_tax_ids_to_names())
     utils.info("Finished\n")
 
-    utils.info("Refining tree\n")    # TOREM
-    tax_tree.get_tree_with_reduced_taxonomy()  # TOREM
-    utils.info('Finished postprocessing the taxonomy\n') # TOREM
+    utils.info("Refining tree\n")
+    tax_tree.get_tree_with_reduced_taxonomy()
+    utils.info('Finished postprocessing the taxonomy\n')
 
     utils.info("Pickling tree\n")
+    os.makedirs(config['download_base_dir'] + 'pickled', exist_ok=True)
     pickle.dump(tax_tree, 
                 open(config['download_base_dir'] + config['relpath_pickle_taxontree'], "wb" ))
     utils.info("Finished\n")
