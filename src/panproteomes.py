@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 author__ = ('Nicola Segata (nicola.segata@unitn.it), '
             'Francesco Beghini (francesco.beghini@unitn.it)'
             'Nicolai Karcher (karchern@gmail.com),'
