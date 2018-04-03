@@ -18,7 +18,7 @@ import gzip
 import pickle
 import re
 # Need to use the threaded version of pool
-import multiprocessing as mp
+import multiprocessing.dummy as mp
 import glob
 import time
 import math
@@ -30,7 +30,7 @@ from functools import partial
 
 kingdom_to_process = ['Bacteria','Archaea']
 genus_to_process = ['Candida', 'Blastocystis', 'Saccharomyces']
-dbReference = ['EMBL','EnsemblBacteria','GeneID','GO','KEGG','KO','Pfam','RefSeq','Proteomes']
+dbReference = ['EMBL','EnsemblBacteria','GeneID','GO','KEGG','KO','Pfam','Proteomes']
 group_chunk = 1000000
 
 taxid_to_process = []
@@ -208,6 +208,7 @@ def parse_uniprotkb_xml_elem(elem, config):
             if taxid in taxid_to_process:
                 d_prot['sequence'] = elem.find('.//{}sequence'.format(nsprefix)).text
                 d_prot['accession'] =  elem.find('.//{}accession'.format(nsprefix)).text
+                d_prot['gene'] = [(name.get('type') ,name.text) for name in elem.find('.//{}gene'.format(nsprefix))]
                 d_prot['tax_id'] = taxid
                 for ref in elem.iterchildren(tag='{http://uniprot.org/uniprot}dbReference'):
                     if ref.get('type') in dbReference:
@@ -218,7 +219,7 @@ def parse_uniprotkb_xml_elem(elem, config):
                 t_prot = (d_prot.get('accession'),  #0
                           d_prot.get('tax_id'),      #1
                           d_prot.get('sequence',''),   #2
-                          tuple(d_prot.get('RefSeq','')),     #3
+                          tuple(d_prot.get('gene','')),     #3
                           tuple(int(x[2:]) for x in d_prot.get('Proteomes',[]) if x is not None),  #4 UP000005640
                           tuple(d_prot.get('EMBL','')),       #5
                           tuple(d_prot.get('EnsemblBacteria','')),    #6
@@ -292,8 +293,10 @@ def parse_uniparc_xml_elem(elem, config):
                         proteome_id = int(p.get('value')[2:])
                     elif p.get('type') == 'NCBI_taxonomy_id':
                         tax_id = int(p.get('value'))
+                    elif p.get('type') == 'gene_name':
+                        gene_name = int(p.get('value'))
                 if is_taxon_processable(tax_id):
-                    d_prot['Proteomes'].add((proteome_id, tax_id))
+                    d_prot['Proteomes'].add((proteome_id, tax_id, gene_name))
 
             t_prot = (d_prot.get('accession'),  
                       tuple(d_prot.get('Proteomes',[])),
@@ -322,12 +325,10 @@ def parse_uniparc_xml(xml_input, config):
     if config['verbose']:
         utils.info('Starting processing {} file...\n'.format(xml_input))
 
-    tree = etree.iterparse(xml_input, events = ('end',), tag = '{http://uniprot.org/uniparc}entry', huge_tree = True)
-    # tree = etree.iterparse(gzip.GzipFile(xml_input), events = ('end',), tag = '{http://uniprot.org/uniparc}entry', huge_tree = True)
+    # tree = etree.iterparse(xml_input, events = ('end',), tag = '{http://uniprot.org/uniparc}entry', huge_tree = True)
+    tree = etree.iterparse(gzip.open(xml_input), events = ('end',), tag = '{http://uniprot.org/uniparc}entry', huge_tree = True)
     idmap = {}
     parse_uniparc_xml_elem_partial = partial(parse_uniparc_xml_elem, config=config)
-    d = []
-
     # for file_chunk, group in enumerate(tree):
     #     if file_chunk == 0 or file_chunk % 1000000:
     #         res = parse_uniparc_xml_elem(group[1], config)
@@ -336,14 +337,13 @@ def parse_uniparc_xml(xml_input, config):
     #     else:
     #         d = {x[0]:x for x in d}
     #         print('{} entry processed.'.format(file_chunk, flush = True))
-    with mp.Pool(initializer=initt, initargs=(terminating,), processes=int(chunksize)) as pool:
+    for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(tree), int(group_chunk)),1000):
         try:
-            for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(tree), int(group_chunk/2)),1000):
+            with mp.Pool(initializer=initt, initargs=(terminating,), processes=int(chunksize)) as pool:
                 d={x[0]:x for x in pool.imap_unordered(parse_uniparc_xml_elem_partial, group, chunksize=int(chunksize)*6) if x is not None}
                 if len(d):
                     idmap.update(dict.fromkeys(d.keys(), file_chunk))
                     pickle.dump(d, open("{}/pickled/uniparc_{}.pkl".format(config['download_base_dir'], file_chunk),'wb'), -1)
-                d = [] 
         except Exception as e:
             utils.error(str(e))
             utils.error('Processing of {} failed.'.format(xml_input),  exit=True)
@@ -479,20 +479,20 @@ def create_proteomes(xml_input, config):
     terminating = mp.Event()
     chunksize = config['nproc']
     
-    # r = re.compile('.*(trembl|sprot|uniparc).*')
-    r = re.compile('.*(uniparc).*')
+    r = re.compile('.*(trembl|sprot|uniparc).*')
+    # r = re.compile('.*(uniparc).*')
     chunks = []
 
-    tree = etree.iterparse(gzip.GzipFile(xml_input), events = ('end',), tag = 'proteome', huge_tree = True)
-    parse_proteomes_xml_elem_partial = partial(parse_proteomes_xml_elem, config = config)
-    try:
-        with mp.Pool(initializer=initt, initargs=(terminating, ), processes=chunksize) as pool:
-            for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(tree), group_chunk),1):
-                chunks=[x for x in pool.imap_unordered(parse_proteomes_xml_elem_partial, group, chunksize=chunksize)]
-    except Exception as e:
-        utils.error(str(e))
-        utils.error('Processing failed')
-        raise
+    # tree = etree.iterparse(gzip.GzipFile(xml_input), events = ('end',), tag = 'proteome', huge_tree = True)
+    # parse_proteomes_xml_elem_partial = partial(parse_proteomes_xml_elem, config = config)
+    # try:
+    #     with mp.Pool(initializer=initt, initargs=(terminating, ), processes=chunksize) as pool:
+    #         for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(tree), group_chunk),1):
+    #             chunks=[x for x in pool.imap_unordered(parse_proteomes_xml_elem_partial, group, chunksize=chunksize)]
+    # except Exception as e:
+    #     utils.error(str(e))
+    #     utils.error('Processing failed')
+    #     raise
 
     try:
         with mp.Pool(initializer=initt, initargs=(terminating,), processes=chunksize) as pool:
@@ -661,7 +661,7 @@ def process_proteomes(config):
 
     # merge_idmap(config)
     # create_proteomes(config['download_base_dir']+config['relpath_proteomes_xml'], config)
-    # annotate_taxon_tree(config)   
+    # annotate_taxon_tree(config)
 
 if __name__ == '__main__':
     t0=time.time()

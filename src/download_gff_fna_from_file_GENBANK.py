@@ -142,7 +142,7 @@ def main():
     total_size = 0
     for line in open(gca_file):
         id=line.rstrip()
-        total_size=download_gff_fna(id,download_folder,data,True,total_size)
+        total_size=download_gff_fna(id,download_folder,data,False,total_size)
         current_time()
     print("Total downloads: " + str(total_size) + " MB")
     current_time()
