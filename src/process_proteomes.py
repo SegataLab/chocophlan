@@ -504,12 +504,16 @@ def create_proteomes(xml_input, config):
         utils.error('Processing failed')
         raise
 
-    for chunk in chunks:
-        for k,v in chunk.items():
-            if k not in d_proteomes:
-                d_proteomes[k] = {'members' : set(), 'isReference' : False, 'tax_id' : v['tax_id'], 'upi' : v['upi']}
-            if v['upi']:
-                d_proteomes[k]['members'].update(v['members'])
+    chunks = [i for chunk in chunks for i in chunk.items()]
+    chunks.sort(key=lambda k:k[1]['upi'])
+    
+    for k,v in chunks:
+        if k not in d_proteomes:
+            d_proteomes[k] = {'members' : set(), 'isReference' : False, 'tax_id' : v['tax_id'], 'upi' : v['upi']}
+        if d_proteomes[k]['upi'] and v['upi']:
+            d_proteomes[k]['members'].update(v['members'])
+        elif not d_proteomes[k]['upi'] and not v['upi']:
+            d_proteomes[k]['members'].update(v['members'])
 
     if config['verbose']:
         utils.info('Done processing\n')

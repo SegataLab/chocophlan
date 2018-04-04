@@ -85,10 +85,10 @@ class Panproteome:
         uniref_panproteome['rank'] = rank
         uniref_panproteome['number_proteomes'] = len(proteomes_to_process)
         uniref_panproteome['coreness_threshold'] = round(uniref_panproteome['number_proteomes'] * self.coreness)
-
+        uniref_panproteome['members'] = {}
 
         if len(proteomes_to_process):
-            for protein, proteome_id in ((entry,proteome_id) for proteome_id in proteomes_to_process for entry in self.proteomes[proteome_id]['members']):
+            for protein, proteome_id in ((entry,proteome_id) for proteome_id in proteomes_to_process if proteome_id in self.proteomes for entry in self.proteomes[proteome_id]['members']):
                 uniref_cluster = self.idmapping.get(protein, None)
                 if uniref_cluster is None:
                     urefs = list(set(uref for uref in (self.idmapping.get(upkb) for upkb in self.uniparc.get(protein,['']*7)[6]) if uref is not None))
@@ -107,7 +107,7 @@ class Panproteome:
                     uniref_panproteome['members'][uniref_cluster]['proteomes_present'].add(proteome_id)
                     uniref_panproteome['members'][uniref_cluster]['coreness'] = len(uniref_panproteome['members'][uniref_cluster]['proteomes_present'])
                     uniref_panproteome['members'][uniref_cluster]['copy_number'].append(protein)
-                    uniqueness(uniref_panproteome)
+            
 
             if len(uniref_panproteome):
                 pickle.dump(uniref_panproteome, open('{}{}/{}/{}/{}.pkl'.format(self.config['download_base_dir'], self.config['relpath_panproteomes_dir'], rank, cluster, item.tax_id),'wb'))
