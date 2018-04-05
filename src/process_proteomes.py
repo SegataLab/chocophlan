@@ -559,9 +559,9 @@ def uniref_tuple_to_dict(v):
     return {'id': v[0],
             'common_taxid': v[1],
             'members': v[2],
-            'UniRef100': 'UniRef100_{}'.format(v[3]) if len(v[3])>0 else '',
-            'UniRef90': 'UniRef90_{}'.format(v[4]) if len(v[4])>0 else '',
-            'UniRef50': 'UniRef50_{}'.format(v[5]) if len(v[5])>0 else ''
+            'UniRef100': 'UniRef100_{}'.format(v[3]) if len(v[3])>0 else v[0],
+            'UniRef90': 'UniRef90_{}'.format(v[4]) if len(v[4])>0 else v[0],
+            'UniRef50': 'UniRef50_{}'.format(v[5]) if len(v[5])>0 else v[0]
            }
 
 def merge_uniparc_idmapping(config):

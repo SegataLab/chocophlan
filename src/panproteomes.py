@@ -14,7 +14,7 @@ import argparse as ap
 import configparser as cp
 import pickle
 import resource
-import multiprocessing as mp
+import multiprocessing.dummy as dummy
 from collections import Counter
 from functools import partial
 import copy
@@ -97,7 +97,7 @@ class Panproteome:
                 else:
                     uniref_cluster = uniref_cluster[cluster_index]
                 if uniref_cluster is not None:
-                    if uniref_cluster not in uniref_panproteome:
+                    if uniref_cluster not in uniref_panproteome['members']:
                         uniref_panproteome['members'][uniref_cluster] = { 'coreness': 0,
                                                                'uniqueness': {},
                                                                'copy_number': [],
@@ -130,23 +130,27 @@ class Panproteome:
         
         elems = [(item, rank, cluster) for rank in ranks_to_process for item in d_ranks[rank]]
         try:
-            for elem in elems:
-                self.process_panproteome(elem)
+            with dummy.Pool(20) as pool:
+                d = [_ for _ in pool.imap_unordered(self.process_panproteome, elems)]
+
         except Exception as e:
             utils.error(str(e))
             raise
 
 
-    def uniqueness(self, panproteome):
+    def calculate_uniqueness(self, panproteome_fp):
+        panproteome = pickle.load(open(panproteome_fp,'rb'))
         current_cluster = panproteome['cluster']
         external_clusters = {}
         t_external_clusters = {}
 
-        uniref = globals()['uniref{}'.format(current_cluster)]
+        uniref = getattr(self, 'uniref{}'.format(current_cluster))
         files_to_load = [(prot,uniref['UniRef{}_{}'.format(current_cluster, prot)]) for prot in panproteome['members'] if len(prot)]
         files_to_load.sort(key = lambda x:x[1])
 
-        item_descendant = [x.tax_id for k in (self.taxontree[panproteome['tax_id']].get_terminals(), self.taxontree[panproteome['tax_id']].get_nonterminals()) for x in k]
+        d_taxids = self.taxontree.lookup_by_taxid()
+
+        item_descendant = [x.tax_id for k in (d_taxids[panproteome['tax_id']].get_terminals(), d_taxids[panproteome['tax_id']].get_nonterminals()) for x in k]
 
         # Intra cluster uniqueness
         handle = open('{}/pickled/uniref{}_{}.pkl'.format(self.config['download_base_dir'], current_cluster, files_to_load[0][1]), 'rb')
@@ -159,28 +163,26 @@ class Panproteome:
             uniref_entry = process_proteomes.uniref_tuple_to_dict(chunk['UniRef{}_{}'.format(current_cluster, uniref_id)])
             external_clusters[uniref_id] = dict(zip(['UniRef100','UniRef90','UniRef50'],itemgetter(*['UniRef100','UniRef90','UniRef50'])(uniref_entry)))
             
-            taxa_is_present = [x[1] for x in uniref_entry['members']]
+            taxa_is_present = set(x[1] for x in uniref_entry['members'])
             internal_hits = [x for x in taxa_is_present if x in item_descendant]
             external_hits = [x for x in taxa_is_present if x not in item_descendant]
 
-            panproteome[uniref_id]['{}_{}'.format(current_cluster,current_cluster)] = len(external_hits)
+            panproteome['members'][uniref_id]['uniqueness']['{}_{}'.format(current_cluster,current_cluster)] = len(external_hits)
 
         for cluster, ext_unirefs in external_clusters.items():
-            for uniref, ids in ext_unirefs.items():
-                if uniref not in t_external_clusters:
-                    t_external_clusters[uniref] = {}
-                if cluster not in t_external_clusters[uniref]:
-                    t_external_clusters[uniref][cluster] = ''
-                t_external_clusters[uniref][cluster] = ids
+            for uniref_c, ids in ext_unirefs.items():
+                if uniref_c not in t_external_clusters:
+                    t_external_clusters[uniref_c] = {}
+                t_external_clusters[uniref_c][cluster] = ids
 
-        for uniref in t_external_clusters:
-            cluster = int(uniref.replace('UniRef',''))
-            uniref_map = globals()['uniref{}'.format(cluster)]
+        for uniref_c in t_external_clusters:
+            cluster = int(uniref_c.replace('UniRef',''))
+            uniref_map =  getattr(self, 'uniref{}'.format(cluster))
 
-            files_to_load = [(prot,ortholog, uniref['UniRef{}_{}'.format(cluster, ortholog)]) for prot, ortholog in t_external_clusters[uniref].items() if len(prot)]
+            files_to_load = [(prot,ortholog, uniref_map['{}'.format(ortholog)]) for prot, ortholog in t_external_clusters[uniref_c].items() if len(prot)]
             files_to_load.sort(key = lambda x:x[2])
             
-            handle = open('{}/pickled/uniref{}_{}.pkl'.format(self.config['download_base_dir'], cluster, files_to_load[0][1]), 'rb')            
+            handle = open('{}/pickled/uniref{}_{}.pkl'.format(self.config['download_base_dir'], cluster, files_to_load[0][2]), 'rb')            
             chunk = pickle.load(handle)
 
             for prot, ortholog, chunk_id in files_to_load:
@@ -188,18 +190,18 @@ class Panproteome:
                     handle = open('{}/pickled/uniref{}_{}.pkl'.format(self.config['download_base_dir'], cluster, chunk_id), 'rb')
                     chunk = pickle.load(handle)
 
-                uniref_entry = process_proteomes.uniref_tuple_to_dict(chunk['UniRef{}_{}'.format(current_cluster, ortholog)])
+                uniref_entry = process_proteomes.uniref_tuple_to_dict(chunk['{}'.format(ortholog)])
                 taxa_is_present = [x[1] for x in uniref_entry['members']]
                 internal_hits = [x for x in taxa_is_present if x in item_descendant]
                 external_hits = [x for x in taxa_is_present if x not in item_descendant]
 
-                panproteome[prot]['{}_{}'.format(current_cluster, cluster)] = len(external_hits)
+                panproteome['members'][uniref_id]['uniqueness']['{}_{}'.format(current_cluster, cluster)] = len(external_hits)
 
+        pickle.dump(open(panproteome_fp,'wb'))
 
+    @staticmethod
     def find_core_genes(self, panproteome):
-        proteomes_in_panproteome = panproteome['number_proteomes']
-        coreness_threshold = round(proteomes_in_panproteome * self.coreness)
-        return [gene for gene, _ in filter(lambda gene:gene[1]['coreness'] > coreness_threshold, panproteome['members'].items())]
+        return [gene for gene, _ in filter(lambda gene:gene[1]['coreness'] > panproteome['coreness_threshold'], panproteome['members'].items())]
 
     def rank_genes(self, panproteome):
         pass
