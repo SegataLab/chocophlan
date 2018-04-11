@@ -18,6 +18,7 @@ import multiprocessing.dummy as dummy
 from collections import Counter
 from functools import partial
 import copy
+import glob
 import src.process_proteomes as process_proteomes
 from operator import itemgetter
 
@@ -139,7 +140,11 @@ class Panproteome:
 
 
     def calculate_uniqueness(self, panproteome_fp):
-        panproteome = pickle.load(open(panproteome_fp,'rb'))
+        try:
+            panproteome = pickle.load(open(panproteome_fp,'rb'))
+        except EOFError:
+            print(panproteome_fp)
+
         current_cluster = panproteome['cluster']
         external_clusters = {}
         t_external_clusters = {}
@@ -197,10 +202,10 @@ class Panproteome:
 
                 panproteome['members'][uniref_id]['uniqueness']['{}_{}'.format(current_cluster, cluster)] = len(external_hits)
 
-        pickle.dump(open(panproteome_fp,'wb'))
+        pickle.dump(panproteome, open(panproteome_fp, 'wb'))
 
     @staticmethod
-    def find_core_genes(self, panproteome):
+    def find_core_genes(panproteome):
         return [gene for gene, _ in filter(lambda gene:gene[1]['coreness'] > panproteome['coreness_threshold'], panproteome['members'].items())]
 
     def rank_genes(self, panproteome):
@@ -208,9 +213,12 @@ class Panproteome:
 
 def generate_panproteomes(config):
     p = Panproteome(config)
-    # p.create_panproteomes(100)
-    d_tax = p.taxontree.lookup_by_taxid()
-    p.process_panproteome((d_tax[562],'species',90))
+
+    # with dummy.Pool(config['nproc']) as pool:
+    #     d = [_ for _ in pool.imap_unordered(p.create_panproteomes, [100,90,50])]
+
+    for file in glob.glob('{}{}/*/*/*.pkl'.format(p.config['download_base_dir'], p.config['relpath_panproteomes_dir'])):
+        p.calculate_uniqueness(file)
 
 if __name__ == '__main__':
     t0 = time.time()

@@ -126,6 +126,10 @@ def download(config, verbose=False):
     argument_list.append((config['uniprot_ftp_base'],
                           config['uniprot_idmapping'],
                           config['download_base_dir'] + config['relpath_idmapping']))
+
+    argument_list.appen((config['uniprot_ftp_base'],
+                          config['relnotes'],
+                          config['download_base_dir'] + config['relpath_relnotes']))
                           
 
     ### Bacterial refseq genomes ###
@@ -180,7 +184,7 @@ def download(config, verbose=False):
             # Need to define a partial function because function passed via imap require only one argument
             do_download_partial = partial(do_download,verbose=config['verbose'])
 
-            [_ for _ in pool.imap(do_download_partial, argument_list,
+            [_ for _ in pool.imap_unordered(do_download_partial, argument_list,
                                   chunksize=10)]
         except Exception as e:
             utils.error(str(e))
@@ -189,7 +193,7 @@ def download(config, verbose=False):
 
     if verbose:
         utils.info('Download succesful\n')
-    return 
+
     files_to_check = [(config['download_base_dir'] + config['relpath_uniref100'], config['download_base_dir'] + os.path.split(config['relpath_uniref100'])[0] + "/RELEASE_100.metalink"),
     (config['download_base_dir'] + config['relpath_uniref90'], config['download_base_dir'] + os.path.split(config['relpath_uniref90'])[0] + "/RELEASE_90.metalink"),
     (config['download_base_dir'] + config['relpath_uniref50'], config['download_base_dir'] + os.path.split(config['relpath_uniref50'])[0] + "/RELEASE_50.metalink"),

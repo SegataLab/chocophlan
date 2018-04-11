@@ -28,7 +28,7 @@ from itertools import zip_longest
 from lxml import etree
 from functools import partial
 
-kingdom_to_process = ['Bacteria','Archaea']
+kingdom_to_process = ['Bacteria','Archaea', 'Eukaryota']
 genus_to_process = ['Candida', 'Blastocystis', 'Saccharomyces']
 dbReference = ['EMBL','EnsemblBacteria','GeneID','GO','KEGG','KO','Pfam','Proteomes']
 group_chunk = 1000000
@@ -524,14 +524,12 @@ def create_proteomes(xml_input, config):
     if config['verbose']:
         utils.info('Starting reference proteomes processing...\n',)
 
-    # for k in kingdom_to_process:
-    #     basepath = '{}/{}/{}/*.idmapping.gz'.format(config['download_base_dir'],config['relpath_reference_proteomes'], k)
-    #     ls = glob.glob(basepath)
-    #     for protid, taxid in [os.path.split(file)[1].split('.')[0].split('_') for file in ls]:
-    #         if protid in d_proteomes:
-    #             d_proteomes[protid]['isReference'] = True
-    #         else:
-    #             utils.info(protid+"\n")
+    for k in kingdom_to_process:
+        basepath = '{}/{}/{}/*.idmapping.gz'.format(config['download_base_dir'],config['relpath_reference_proteomes'], k)
+        ls = glob.glob(basepath)
+        for protid, taxid in [os.path.split(file)[1].split('.')[0].split('_') for file in ls]:
+            if protid in d_proteomes:
+                d_proteomes[protid]['isReference'] = True
                 
     pickle.dump(d_proteomes, open("{}{}".format(config['download_base_dir'],config['relpath_pickle_proteomes']),'wb'), -1)
     if config['verbose']:
