@@ -454,7 +454,7 @@ def parse_proteomes_xml_elem(elem, config):
                 d_prot[accession]['upi'] = upi
                 d_prot[accession]['tax_id'] = taxid
                 d_prot[accession]['isReference'] = True if elem.getchildren()[2].text == 'true' else False
-                # d_prot[accession]['AssemblyId'] = [c.get('id') for c in elem.iterchildren(tag='dbReference') if c.get('type') == 'AssemblyId'][0]
+                d_prot[accession]['AssemblyId'] = [c.get('id') for c in elem.iterchildren(tag='dbReference') if c.get('type') == 'AssemblyId'][0]
                 d_prot[accession]['ncbi_ids'] = [(c.get('type'),c.get('id')) for c in elem.iterchildren(tag='dbReference')]
                 if not upi:
                     d_prot[accession]['members'] = [x.get('accession') for k in elem.iterchildren(tag='component') for x in k.iterchildren(tag='protein')]
@@ -479,20 +479,20 @@ def create_proteomes(xml_input, config):
     terminating = mp.Event()
     chunksize = config['nproc']
     
-    r = re.compile('.*(trembl|sprot|uniparc).*')
-    # r = re.compile('.*(uniparc).*')
+    # r = re.compile('.*(trembl|sprot|uniparc).*')
+    r = re.compile('.*(uniparc).*')
     chunks = []
 
-    # tree = etree.iterparse(gzip.GzipFile(xml_input), events = ('end',), tag = 'proteome', huge_tree = True)
-    # parse_proteomes_xml_elem_partial = partial(parse_proteomes_xml_elem, config = config)
-    # try:
-    #     with mp.Pool(initializer=initt, initargs=(terminating, ), processes=chunksize) as pool:
-    #         for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(tree), group_chunk),1):
-    #             chunks=[x for x in pool.imap_unordered(parse_proteomes_xml_elem_partial, group, chunksize=chunksize)]
-    # except Exception as e:
-    #     utils.error(str(e))
-    #     utils.error('Processing failed')
-    #     raise
+    tree = etree.iterparse(gzip.GzipFile(xml_input), events = ('end',), tag = 'proteome', huge_tree = True)
+    parse_proteomes_xml_elem_partial = partial(parse_proteomes_xml_elem, config = config)
+    try:
+        with mp.Pool(initializer=initt, initargs=(terminating, ), processes=chunksize) as pool:
+            for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(tree), group_chunk),1):
+                chunks=[x for x in pool.imap_unordered(parse_proteomes_xml_elem_partial, group, chunksize=chunksize)]
+    except Exception as e:
+        utils.error(str(e))
+        utils.error('Processing failed')
+        raise
 
     try:
         with mp.Pool(initializer=initt, initargs=(terminating,), processes=chunksize) as pool:
@@ -509,7 +509,13 @@ def create_proteomes(xml_input, config):
     
     for k,v in chunks:
         if k not in d_proteomes:
-            d_proteomes[k] = {'members' : set(), 'isReference' : False, 'tax_id' : v['tax_id'], 'upi' : v['upi']}
+            d_proteomes[k] = {'members' : set(), 
+                              'isReference' : False, 
+                              'tax_id' : v['tax_id'], 
+                              'upi' : v['upi'], 
+                              'AssemblyId' : v['AssemblyId'],
+                              'ncbi_ids' : v['ncbi_ids']}
+                              
         if d_proteomes[k]['upi'] and v['upi']:
             d_proteomes[k]['members'].update(v['members'])
         elif not d_proteomes[k]['upi'] and not v['upi']:

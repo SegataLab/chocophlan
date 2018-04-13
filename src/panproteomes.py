@@ -140,16 +140,18 @@ class Panproteome:
 
 
     def calculate_uniqueness(self, panproteome_fp):
-        try:
-            panproteome = pickle.load(open(panproteome_fp,'rb'))
-        except EOFError:
-            print(panproteome_fp)
+        panproteome = pickle.load(open(panproteome_fp,'rb'))
 
         current_cluster = panproteome['cluster']
         external_clusters = {}
         t_external_clusters = {}
 
-        uniref = getattr(self, 'uniref{}'.format(current_cluster))
+        try:
+            uniref = getattr(self, 'uniref{}'.format(current_cluster))
+        except Exception as es:
+            print(current_cluster, panproteome_fp)
+            print(str(es))
+
         files_to_load = [(prot,uniref['UniRef{}_{}'.format(current_cluster, prot)]) for prot in panproteome['members'] if len(prot)]
         files_to_load.sort(key = lambda x:x[1])
 
@@ -202,6 +204,7 @@ class Panproteome:
 
                 panproteome['members'][uniref_id]['uniqueness']['{}_{}'.format(current_cluster, cluster)] = len(external_hits)
 
+        print(panproteome_fp)
         pickle.dump(panproteome, open(panproteome_fp, 'wb'))
 
     @staticmethod
@@ -214,8 +217,8 @@ class Panproteome:
 def generate_panproteomes(config):
     p = Panproteome(config)
 
-    # with dummy.Pool(config['nproc']) as pool:
-    #     d = [_ for _ in pool.imap_unordered(p.create_panproteomes, [100,90,50])]
+    #with dummy.Pool(config['nproc']) as pool:
+    #    d = [_ for _ in pool.imap_unordered(p.create_panproteomes, [100,90,50])]
 
     for file in glob.glob('{}{}/*/*/*.pkl'.format(p.config['download_base_dir'], p.config['relpath_panproteomes_dir'])):
         p.calculate_uniqueness(file)
