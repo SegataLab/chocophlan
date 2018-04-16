@@ -17,10 +17,37 @@ import pickle
 import resource
 import glob
 import time
+import statistics
 if __name__ == '__main__':
     import utils
 else:
     import src.utils
+
+def panproteome_stats(panproteome_fp):
+    panproteome = pickle.load(open(panproteome))
+    number_proteomes = panproteome['number_proteomes']
+    number_members = len(panproteome['members'])
+
+    #coreness
+    mean_coreness = statistics.mean((p['coreness'] for p in panproteome['members'].values()))
+    median_coreness = statistics.median((p['coreness'] for p in panproteome['members'].values()))
+    stdev_coreness = statistics.stdev((p['coreness'] for p in panproteome['members'].values()))
+
+    #uniqueness
+    mean_uniqueness = statistics.mean((p['uniqueness'] for p in panproteome['members'].values()))
+    median_uniqueness = statistics.median((p['uniqueness'] for p in panproteome['members'].values()))
+    stdev_uniqueness = statistics.stdev((p['uniqueness'] for p in panproteome['members'].values()))
+
+    #copy_number
+    mean_copy_number = statistics.mean((p['copy_number'] for p in panproteome['members'].values()))
+    median_copy_number = statistics.median((p['copy_number'] for p in panproteome['members'].values()))
+    stdev_copy_number = statistics.stdev((p['copy_number'] for p in panproteome['members'].values()))
+
+    #proteomes_present
+    mean_proteomes_present = statistics.mean((p['proteomes_present'] for p in panproteome['members'].values()))
+    median_proteomes_present = statistics.median((p['proteomes_present'] for p in panproteome['members'].values()))
+    stdev_proteomes_present = statistics.stdev((p['proteomes_present'] for p in panproteome['members'].values()))
+
 
 def stats(config):
     proteomes = pickle.load(open('{}/pickled/proteomes.pkl'.format(config['download_base_dir']), 'rb'))

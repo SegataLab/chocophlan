@@ -239,14 +239,14 @@ class Nodes:
         for c in clade.clades:
             self.get_leave_ids(c, recur=True)
     
-    def get_child_proteomes(clade):
-        if clade.initially_terminal and hasattr(clade,'proteome'):
-            return [clade.proteome]
-        p = [clade.proteome] if hasattr(clade,'proteome') else []
+    def get_child_proteomes(self, clade):
+        if clade.initially_terminal and hasattr(clade,'proteomes'):
+            return clade.proteomes
+        pp = copy.deepcopy(clade.proteomes) if hasattr(clade,'proteomes') else set()
         for c in clade.clades:
-            p.extend(get_child_proteomes(c))
-        return p
-
+            pp.update(self.get_child_proteomes(c))
+        return pp
+        
     def print_tree(self, out_file_name, reduced=False):
 
         tree = self.reduced_tree if reduced else self.tree

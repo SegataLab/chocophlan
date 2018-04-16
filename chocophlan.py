@@ -28,8 +28,8 @@ def chocophlan():
     #download.download(config['download'], verbose=config['download']['verbose'])
     #download.decompress(config['download'], verbose=config['download']['verbose'])
     #extract.do_extraction(config['extract'], verbose=config['extract']['verbose'])
-    #process_proteomes.process_proteomes(config['process_proteomes'])
-    panproteomes.generate_panproteomes(config['panproteomes'])
+    process_proteomes.process_proteomes(config['process_proteomes'])
+    # panproteomes.generate_panproteomes(config['panproteomes'])
 
 if __name__ == '__main__':
     t0 = time.time()

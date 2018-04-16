@@ -294,7 +294,7 @@ def parse_uniparc_xml_elem(elem, config):
                     elif p.get('type') == 'NCBI_taxonomy_id':
                         tax_id = int(p.get('value'))
                     elif p.get('type') == 'gene_name':
-                        gene_name = int(p.get('value'))
+                        gene_name = p.get('value')
                 if is_taxon_processable(tax_id):
                     d_prot['Proteomes'].add((proteome_id, tax_id, gene_name))
 
@@ -325,8 +325,8 @@ def parse_uniparc_xml(xml_input, config):
     if config['verbose']:
         utils.info('Starting processing {} file...\n'.format(xml_input))
 
-    # tree = etree.iterparse(xml_input, events = ('end',), tag = '{http://uniprot.org/uniparc}entry', huge_tree = True)
-    tree = etree.iterparse(gzip.open(xml_input), events = ('end',), tag = '{http://uniprot.org/uniparc}entry', huge_tree = True)
+    tree = etree.iterparse(xml_input, events = ('end',), tag = '{http://uniprot.org/uniparc}entry', huge_tree = True)
+    # tree = etree.iterparse(gzip.open(xml_input), events = ('end',), tag = '{http://uniprot.org/uniparc}entry', huge_tree = True)
     idmap = {}
     parse_uniparc_xml_elem_partial = partial(parse_uniparc_xml_elem, config=config)
     # for file_chunk, group in enumerate(tree):
@@ -337,13 +337,13 @@ def parse_uniparc_xml(xml_input, config):
     #     else:
     #         d = {x[0]:x for x in d}
     #         print('{} entry processed.'.format(file_chunk, flush = True))
-    for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(tree), int(group_chunk)),1000):
+    for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(tree), group_chunk),1000):
         try:
             with mp.Pool(initializer=initt, initargs=(terminating,), processes=int(chunksize)) as pool:
                 d={x[0]:x for x in pool.imap_unordered(parse_uniparc_xml_elem_partial, group, chunksize=int(chunksize)*6) if x is not None}
-                if len(d):
-                    idmap.update(dict.fromkeys(d.keys(), file_chunk))
-                    pickle.dump(d, open("{}/pickled/uniparc_{}.pkl".format(config['download_base_dir'], file_chunk),'wb'), -1)
+            if len(d):
+                idmap.update(dict.fromkeys(d.keys(), file_chunk))
+                pickle.dump(d, open("{}/pickled/uniparc_{}.pkl".format(config['download_base_dir'], file_chunk),'wb'), -1)
         except Exception as e:
             utils.error(str(e))
             utils.error('Processing of {} failed.'.format(xml_input),  exit=True)
@@ -442,7 +442,7 @@ def process(f):
 
 def parse_proteomes_xml_elem(elem, config):
     if not terminating.is_set() and elem is not None:
-        # tag_to_parse = ['dbReference','component']
+        elem = etree.fromstring(elem)
         try:
             d_prot = {}
             taxid = int(elem.attrib['taxonomy'])
@@ -454,7 +454,6 @@ def parse_proteomes_xml_elem(elem, config):
                 d_prot[accession]['upi'] = upi
                 d_prot[accession]['tax_id'] = taxid
                 d_prot[accession]['isReference'] = True if elem.getchildren()[2].text == 'true' else False
-                d_prot[accession]['AssemblyId'] = [c.get('id') for c in elem.iterchildren(tag='dbReference') if c.get('type') == 'AssemblyId'][0]
                 d_prot[accession]['ncbi_ids'] = [(c.get('type'),c.get('id')) for c in elem.iterchildren(tag='dbReference')]
                 if not upi:
                     d_prot[accession]['members'] = [x.get('accession') for k in elem.iterchildren(tag='component') for x in k.iterchildren(tag='protein')]
@@ -487,8 +486,7 @@ def create_proteomes(xml_input, config):
     parse_proteomes_xml_elem_partial = partial(parse_proteomes_xml_elem, config = config)
     try:
         with mp.Pool(initializer=initt, initargs=(terminating, ), processes=chunksize) as pool:
-            for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(tree), group_chunk),1):
-                chunks=[x for x in pool.imap_unordered(parse_proteomes_xml_elem_partial, group, chunksize=chunksize)]
+            chunks=[x for x in pool.imap_unordered(parse_proteomes_xml_elem_partial, yield_filtered_xml_string(tree), chunksize=chunksize)]
     except Exception as e:
         utils.error(str(e))
         utils.error('Processing failed')
@@ -510,10 +508,9 @@ def create_proteomes(xml_input, config):
     for k,v in chunks:
         if k not in d_proteomes:
             d_proteomes[k] = {'members' : set(), 
-                              'isReference' : False, 
+                              'isReference' : v['isReference'], 
                               'tax_id' : v['tax_id'], 
                               'upi' : v['upi'], 
-                              'AssemblyId' : v['AssemblyId'],
                               'ncbi_ids' : v['ncbi_ids']}
                               
         if d_proteomes[k]['upi'] and v['upi']:
