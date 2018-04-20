@@ -71,8 +71,6 @@ def taxon_to_process(config, taxontree):
         for line in taxa:
             name, rank = line.strip().split('\t')
             taxons.extend([x.tax_id for x in d_ranks[rank] if name == x.name])
-
-    
     [taxid_to_process.extend([x.tax_id for x in d_taxids[t].get_nonterminals()]) for t in taxons]
     [taxid_to_process.extend([x.tax_id for x in d_taxids[t].get_terminals()]) for t in taxons]
 
@@ -412,35 +410,35 @@ def get_uniprotkb_entry(idmap, accession,config):
     chunk = pickle.load(open('{}/pickled/{}_{}.pkl'.format(config['download_base_dir'],db,abs(fn)),'rb'))
     return uniprot_tuple_to_dict(chunk[accession])
 
-def process(f):
-    if not terminating.is_set():
-        x = pickle.load(open(f,'rb'))
-        d_proteome = {}
-        try:
-            if 'uniparc' not in f:
-                for k,v in x.items():
-                    if v[4] is not None:
-                        proteomes = tuple("UP{}{}".format("0"*(9-len(str(x))),x) for x in v[4])
-                        accession = k
-                        taxid = v[1]
-                        for proteome in proteomes:
-                            if proteome not in d_proteome:
-                                d_proteome[proteome] = {"isReference" : False, "members" : [], 'tax_id' : taxid, 'upi' : False}
-                            d_proteome[proteome]['members'].append(accession)
-            else:
-                for entry in x.values():
-                    for proteome, taxid in (("UP{}{}".format("0"*(9-len(str(upi))),upi),taxid) for upi, taxid in entry[1]):
-                        if proteome not in d_proteome:
-                            d_proteome[proteome] = {'members' : [], 'isReference' : False, 'tax_id' : taxid, 'upi' : True}
-                        d_proteome[proteome]['members'].append(entry[0])
-        except Exception as e:
-            utils.error(f)
-            utils.error(str(e))
-            utils.error('Processing failed',  exit=True)
-            raise
-        return d_proteome
-    else:
-        terminating.set()
+# def process(f):
+#     if not terminating.is_set():
+#         x = pickle.load(open(f,'rb'))
+#         d_proteome = {}
+#         try:
+#             if 'uniparc' not in f:
+#                 for k,v in x.items():
+#                     if v[4] is not None:
+#                         proteomes = tuple("UP{}{}".format("0"*(9-len(str(x))),x) for x in v[4])
+#                         accession = k
+#                         taxid = v[1]
+#                         for proteome in proteomes:
+#                             if proteome not in d_proteome:
+#                                 d_proteome[proteome] = {"isReference" : False, "members" : [], 'tax_id' : taxid, 'upi' : False}
+#                             d_proteome[proteome]['members'].append(accession)
+#             else:
+#                 for entry in x.values():
+#                     for proteome, taxid in (("UP{}{}".format("0"*(9-len(str(upi))),upi),taxid) for upi, taxid in entry[1]):
+#                         if proteome not in d_proteome:
+#                             d_proteome[proteome] = {'members' : [], 'isReference' : False, 'tax_id' : taxid, 'upi' : True}
+#                         d_proteome[proteome]['members'].append(entry[0])
+#         except Exception as e:
+#             utils.error(f)
+#             utils.error(str(e))
+#             utils.error('Processing failed',  exit=True)
+#             raise
+#         return d_proteome
+#     else:
+#         terminating.set()
 
 def parse_proteomes_xml_elem(elem, config):
     if not terminating.is_set() and elem is not None:
@@ -517,7 +515,6 @@ async def download(proteomes):
 def create_proteomes(xml_input, config):
     if config['verbose']:
         utils.info('Starting proteomes processing...\n')
-    d_proteomes = {}
     
     terminating = mp.Event()
     chunksize = config['nproc']
@@ -534,56 +531,22 @@ def create_proteomes(xml_input, config):
     except Exception as e:
         utils.error(str(e))
         utils.error('Processing failed')
-        raise
-    
+        raise 
+
+    d_proteomes = { k: {'members' : v.get('members', []), 
+                        'isReference' : v['isReference'], 
+                        'tax_id' : v['tax_id'], 
+                        'upi' : v['upi'], 
+                        'ncbi_ids' : v['ncbi_ids']}
+                    for k,v in ( i for chunk in chunks for i in chunk.items() )}
+                              
     loop = asyncio.get_event_loop()
     upp_entries = loop.run_until_complete(download())
 
     for proteome, upp in upp_entries:
         d_prot[proteome]['members'] = [k[0] for k in upp]
         pickle.dump(d, open('{}/pickled/uniparc_entries/{}.pkl'.format(config['download_base_dir'],accession),'wb'))
-    
-    # try:
-    #     with mp.Pool(initializer=initt, initargs=(terminating,), processes=chunksize) as pool:
-    #         chunks.extend([x for x in pool.imap_unordered(process, 
-    #                     (x for x in filter(r.match,glob.iglob("{}/pickled/*".format(config['download_base_dir']))))
-    #                       , chunksize = chunksize)])
-    # except Exception as e:
-    #     utils.error(str(e))
-    #     utils.error('Processing failed')
-    #     raise
 
-    chunks = [i for chunk in chunks for i in chunk.items()]
-    chunks.sort(key=lambda k:k[1]['upi'])
-    
-    for k,v in chunks:
-        if k not in d_proteomes:
-            d_proteomes[k] = {'members' : set(), 
-                              'isReference' : v['isReference'], 
-                              'tax_id' : v['tax_id'], 
-                              'upi' : v['upi'], 
-                              'ncbi_ids' : v['ncbi_ids']}
-                              
-        if d_proteomes[k]['upi'] and v['upi']:
-            d_proteomes[k]['members'].update(v['members'])
-        elif not d_proteomes[k]['upi'] and not v['upi']:
-            d_proteomes[k]['members'].update(v['members'])
-
-    # if config['verbose']:
-    #     utils.info('Done processing\n')
-
-    # if not os.path.exists('{}/{}'.format(config['download_base_dir'],config['relpath_reference_proteomes'])):
-    #     utils.error('Required files does not exist! Exiting...', exit=True)
-    
-    # if config['verbose']:
-    #     utils.info('Starting reference proteomes processing...\n',)
-
-    # for k in kingdom_to_process:
-    #     basepath = '{}/{}/{}/*.idmapping.gz'.format(config['download_base_dir'],config['relpath_reference_proteomes'], k)
-    #     ls = glob.glob(basepath)
-    #     for protid, taxid in [os.path.split(file)[1].split('.')[0].split('_') for file in ls]:
-    #         if protid in d_proteomes:
-    #             d_proteomes[protid]['isReference'] = True
                 
     pickle.dump(d_proteomes, open("{}{}".format(config['download_base_dir'],config['relpath_pickle_proteomes']),'wb'), -1)
     if config['verbose']:

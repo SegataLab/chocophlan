@@ -8,6 +8,14 @@ $ ./download_gff_fna.py id_file.txt downloads_folder
 Will download the gff and fna files for all ids in the input file to a
 folder named "downloads_folder" in the current working directory.
 """
+author__ = ('Nicola Segata (nicola.segata@unitn.it), '
+            'Francesco Beghini (francesco.beghini@unitn.it)'
+            'Nicolai Karcher (karchern@gmail.com),'
+            'Francesco Asnicar (f.asnicar@unitn.it)'
+            'Lauren McIver (lauren.j.mciver@gmail.com)')
+
+__version__ = '0.01'
+__date__ = '04 Jan 2018'
 
 import os
 import sys
