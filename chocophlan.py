@@ -18,6 +18,8 @@ import time
 from src.extract import Nodes as Nodes
 import sys
 
+def decompressed():
+    print('Decompressed.')
 
 def chocophlan():
     args = utils.read_params()
@@ -25,9 +27,12 @@ def chocophlan():
 
     config = utils.read_configs(args.config_file, verbose=args.verbose)
     config = utils.check_configs(config, verbose=args.verbose)
-    #download.download(config['download'], verbose=config['download']['verbose'])
-    #download.decompress(config['download'], verbose=config['download']['verbose'])
-    #extract.do_extraction(config['extract'], verbose=config['extract']['verbose'])
+    # download.download(config['download'], verbose=config['download']['verbose'])
+    # with Pool(processes=1) as pool:
+    #     pool.apply_async(download.decompress, 
+    #                     args=[config['download'], config['download']['verbose']],
+    #                     callback=decompressed)
+    # extract.do_extraction(config['extract'], verbose=config['extract']['verbose'])
     process_proteomes.process_proteomes(config['process_proteomes'])
     # panproteomes.generate_panproteomes(config['panproteomes'])
 
