@@ -18,11 +18,11 @@ import gzip
 import pickle
 import re
 import multiprocessing as mp
+import multiprocessing.dummy as mpdummy
 import glob
 import time
 import sys
 import requests
-import requests.async
 import asyncio
 import concurrent.futures
 from itertools import zip_longest
@@ -526,7 +526,7 @@ def create_proteomes(xml_input, config):
     tree = etree.iterparse(gzip.GzipFile(xml_input), events = ('end',), tag = 'proteome', huge_tree = True)
     parse_proteomes_xml_elem_partial = partial(parse_proteomes_xml_elem, config = config)
     try:
-        with mp.dummy.Pool(initializer=initt, initargs=(terminating, ), processes=chunksize) as pool:
+        with mpdummy.Pool(initializer=initt, initargs=(terminating, ), processes=chunksize) as pool:
             chunks=[x for x in pool.imap_unordered(parse_proteomes_xml_elem_partial, yield_filtered_xml_string(tree), chunksize=chunksize)]
     except Exception as e:
         utils.error(str(e))
@@ -538,10 +538,10 @@ def create_proteomes(xml_input, config):
                         'tax_id' : v['tax_id'], 
                         'upi' : v['upi'], 
                         'ncbi_ids' : v['ncbi_ids']}
-                    for k,v in ( i for chunk in chunks for i in chunk.items() )}
+                    for k,v in ( i for chunk in chunks if chunk is not None for i in chunk.items() )}
                               
     loop = asyncio.get_event_loop()
-    upp_entries = loop.run_until_complete(download())
+    upp_entries = loop.run_until_complete(download(d_proteomes))
 
     for proteome, upp in upp_entries:
         d_prot[proteome]['members'] = [k[0] for k in upp]
