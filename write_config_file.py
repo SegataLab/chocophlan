@@ -141,6 +141,15 @@ def read_params():
     group.add_argument('--relpath_pickle_contigid_filename',
                        default='/pickled/contigid_filename.pkl',
                        help='')
+
+
+    group.add_argument('--export_dir',
+                       default='/export',
+                       help='')
+    group.add_argument('--exportpath_phylophlan',
+                       default='phylophlan',
+                       help='')
+
     group.add_argument('--nproc', default=7,
                        help='Number of parallel processes')
 
@@ -203,6 +212,8 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.relpath_uniprot_sprot)
     configparser_object.set('download', 'relpath_uniprot_trembl',
                             args.relpath_uniprot_trembl)
+    configparser_object.set('download', 'relpath_uniparc',
+                            args.relpath_uniparc)
     configparser_object.set('download', 'verbose', str(verbose))
     configparser_object.set('download', 'nproc', str(args.nproc))
 
@@ -299,6 +310,20 @@ def set_download_options(configparser_object, args, verbose=False):
     configparser_object.set('panproteomes', 'verbose', str(verbose))
     configparser_object.set('panproteomes', 'nproc', str(args.nproc))
 
+
+    configparser_object.add_section('chocophlan2phylophlan')
+    configparser_object.set('panproteomes', 'download_base_dir',
+                            args.download_base_dir)
+    configparser_object.set('panproteomes', 'export_dir',
+                            args.export_dir)
+    configparser_object.set('panproteomes', 'exportpath_phylophlan',
+                            args.exportpath_phylophlan)
+    configparser_object.set('panproteomes', 'relpath_panproteomes_dir',
+                            args.relpath_panproteomes_dir)
+    configparser_object.set('panproteomes', 'relpath_pickle_proteomes',
+                            args.relpath_pickle_proteomes)
+    configparser_object.set('panproteomes', 'relpath_pickle_taxontree',
+                            args.relpath_pickle_taxontree)
     return configparser_object
 
 

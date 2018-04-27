@@ -51,11 +51,11 @@ class Panproteome:
             self.taxontree = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_taxontree']), 'rb'))
             self.proteomes = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_proteomes']), 'rb'))
             
-            if not self.taxontree.are_leaves_trimmed:
-                self.taxontree.remove_subtree_taxonomy_by_level('superkingdom', self.kingdom_to_process)
-                self.taxontree.tree.root = self.taxontree.tree.root.clades[4]
-                self.taxontree.remove_leaves_without_proteomes()
-                self.taxontree.are_leaves_trimmed=True
+            # if not self.taxontree.are_leaves_trimmed:
+            #     self.taxontree.remove_subtree_taxonomy_by_level('superkingdom', self.kingdom_to_process)
+            #     self.taxontree.tree.root = self.taxontree.tree.root.clades[4]
+            #     # self.taxontree.remove_leaves_without_proteomes()
+            #     self.taxontree.are_leaves_trimmed=True
             self.config = config
             gc.enable()
             if config['verbose']:
@@ -145,72 +145,48 @@ class Panproteome:
 
     def calculate_uniqueness(self, panproteome_fp):
         panproteome = pickle.load(open(panproteome_fp,'rb'))
-
-        current_cluster = panproteome['cluster']
-        external_clusters = {}
-        t_external_clusters = {}
-
-        try:
-            uniref = getattr(self, 'uniref{}'.format(current_cluster))
-        except Exception as es:
-            print(current_cluster, panproteome_fp)
-            print(str(es))
-
-        files_to_load = [(prot,uniref['UniRef{}_{}'.format(current_cluster, prot)]) for prot in panproteome['members'] if len(prot)]
-        files_to_load.sort(key = lambda x:x[1])
-
         d_taxids = self.taxontree.lookup_by_taxid()
-
+        panproteome_cluster = panproteome['cluster']
         item_descendant = [x.tax_id for k in (d_taxids[panproteome['tax_id']].get_terminals(), d_taxids[panproteome['tax_id']].get_nonterminals()) for x in k]
+        external_clusters = {}
 
-        # Intra cluster uniqueness
-        handle = open('{}/pickled/uniref{}_{}.pkl'.format(self.config['download_base_dir'], current_cluster, files_to_load[0][1]), 'rb')
-        chunk = pickle.load(handle)
-        for uniref_id, chunk_id in files_to_load:
-            if '{}/pickled/uniref{}_{}.pkl'.format(self.config['download_base_dir'], current_cluster, chunk_id) != handle.name:
-                handle = open('{}/pickled/uniref{}_{}.pkl'.format(self.config['download_base_dir'], current_cluster, chunk_id), 'rb')
-                chunk = pickle.load(handle)
-            
-            uniref_entry = process_proteomes.uniref_tuple_to_dict(chunk['UniRef{}_{}'.format(current_cluster, uniref_id)])
-            external_clusters[uniref_id] = dict(zip(['UniRef100','UniRef90','UniRef50'],itemgetter(*['UniRef100','UniRef90','UniRef50'])(uniref_entry)))
-            
-            taxa_is_present = set(x[1] for x in uniref_entry['members'])
-            internal_hits = [x for x in taxa_is_present if x in item_descendant]
-            external_hits = [x for x in taxa_is_present if x not in item_descendant]
+        def get_upper_clusters(cluster):
+            cs = [100, 90, 50]
+            return cs[cs.index(cluster):]
 
-            panproteome['members'][uniref_id]['uniqueness']['{}_{}'.format(current_cluster,current_cluster)] = len(external_hits)
-            panproteome['members'][uniref_id]['external_hits']['{}_{}'.format(current_cluster,current_cluster)] = external_hits
+        for cluster in get_upper_clusters(panproteome_cluster):
+            try:
+                uniref = getattr(self, 'uniref{}'.format(cluster))
+            except Exception as es:
+                print(cluster, panproteome_fp)
+                print(str(es))
 
-        for cluster, ext_unirefs in external_clusters.items():
-            for uniref_c, ids in ext_unirefs.items():
-                if uniref_c not in t_external_clusters:
-                    t_external_clusters[uniref_c] = {}
-                t_external_clusters[uniref_c][cluster] = ids
-
-        for uniref_c in t_external_clusters:
-            cluster = int(uniref_c.replace('UniRef',''))
-            uniref_map =  getattr(self, 'uniref{}'.format(cluster))
-
-            files_to_load = [(prot,ortholog, uniref_map['{}'.format(ortholog)]) for prot, ortholog in t_external_clusters[uniref_c].items() if len(prot)]
+            if panproteome_cluster == cluster:
+                files_to_load = [(pangene, 'UniRef{}_{}'.format(cluster, pangene), uniref['UniRef{}_{}'.format(cluster, pangene)]) for pangene in panproteome['members'] if len(pangene)]
+            else:
+                files_to_load = [(pangene, external_clusters[pangene]['UniRef{}'.format(cluster)], uniref[external_clusters[pangene]['UniRef{}'.format(cluster)]]) 
+                                    for pangene in panproteome['members'] if len(pangene)]
             files_to_load.sort(key = lambda x:x[2])
-            
-            handle = open('{}/pickled/uniref{}_{}.pkl'.format(self.config['download_base_dir'], cluster, files_to_load[0][2]), 'rb')            
-            chunk = pickle.load(handle)
+            # cluster_index = 0 if cluster == 100 else (1 if cluster == 90 else 2)
 
-            for prot, ortholog, chunk_id in files_to_load:
+            # Intra cluster uniqueness
+            handle = open('{}/pickled/uniref{}_{}.pkl'.format(self.config['download_base_dir'], cluster, files_to_load[0][2]), 'rb')
+            chunk = pickle.load(handle)
+            for pangene, uniref_id, chunk_id in files_to_load:
                 if '{}/pickled/uniref{}_{}.pkl'.format(self.config['download_base_dir'], cluster, chunk_id) != handle.name:
                     handle = open('{}/pickled/uniref{}_{}.pkl'.format(self.config['download_base_dir'], cluster, chunk_id), 'rb')
                     chunk = pickle.load(handle)
-
-                uniref_entry = process_proteomes.uniref_tuple_to_dict(chunk['{}'.format(ortholog)])
-                taxa_is_present = [x[1] for x in uniref_entry['members']]
-                internal_hits = [x for x in taxa_is_present if x in item_descendant]
+                
+                uniref_entry = process_proteomes.uniref_tuple_to_dict(chunk[uniref_id])
+                external_clusters[pangene] = dict(zip(['UniRef100','UniRef90','UniRef50'],itemgetter(*['UniRef100','UniRef90','UniRef50'])(uniref_entry)))
+                
+                taxa_is_present = set(x[1] for x in uniref_entry['members'])
+                # internal_hits = [x for x in taxa_is_present if x in item_descendant]
                 external_hits = [x for x in taxa_is_present if x not in item_descendant]
 
-                panproteome['members'][uniref_id]['uniqueness']['{}_{}'.format(current_cluster, cluster)] = len(external_hits)
-                panproteome['members'][uniref_id]['external_hits']['{}_{}'.format(current_cluster,current_cluster)] = external_hits
-
-        print(panproteome_fp)
+                panproteome['members'][pangene]['uniqueness']['{}_{}'.format(panproteome_cluster,cluster)] = len(external_hits)
+                panproteome['members'][pangene]['external_hits']['{}_{}'.format(panproteome_cluster,cluster)] = external_hits
+                
         pickle.dump(panproteome, open(panproteome_fp, 'wb'))
 
     @staticmethod

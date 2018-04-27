@@ -77,6 +77,11 @@ def download(config, verbose=False):
     os.makedirs(config['download_base_dir']+os.path.split(config['relpath_uniprot_trembl'])[0], exist_ok=True)
     os.makedirs(config['download_base_dir']+os.path.split(config['relpath_uniparc'])[0], exist_ok=True)
 
+    ### Download UniProt version
+    do_download((config['uniprot_ftp_base'],
+                  config['relnotes'],
+                  config['download_base_dir'] + config['relpath_relnotes']))
+
     ### uniprot XML ###
     argument_list = [(config['uniprot_ftp_base'],
                     config['uniprot_uniref100'],
@@ -126,10 +131,6 @@ def download(config, verbose=False):
     argument_list.append((config['uniprot_ftp_base'],
                           config['uniprot_idmapping'],
                           config['download_base_dir'] + config['relpath_idmapping']))
-
-    argument_list.appen((config['uniprot_ftp_base'],
-                          config['relnotes'],
-                          config['download_base_dir'] + config['relpath_relnotes']))
                           
 
     ### Bacterial refseq genomes ###
@@ -174,8 +175,8 @@ def download(config, verbose=False):
                           '{}{}/{}'.format(config['download_base_dir'],config['relpath_reference_proteomes'],f)))
     
     terminating = mp.Event()
-    chunksize = math.floor(len(argument_list) / (int(config['nproc']) * 2))
-    chunksize = 2
+    chunksize = config['nproc']
+    print(chunksize)
     with mp.Pool(initializer=initt, initargs=(terminating,), processes=chunksize) as pool:
         try:
             if verbose:
@@ -185,7 +186,7 @@ def download(config, verbose=False):
             do_download_partial = partial(do_download,verbose=config['verbose'])
 
             [_ for _ in pool.imap_unordered(do_download_partial, argument_list,
-                                  chunksize=10)]
+                                  chunksize=chunksize)]
         except Exception as e:
             utils.error(str(e))
             utils.error('Download failed', exit=True)
@@ -198,6 +199,7 @@ def download(config, verbose=False):
     (config['download_base_dir'] + config['relpath_uniref90'], config['download_base_dir'] + os.path.split(config['relpath_uniref90'])[0] + "/RELEASE_90.metalink"),
     (config['download_base_dir'] + config['relpath_uniref50'], config['download_base_dir'] + os.path.split(config['relpath_uniref50'])[0] + "/RELEASE_50.metalink"),
     (config['download_base_dir'] + config['relpath_uniprot_sprot'],  config['download_base_dir'] + os.path.split(config['relpath_uniprot_sprot'])[0] + "/RELEASE.metalink"),
+    (config['download_base_dir'] + config['relpath_uniparc'],  config['download_base_dir'] + os.path.split(config['relpath_uniparc'])[0] + "/RELEASE.metalink"),
     (config['download_base_dir'] + config['relpath_uniprot_trembl'],  config['download_base_dir'] + os.path.split(config['relpath_uniprot_trembl'])[0] + "/RELEASE.metalink")]
 
     find_file = etree.ETXPath("//{http://www.metalinker.org/}file")
