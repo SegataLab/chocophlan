@@ -23,7 +23,6 @@ import glob
 import time
 import sys
 import requests
-import requests
 import asyncio
 import concurrent.futures
 from itertools import zip_longest
@@ -283,81 +282,79 @@ def parse_uniprotkb_xml(xml_input, config):
 def parse_uniparc_xml_elem(elem, config):
     global uniprotkb_uniref_idmap, taxid_to_process
     nsprefix = '{http://uniprot.org/uniparc}'
-    if not terminating.is_set():
-        if elem is not None:
-            elem = etree.fromstring(elem)
-            try:
-                d_prot = {}
-                d_prot['accession'] = elem.find('.//{}accession'.format(nsprefix)).text
-                d_prot['sequence'] = elem.find('.//{}sequence'.format(nsprefix)).text.replace('\n','')
-                active_entries = elem.findall('.//{}dbReference[@active="Y"]'.format(nsprefix))
-                d_prot['uniprotkb_ids'] = list(set(x.get('id') for x in active_entries if 'UniProtKB' in x.get('type')))
-                entry_with_protid = [x for x in active_entries for y in x.iterchildren('{http://uniprot.org/uniparc}property') if y.get('type') == 'proteome_id']
-                d_prot['Proteomes'] = set()
-                for entry in entry_with_protid:
-                    gene_name = ''
-                    for p in entry:
-                        if p.get('type') == 'proteome_id':
-                            proteome_id = int(p.get('value')[2:])
-                        elif p.get('type') == 'NCBI_taxonomy_id':
-                            tax_id = int(p.get('value'))
-                        elif p.get('type') == 'gene_name':
-                            gene_name = p.get('value')
-                    if is_taxon_processable(tax_id):
-                        d_prot['Proteomes'].add((proteome_id, tax_id, gene_name))
-
-                t_prot = (d_prot.get('accession'),  
-                          tuple(d_prot.get('Proteomes',[])),
-                          d_prot.get('sequence'),
-                          uniprotkb_uniref_idmap.get(d_prot.get('accession'),['','',''])[0],
-                          uniprotkb_uniref_idmap.get(d_prot.get('accession'),['','',''])[1],
-                          uniprotkb_uniref_idmap.get(d_prot.get('accession'),['','',''])[2],
-                          d_prot.get('uniprotkb_ids',[])
-                         )
-                clear_node(elem)
-                ## If entry does not belong to a proteome, just throw it, wont need.
-                if not len(t_prot[1]):
-                    return None
-                    
-                return(t_prot)
-            except Exception as e:
-                utils.error('Failed to elaborate item: '+ elem.get('id'))
-                raise
-        else:
-            terminating.set()
-
-def parse_uniparc_xml(xml_input, config):
-    terminating = mp.Event()
-    chunksize = config['nproc']
-    if config['verbose']:
-        utils.info('Starting processing {} file...\n'.format(xml_input))
-
-    tree = etree.iterparse(xml_input, events = ('end',), tag = '{http://uniprot.org/uniparc}entry', huge_tree = True)
-    # tree = etree.iterparse(gzip.open(xml_input), events = ('end',), tag = '{http://uniprot.org/uniparc}entry', huge_tree = True)
-    idmap = {}
-    parse_uniparc_xml_elem_partial = partial(parse_uniparc_xml_elem, config=config)
-    # for file_chunk, group in enumerate(tree):
-    #     if file_chunk == 0 or file_chunk % 1000000:
-    #         res = parse_uniparc_xml_elem(group[1], config)
-    #         if res is not None:
-    #             d.append(res)
-    #     else:
-    #         d = {x[0]:x for x in d}
-    #         print('{} entry processed.'.format(file_chunk, flush = True))
-    for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(tree), int(group_chunk/2)),1000):
+    if elem is not None:
+        elem = etree.fromstring(elem)
         try:
-            with mp.Pool(initializer=initt, initargs=(terminating,), processes=int(chunksize)) as pool:
-                d={x[0]:x for x in pool.imap_unordered(parse_uniparc_xml_elem_partial, group, chunksize=int(chunksize/2)) if x is not None}
-            if len(d):
-                idmap.update(dict.fromkeys(d.keys(), file_chunk))
-                pickle.dump(d, open("{}/pickled/uniparc_{}.pkl".format(config['download_base_dir'], file_chunk),'wb'), -1)
+            d_prot = {}
+            d_prot['accession'] = elem.find('.//{}accession'.format(nsprefix)).text
+            d_prot['sequence'] = elem.find('.//{}sequence'.format(nsprefix)).text.replace('\n','')
+            active_entries = elem.findall('.//{}dbReference[@active="Y"]'.format(nsprefix))
+            d_prot['uniprotkb_ids'] = list(set(x.get('id') for x in active_entries if 'UniProtKB' in x.get('type')))
+            entry_with_protid = [x for x in active_entries for y in x.iterchildren('{http://uniprot.org/uniparc}property') if y.get('type') == 'proteome_id']
+            d_prot['Proteomes'] = set()
+            for entry in entry_with_protid:
+                gene_name = ''
+                for p in entry:
+                    if p.get('type') == 'proteome_id':
+                        proteome_id = int(p.get('value')[2:])
+                    elif p.get('type') == 'NCBI_taxonomy_id':
+                        tax_id = int(p.get('value'))
+                    elif p.get('type') == 'gene_name':
+                        gene_name = p.get('value')
+                if is_taxon_processable(tax_id):
+                    d_prot['Proteomes'].add((proteome_id, tax_id, gene_name))
+
+            t_prot = (d_prot.get('accession'),  
+                      tuple(d_prot.get('Proteomes',[])),
+                      d_prot.get('sequence'),
+                      uniprotkb_uniref_idmap.get(d_prot.get('accession'),['','',''])[0],
+                      uniprotkb_uniref_idmap.get(d_prot.get('accession'),['','',''])[1],
+                      uniprotkb_uniref_idmap.get(d_prot.get('accession'),['','',''])[2],
+                      d_prot.get('uniprotkb_ids',[])
+                     )
+            clear_node(elem)
+            ## If entry does not belong to a proteome, just throw it, wont need.
+            if not len(t_prot[1]):
+                return None
+                
+            return(t_prot)
         except Exception as e:
-            utils.error(str(e))
-            utils.error('Processing of {} failed.'.format(xml_input),  exit=True)
+            utils.error('Failed to elaborate item: '+ elem.get('id'))
             raise
-    pickle.dump(idmap, open("{}/pickled/uniparc_idmap.pkl".format(config['download_base_dir']),'wb'), -1)
-    if config['verbose']:
-        utils.info('Done processing {} file!\n'.format(xml_input))
+
+
+# def parse_uniparc_xml(xml_input, config):
+#     terminating = mp.Event()
+#     chunksize = config['nproc']
+#     if config['verbose']:
+#         utils.info('Starting processing {} file...\n'.format(xml_input))
+
+#     tree = etree.iterparse(xml_input, events = ('end',), tag = '{http://uniprot.org/uniparc}entry', huge_tree = True)
+#     # tree = etree.iterparse(gzip.open(xml_input), events = ('end',), tag = '{http://uniprot.org/uniparc}entry', huge_tree = True)
+#     idmap = {}
+#     parse_uniparc_xml_elem_partial = partial(parse_uniparc_xml_elem, config=config)
+#     # for file_chunk, group in enumerate(tree):
+#     #     if file_chunk == 0 or file_chunk % 1000000:
+#     #         res = parse_uniparc_xml_elem(group[1], config)
+#     #         if res is not None:
+#     #             d.append(res)
+#     #     else:
+#     #         d = {x[0]:x for x in d}
+#     #         print('{} entry processed.'.format(file_chunk, flush = True))
+#     for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(tree), int(group_chunk/2)),1000):
+#         try:
+#             with mp.Pool(initializer=initt, initargs=(terminating,), processes=int(chunksize)) as pool:
+#                 d={x[0]:x for x in pool.imap_unordered(parse_uniparc_xml_elem_partial, group, chunksize=int(chunksize/2)) if x is not None}
+#             if len(d):
+#                 idmap.update(dict.fromkeys(d.keys(), file_chunk))
+#                 pickle.dump(d, open("{}/pickled/uniparc_{}.pkl".format(config['download_base_dir'], file_chunk),'wb'), -1)
+#         except Exception as e:
+#             utils.error(str(e))
+#             utils.error('Processing of {} failed.'.format(xml_input),  exit=True)
+#             raise
+#     pickle.dump(idmap, open("{}/pickled/uniparc_idmap.pkl".format(config['download_base_dir']),'wb'), -1)
+#     if config['verbose']:
+#         utils.info('Done processing {} file!\n'.format(xml_input))
 
 def get_members(line):
     if not terminating.is_set():
@@ -417,35 +414,35 @@ def get_uniprotkb_entry(idmap, accession,config):
     chunk = pickle.load(open('{}/pickled/{}_{}.pkl'.format(config['download_base_dir'],db,abs(fn)),'rb'))
     return uniprot_tuple_to_dict(chunk[accession])
 
-def process(f):
-    if not terminating.is_set():
-        x = pickle.load(open(f,'rb'))
-        d_proteome = {}
-        try:
-            if 'uniparc' not in f:
-                for k,v in x.items():
-                    if v[4] is not None:
-                        proteomes = tuple("UP{}{}".format("0"*(9-len(str(x))),x) for x in v[4])
-                        accession = k
-                        taxid = v[1]
-                        for proteome in proteomes:
-                            if proteome not in d_proteome:
-                                d_proteome[proteome] = {"isReference" : False, "members" : [], 'tax_id' : taxid, 'upi' : False}
-                            d_proteome[proteome]['members'].append(accession)
-            else:
-                for entry in x.values():
-                    for proteome, taxid in (("UP{}{}".format("0"*(9-len(str(upi))),upi),taxid) for upi, taxid in entry[1]):
-                        if proteome not in d_proteome:
-                            d_proteome[proteome] = {'members' : [], 'isReference' : False, 'tax_id' : taxid, 'upi' : True}
-                        d_proteome[proteome]['members'].append(entry[0])
-        except Exception as e:
-            utils.error(f)
-            utils.error(str(e))
-            utils.error('Processing failed',  exit=True)
-            raise
-        return d_proteome
-    else:
-        terminating.set()
+# def process(f):
+#     if not terminating.is_set():
+#         x = pickle.load(open(f,'rb'))
+#         d_proteome = {}
+#         try:
+#             if 'uniparc' not in f:
+#                 for k,v in x.items():
+#                     if v[4] is not None:
+#                         proteomes = tuple("UP{}{}".format("0"*(9-len(str(x))),x) for x in v[4])
+#                         accession = k
+#                         taxid = v[1]
+#                         for proteome in proteomes:
+#                             if proteome not in d_proteome:
+#                                 d_proteome[proteome] = {"isReference" : False, "members" : [], 'tax_id' : taxid, 'upi' : False}
+#                             d_proteome[proteome]['members'].append(accession)
+#             else:
+#                 for entry in x.values():
+#                     for proteome, taxid in (("UP{}{}".format("0"*(9-len(str(upi))),upi),taxid) for upi, taxid in entry[1]):
+#                         if proteome not in d_proteome:
+#                             d_proteome[proteome] = {'members' : [], 'isReference' : False, 'tax_id' : taxid, 'upi' : True}
+#                         d_proteome[proteome]['members'].append(entry[0])
+#         except Exception as e:
+#             utils.error(f)
+#             utils.error(str(e))
+#             utils.error('Processing failed',  exit=True)
+#             raise
+#         return d_proteome
+#     else:
+#         terminating.set()
 
 def parse_proteomes_xml_elem(elem, config):
     if not terminating.is_set() and elem is not None:
@@ -477,9 +474,9 @@ def parse_proteomes_xml_elem(elem, config):
         terminating.set()
 
 def get_request(requestURL):
-    r = requests.get(requestURL, headers={ "Accept" : "application/xml"})
+    r = requests.get(requestURL, headers={ "Accept" : "application/xml"}, timeout = None)
+    print(requestURL)
     if not r.ok:
-        terminating.set()
         r.raise_for_status()
     return r
 
@@ -487,23 +484,50 @@ def get_upp(accession):
     baseURL = "https://www.ebi.ac.uk/proteins/api/uniparc/proteome/{}?offset={}&size={}&rfActive=true"
     requestURL = baseURL.format(accession, 0, 100)
     entries = []
-    last = False
     
-    while not last:
-        r = get_request(requestURL)
-        link_handles = {rel.strip()[5:].strip('"'):link[1:-1] for link, rel in (link.strip().split(';') for link in r.headers['Link'].split(','))}
-        entries.append(r.text)
-        
-        total_records = int(r.headers['x-pagination-totalrecords'])
-        step = int(link_handles['self'].split('?')[1].split('&')[1].split('=')[1])
-        first_offset = int(link_handles['self'].split('?')[1].split('&')[0].split('=')[1])
-        last_offset = int(link_handles['last'].split('?')[1].split('&')[0].split('=')[1])
- 
-        if last_offset != first_offset:
-            requestURLs = [baseURL.format(accession,offset,step) for offset in range(step, last_offset+step, step)]
-            with concurrent.futures.ProcessPoolExecutor() as executor:
-                [entries.append(r.text) for r in executor.map(get_request, requestURLs)]
-                
+    r = get_request(requestURL)
+    link_handles = {rel.strip()[5:].strip('"'):link[1:-1] for link, rel in (link.strip().split(';') for link in r.headers['Link'].split(','))}
+    entries.append(r.text)
+    
+    total_records = int(r.headers['x-pagination-totalrecords'])
+    step = int(link_handles['self'].split('?')[1].split('&')[1].split('=')[1])
+    first_offset = int(link_handles['self'].split('?')[1].split('&')[0].split('=')[1])
+    last_offset = int(link_handles['last'].split('?')[1].split('&')[0].split('=')[1])
+
+    if last_offset != first_offset:
+        requestURLs = [baseURL.format(accession,offset,step) for offset in range(step, last_offset+step, step)]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            [entries.append(r.text) for r in executor.map(get_request, requestURLs, chunksize=4)]
+            
+    if sum([e.count('<entry') for e in entries]) == total_records:
+        d = []
+        for entry in entries:
+            entry = etree.fromstring(entry.encode())
+            d.extend([parse_uniparc_xml_elem(etree.tostring(e), config) for e in entry])
+
+    return (accession, d)
+
+def get_upp_testing(accession):
+    baseURL = "https://www.ebi.ac.uk/proteins/api/uniparc/proteome/{}?offset={}&size={}&rfActive=true"
+    requestURL = baseURL.format(accession, 0, 100)
+    entries = []
+    
+    r = get_request(requestURL)
+    link_handles = {rel.strip()[5:].strip('"'):link[1:-1] for link, rel in (link.strip().split(';') for link in r.headers['Link'].split(','))}
+    entries.append(r.text)
+    
+    total_records = int(r.headers['x-pagination-totalrecords'])
+    step = int(link_handles['self'].split('?')[1].split('&')[1].split('=')[1])
+    first_offset = int(link_handles['self'].split('?')[1].split('&')[0].split('=')[1])
+    last_offset = int(link_handles['last'].split('?')[1].split('&')[0].split('=')[1])
+
+    if last_offset != first_offset:
+        requestURLs = [baseURL.format(accession,offset,step) for offset in range(step, last_offset+step, step)]
+        for i in requestURLs:
+            entries.append(await )
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            [entries.append(r.text) for r in executor.map(get_request, requestURLs, chunksize=4)]
+            
     if sum([e.count('<entry') for e in entries]) == total_records:
         d = []
         for entry in entries:
@@ -513,7 +537,7 @@ def get_upp(accession):
     return (accession, d)
 
 async def download(proteomes):
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=8) as executor:
         loop = asyncio.get_event_loop()
         futures = [loop.run_in_executor(executor, get_upp, k) for k,v in proteomes.items() if v['upi']]
         results = [x for x in await asyncio.gather(*futures)]

@@ -215,3 +215,4 @@ if __name__ == '__main__':
     config = utils.check_configs(config)
     config = config['panproteomes']
     generate_panproteomes(config)
+    
