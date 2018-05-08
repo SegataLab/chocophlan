@@ -27,17 +27,11 @@ ranks2code = {'superkingdom': 'k', 'phylum': 'p', 'class': 'c',
 order = ('k', 'p', 'c', 'o', 'f', 'g', 's', 't')
 CLUSTER = 90
 
-def go_up_to_species(taxid):
-    father = d_taxids[taxid].parent_tax_id
-    if not d_taxids[father].rank == 'species':
-        return go_up_to_species(father)
-    return father
-    
 
 def chocophlan2phylophlan(config):
     taxontree = pickle.load(open("{}/{}".format(config['download_base_dir'],config['relpath_pickle_taxontree']), 'rb'))
     proteomes = pickle.load(open("{}{}".format(config['download_base_dir'],config['relpath_pickle_proteomes']), 'rb'))
-    d_taxids = taxontree.lookup_by_taxid()
+    d_taxids = taxontree.taxid_n
 
     reference_proteomes = [proteome for proteome in proteomes if proteomes[proteome]['isReference']]
     d_out_core = {}
@@ -48,7 +42,7 @@ def chocophlan2phylophlan(config):
         tax_id = proteomes[rfid]['tax_id']
 
         if not d_taxids[tax_id].rank == 'species':
-            tax_id = go_up_to_species(tax_id)
+            tax_id = taxontree.go_up_to_species(tax_id)
 
         fp = '{}/{}/{}/{}/{}.pkl'.format(config['download_base_dir'], 
                                                  config['relpath_panproteomes_dir']+"_old", 
@@ -83,20 +77,24 @@ def chocophlan2phylophlan(config):
             
             if tax_id not in d_out_core:
                 d_out_core[tax_id] = (taxa_str, set())
+            #TODO
+            #URL OF CORE UNIREF
+            #core_genes = [for ] join con url http://www.uniprot.org/uniref/{}.fasta
             d_out_core[tax_id][1].update(core_genes)
 
             if tax_id not in d_out_refp:
                 d_out_refp[tax_id] = (taxa_str, set())
+            #add first reference, non rendundant, redundant
             d_out_refp[tax_id][1].add('http://www.uniprot.org/uniprot/?query=proteome:{}&compress=yes&force=true&format=fasta'.format(rfid))
         else:
             print('Panproteome {} not available'.format(fp))
 
 ##CREATE DIRS
 ##TAXONOMY, URL, VERSION
-    with open('{}/{}/taxa2proteomes.txt'format(config['export_dir'], config['exportpath_phylophlan']), 'w') as t2p_out:
-        with open('{}/{}/taxa2core.txt'format(config['export_dir'], config['exportpath_phylophlan']), 'w') as t2c_out:
-            lines_t2p = ['{}\t{}\t{}\n'.format(tax_id, entry[0], ';'.join(entry[1])) for tax_id, entry in d_out_core.items()]
-            lines_t2c = ['{}\t{}\t{}\n'.format(tax_id, entry[0], ';'.join(entry[1])) for tax_id, entry in d_out_refp.items()]
+    with open('{}/{}/taxa2proteomes.txt'.format(config['export_dir'], config['exportpath_phylophlan']), 'w') as t2p_out:
+        with open('{}/{}/taxa2core.txt'.format(config['export_dir'], config['exportpath_phylophlan']), 'w') as t2c_out:
+            lines_t2p = ['{}\t{}\t{}\n'.format(tax_id, entry[0], ';'.join(entry[1])) for tax_id, entry in d_out_refp.items()]
+            lines_t2c = ['{}\t{}\t{}\n'.format(tax_id, entry[0], ';'.join(entry[1])) for tax_id, entry in d_out_core.items()]
 
             t2p_out.writelines(lines_t2p)
             t2c_out.writelines(lines_t2c)

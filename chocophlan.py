@@ -29,9 +29,9 @@ def chocophlan():
     config = utils.check_configs(config, verbose=args.verbose)
     # download.download(config['download'], verbose=config['download']['verbose'])
     # with Pool(processes=1) as pool:
-    #     pool.apply_async(download.decompress, 
-    #                     args=[config['download'], config['download']['verbose']],
-    #                     callback=decompressed)
+    #    pool.apply_async(download.decompress, 
+    #                    args=[config['download'], config['download']['verbose']],
+    #                    callback=decompressed)
     # extract.do_extraction(config['extract'], verbose=config['extract']['verbose'])
     process_proteomes.process_proteomes(config['process_proteomes'])
     # panproteomes.generate_panproteomes(config['panproteomes'])

@@ -145,7 +145,7 @@ class Panproteome:
 
     def calculate_uniqueness(self, panproteome_fp):
         panproteome = pickle.load(open(panproteome_fp,'rb'))
-        d_taxids = self.taxontree.lookup_by_taxid()
+        d_taxids = self.taxontree.taxid_n
         panproteome_cluster = panproteome['cluster']
         item_descendant = [x.tax_id for k in (d_taxids[panproteome['tax_id']].get_terminals(), d_taxids[panproteome['tax_id']].get_nonterminals()) for x in k]
         external_clusters = {}

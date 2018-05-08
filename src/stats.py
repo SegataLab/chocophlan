@@ -23,74 +23,131 @@ if __name__ == '__main__':
 else:
     import src.utils
 
-def panproteome_stats(panproteome_fp):
-    panproteome = pickle.load(open(panproteome))
-    number_proteomes = panproteome['number_proteomes']
-    number_members = len(panproteome['members'])
+class stats:
+    def __init__(config):
+        self.proteomes = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_proteomes']), 'rb'))
+        self.uniprotkb = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_uniprotkb_idmap']), 'rb'))
+        self.uniref100 = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_uniref100_idmap']), 'rb'))
+        self.uniref90 = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_uniref90_idmap']), 'rb'))
+        self.uniref50 = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_uniref50_idmap']), 'rb'))
+        self.taxontree = pickle.load(open('{}{}'.format(config['download_base_dir'],config['relpath_pickle_taxontree']), 'rb'))
+        self.d_ranks = self.taxontree.lookup_by_rank()
+        self.config = config
 
-    #coreness
-    mean_coreness = statistics.mean((p['coreness'] for p in panproteome['members'].values()))
-    median_coreness = statistics.median((p['coreness'] for p in panproteome['members'].values()))
-    stdev_coreness = statistics.stdev((p['coreness'] for p in panproteome['members'].values()))
+    #species_proteomes = set(x['tax_id'] if taxontree.taxid_n[x['tax_id']].rank =='species' else taxontree.go_up_to_species(x['tax_id']) for x in proteomes.values() )
+    def species_stats(self, tax_id):
+        species_proteomes = self.taxontree.get_child_proteomes(self.taxontree.taxid_n[tax_id])
+        number_proteomes = len(species_proteomes)
+        reference_proteomes = len([x for x in species_proteomes if self.proteomes[x]['isReference']])
+        redundant_proteomes = len([x for x in species_proteomes if self.proteomes[x]['upi']])
+        non_redundant_proteomes = number_proteomes - redundant_proteomes - reference_proteomes
+        avg_number_proteins = statistics.mean([len(self.proteomes[proteome]['members']) for proteome in species_proteomes])
+        panproteome_100 = self.panproteome_stats(tax_id, 100)
+        panproteome_90 = self.panproteome_stats(tax_id, 90)
+        panproteome_50 = self.panproteome_stats(tax_id, 50)
 
-    #uniqueness
-    mean_uniqueness = statistics.mean((p['uniqueness'] for p in panproteome['members'].values()))
-    median_uniqueness = statistics.median((p['uniqueness'] for p in panproteome['members'].values()))
-    stdev_uniqueness = statistics.stdev((p['uniqueness'] for p in panproteome['members'].values()))
+        return { tax_id: (reference_proteomes, redundant_proteomes, non_redundant_proteomes, panproteome_100, panproteome_90, panproteome_50) }
 
-    #copy_number
-    mean_copy_number = statistics.mean((p['copy_number'] for p in panproteome['members'].values()))
-    median_copy_number = statistics.median((p['copy_number'] for p in panproteome['members'].values()))
-    stdev_copy_number = statistics.stdev((p['copy_number'] for p in panproteome['members'].values()))
+    def panproteome_stats(self, tax_id, cluster):
+      try:
+        panproteome = pickle.load(open('{}{}/{}/{}/{}.pkl'.format(self.config['download_base_dir'], self.config['relpath_panproteomes_dir'], 'species', cluster, tax_id),'rb'))
+      except FileNotFoundError as ex:
+        utils.error('TAXID {}: Panproteome calculated using UniRef{} does not exist!'.format(tax_id, cluster))
+        return None
+      number_proteomes = panproteome['number_proteomes']
+      number_members = len(panproteome['members'])
 
-    #proteomes_present
-    mean_proteomes_present = statistics.mean((p['proteomes_present'] for p in panproteome['members'].values()))
-    median_proteomes_present = statistics.median((p['proteomes_present'] for p in panproteome['members'].values()))
-    stdev_proteomes_present = statistics.stdev((p['proteomes_present'] for p in panproteome['members'].values()))
+      #coreness
+      mean_coreness = statistics.mean((p['coreness'] for p in panproteome['members'].values()))
+      median_coreness = statistics.median((p['coreness'] for p in panproteome['members'].values()))
+      stdev_coreness = statistics.stdev((p['coreness'] for p in panproteome['members'].values()))
+
+      #uniqueness
+      d = {}
+      [d.setdefault(k,[]).append(v) for k,v in ((k,v) for p in panproteome['members'].values() for k, v in p['uniqueness'].items())]
+      mean_uniqueness = {k:statistics.mean(v) for k,v in d.items()}
+      median_uniqueness = {k:statistics.median(v) for k,v in d.items()}
+      stdev_uniqueness = {k:statistics.stdev(v) for k,v in d.items()}
+
+      #copy_number
+      mean_copy_number = statistics.mean((len(p['copy_number']) for p in panproteome['members'].values()))
+      median_copy_number = statistics.median((len(p['copy_number']) for p in panproteome['members'].values()))
+      stdev_copy_number = statistics.stdev((len(p['copy_number']) for p in panproteome['members'].values()))
+
+      #proteomes_present
+      mean_proteomes_present = statistics.mean((len(p['proteomes_present']) for p in panproteome['members'].values()))
+      median_proteomes_present = statistics.median((len(p['proteomes_present']) for p in panproteome['members'].values()))
+      stdev_proteomes_present = statistics.stdev((len(p['proteomes_present']) for p in panproteome['members'].values()))
+
+      return { 'number_proteomes' : number_proteomes,
+               'number_members' : number_members,
+               'coreness': (mean_coreness, median_coreness, stdev_coreness), 
+               'uniqueness': (mean_uniqueness, median_uniqueness, stdev_uniqueness),
+               'copy_number': (mean_copy_number, median_copy_number, stdev_copy_number),
+               'proteomes_present':(mean_proteomes_present, median_proteomes_present, stdev_proteomes_present) 
+              }
+
+    def stats(config):
+        s = '-----Taxonomy-----\n'
+              'Total number of species: {}\n'
+              '\tBacteria: {}\n'
+              '\tArchaea: {}\n'
+              'Total number of strains: {}\n'
+              '-----UniProtKB-----\n'
+              'Total number of proteomes: {}\n'
+              'Total number of proteins in proteomes: {}\n'
+              'Total number of proteins NOT PRESENT in a proteome: {}\n'
+              'Total number of proteins in UniProtKB database: {}\n'
+              '-----UniRef-----\n'
+              'Total number of UniRef100 clusters: {}\n'
+              '\t\tUniref90 clusters: {}\n'
+              '\t\tUniref50 clusters: {}\n'
+              '-----Panproteomes-----\n'
+              'Total created panproteomes: {}\n'
+              '-----Memory-----------\n'
+              'Total RAM usage by ChocoPhlAn indices: {} Gb\n'
+              '\n'
+              .format(#Taxonomy
+                      len(self.d_ranks['species']),
+                      len([x for x in d_ranks['species'] if d_ranks['superkingdom'][0].is_parent_of(x)]),
+                      len([x for x in d_ranks['species'] if d_ranks['superkingdom'][1].is_parent_of(x)]),
+                      sum([len(x) for x in d_ranks['species'] if not x.initially_terminal]),
+                      #UniProtKB
+                      len(proteomes),
+                      sum([len(v['members']) for _,v in proteomes.items()]),
+                      len(uniprotkb)-sum([len(v['members']) for _,v in proteomes.items()]),
+                      len(uniprotkb),
+                      #UniRef
+                      len(uniref100),
+                      len(uniref90),
+                      len(uniref50),
+                      #Panproteomes
+                      len(glob.glob(config['download_base_dir']+config['relpath_panproteomes_dir']+'/*/*/*')),
+                      #Memory
+                      resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / pow(2,20))
+
+        s = { 'Total number of species'
+              'Total number of bacterial species'
+              'Total number of archaeal species'
+              'Total number of eukaryotic species'
+              'Total number of strains'
+              'Total number of proteomes'
+              'Total number of proteins in proteomes'
+              'Total number of proteins NOT PRESENT in a proteome'
+              'Total number of proteins in UniProtKB database'
+              'Total number of UniRef100 clusters'
+              'Total number of Uniref90 clusters'
+              'Total number of Uniref50 clusters'
+              'Total created panproteomes'
+              'Total RAM usage by ChocoPhlAn indices (Gb)'
+
+        }
+
+        species_proteomes = set(x['tax_id'] if taxontree.taxid_n[x['tax_id']].rank =='species' else taxontree.go_up_to_species(x['tax_id']) for x in proteomes.values() )
+        for species in species_proteomes:
+            species_stats(self, species)
 
 
-def stats(config):
-    proteomes = pickle.load(open('{}/pickled/proteomes.pkl'.format(config['download_base_dir']), 'rb'))
-    uniprotkb = pickle.load(open('{}/pickled/uniprotkb_idmap.pkl'.format(config['download_base_dir']),'rb'))
-    uniref100 = pickle.load(open('{}/pickled/uniref100_idmap.pkl'.format(config['download_base_dir']), 'rb'))
-    uniref90 = pickle.load(open('{}/pickled/uniref90_idmap.pkl'.format(config['download_base_dir']), 'rb'))
-    uniref50 = pickle.load(open('{}/pickled/uniref50_idmap.pkl'.format(config['download_base_dir']), 'rb'))
-    taxontree = pickle.load(open('{}{}'.format(config['download_base_dir'],config['relpath_pickle_taxontree']), 'rb'))
-    d_ranks = taxontree.lookup_by_rank()
-
-    s = '-----Taxonomy-----\n'
-          'Total number of species: {}\n'
-          '\tBacteria: {}\n'
-          '\tArchaea: {}\n'
-          'Total number of strains: {}\n'
-          '-----UniProtKB-----\n'
-          'Total number of proteomes: {}\n'
-          'Total number of proteins in proteomes: {}\n'
-          'Total number of proteins NOT PRESENT in a proteome: {}\n'
-          'Total number of proteins in UniProtKB database: {}\n'
-          'Total number of UniRef100 clusters: {}\n'
-          '\t\tUniref90 clusters: {}\n'
-          '\t\tUniref50 clusters: {}\n'
-          'Total RAM usage by ChocoPhlAn indices: {} Gb\n'
-          '\n'
-          '-----Panproteomes-----\n'
-          'Total created panproteomes: {}\n'
-          .format(len(d_ranks['species']),
-                  sum([len(x) for x in d_ranks['species'] if not x.initially_terminal]),
-                  len([x for x in d_ranks['species'] if d_ranks['superkingdom'][0].is_parent_of(x)]),
-                  len([x for x in d_ranks['species'] if d_ranks['superkingdom'][1].is_parent_of(x)]),
-                  len(proteomes),
-                  sum([len(v['members']) for _,v in proteomes.items()]),
-                  len(uniprotkb)-sum([len(v['members']) for _,v in proteomes.items()]),
-                  len(uniprotkb),
-                  len(uniref100),
-                  len(uniref90),
-                  len(uniref50),
-                  resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / pow(2,20),
-                  len(glob.glob(config['download_base_dir']+config['relpath_panproteomes_dir']+'/*/*/*')))
-    print(s)
-    for r, d, f in os.walk(config['download_base_dir']+config['relpath_panproteomes_dir']):
-        print(r.replace(config['download_base_dir']+config['relpath_panproteomes_dir']+'/',''), len(f)) if len(f)>0 else None
 if __name__ == '__main__':
     args = utils.read_params()
     utils.check_params(args, verbose=args.verbose)

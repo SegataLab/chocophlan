@@ -78,9 +78,20 @@ def download(config, verbose=False):
     os.makedirs(config['download_base_dir']+os.path.split(config['relpath_uniparc'])[0], exist_ok=True)
 
     ### Download UniProt version
-    do_download((config['uniprot_ftp_base'],
+    terminating = mp.Event()
+    chunksize = config['nproc']
+    with mp.Pool(initializer=initt, initargs=(terminating,), processes=1) as pool:
+        try:
+            do_download_partial = partial(do_download,verbose=config['verbose'])
+
+            [_ for _ in pool.imap_unordered(do_download_partial, [(config['uniprot_ftp_base'],
                   config['relnotes'],
-                  config['download_base_dir'] + config['relpath_relnotes']))
+                  config['download_base_dir'] + config['relpath_relnotes'])],
+                                  chunksize=chunksize)]
+        except Exception as e:
+            utils.error(str(e))
+            utils.error('Download failed', exit=True)
+            raise
 
     ### uniprot XML ###
     argument_list = [(config['uniprot_ftp_base'],
@@ -127,6 +138,10 @@ def download(config, verbose=False):
                           os.path.split(config['uniparc'])[0] + "/RELEASE.metalink",
                           config['download_base_dir'] + os.path.split(config['relpath_uniparc'])[0] + "/RELEASE.metalink"))
 
+    argument_list.append((config['ebi_ftp_base'],
+                          config['uniprot_protomes'],
+                          config['download_base_dir'] + config['relpath_proteomes_xml']))
+    
     ### idmapping file ###
     argument_list.append((config['uniprot_ftp_base'],
                           config['uniprot_idmapping'],
@@ -176,8 +191,7 @@ def download(config, verbose=False):
     
     terminating = mp.Event()
     chunksize = config['nproc']
-    print(chunksize)
-    with mp.Pool(initializer=initt, initargs=(terminating,), processes=chunksize) as pool:
+    with mp.Pool(initializer=initt, initargs=(terminating,), processes=chunksize*3) as pool:
         try:
             if verbose:
                 utils.info("Starting parallel download\n")
@@ -186,7 +200,7 @@ def download(config, verbose=False):
             do_download_partial = partial(do_download,verbose=config['verbose'])
 
             [_ for _ in pool.imap_unordered(do_download_partial, argument_list,
-                                  chunksize=chunksize)]
+                                  chunksize=2)]
         except Exception as e:
             utils.error(str(e))
             utils.error('Download failed', exit=True)
