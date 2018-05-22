@@ -490,45 +490,45 @@ def get_request(requestURL, session=None):
     r = session.get(requestURL, timeout = None)
     return r
 
-def get_upp(accession):
-    baseURL = "https://www.ebi.ac.uk/proteins/api/uniparc/proteome/{}?offset={}&size={}&rfActive=true"
-    requestURL = baseURL.format(accession, 0, API_SIZE)
-    entries = []
-    print('Downloading ' + accession)
-    with requests.Session() as s:
-        s.headers.update({ "Accept" : "application/xml"})
-        r = s.get(requestURL, timeout = None)
-        entries.append(r.text)
+# def get_upp(accession):
+#     baseURL = "https://www.ebi.ac.uk/proteins/api/uniparc/proteome/{}?offset={}&size={}&rfActive=true"
+#     requestURL = baseURL.format(accession, 0, API_SIZE)
+#     entries = []
+#     print('Downloading ' + accession)
+#     with requests.Session() as s:
+#         s.headers.update({ "Accept" : "application/xml"})
+#         r = s.get(requestURL, timeout = None)
+#         entries.append(r.text)
         
-        total_records = int(r.headers['x-pagination-totalrecords'])
-        step = int(r.links['self']['url'].split('?')[1].split('&')[1].split('=')[1])
-        first_offset = int(r.links['self']['url'].split('?')[1].split('&')[0].split('=')[1])
-        last_offset = int(r.links['last']['url'].split('?')[1].split('&')[0].split('=')[1])
+#         total_records = int(r.headers['x-pagination-totalrecords'])
+#         step = int(r.links['self']['url'].split('?')[1].split('&')[1].split('=')[1])
+#         first_offset = int(r.links['self']['url'].split('?')[1].split('&')[0].split('=')[1])
+#         last_offset = int(r.links['last']['url'].split('?')[1].split('&')[0].split('=')[1])
 
-        if last_offset != first_offset:
-            requestURLs = [baseURL.format(accession,offset,step) for offset in range(step, last_offset+step, step)]
-            get_request_p = partial(get_request, session=s)
-            with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-                [entries.append(r.text) for r in executor.map(get_request_p, requestURLs, chunksize=10)]
-        d = []
-        if sum([e.count('<entry') for e in entries]) == total_records:
-            for entry in entries:
-                entry = etree.fromstring(entry.encode())
-                d.extend([parse_uniparc_xml_elem(etree.tostring(e), config) for e in entry])
-        else:
-            pickle.dump(entries, open('{}.pkl'.format(accession)))
-            utils.error('Failed to elaborate proteome: '+accession)
-            raise
-    print('Downloaded ' + accession)
-    return (accession, d)
-
-async def download(proteomes):
-    with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
-        loop = asyncio.get_event_loop()
-        futures = [loop.run_in_executor(executor, get_upp, k) for k,v in proteomes.items() if v['upi']]
-        results = [x for x in await asyncio.gather(*futures)]
-        utils.info('Downloaded.')
-        return results
+#         if last_offset != first_offset:
+#             requestURLs = [baseURL.format(accession,offset,step) for offset in range(step, last_offset+step, step)]
+#             get_request_p = partial(get_request, session=s)
+#             with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+#                 [entries.append(r.text) for r in executor.map(get_request_p, requestURLs, chunksize=10)]
+#         d = []
+#         if sum([e.count('<entry') for e in entries]) == total_records:
+#             for entry in entries:
+#                 entry = etree.fromstring(entry.encode())
+#                 d.extend([parse_uniparc_xml_elem(etree.tostring(e), config) for e in entry])
+#         else:
+#             pickle.dump(entries, open('{}.pkl'.format(accession)))
+#             utils.error('Failed to elaborate proteome: '+accession)
+#             raise
+#     print('Downloaded ' + accession)
+#     return (accession, d)
+    
+# async def download(proteomes):
+#     with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
+#         loop = asyncio.get_event_loop()
+#         futures = [loop.run_in_executor(executor, get_upp, k) for k,v in proteomes.items() if v['upi']]
+#         results = [x for x in await asyncio.gather(*futures)]
+#         utils.info('Downloaded.')
+#         return results
 
 def create_proteomes(xml_input, config):
     if config['verbose']:
@@ -552,11 +552,18 @@ def create_proteomes(xml_input, config):
         utils.error('Processing failed')
         raise
        
+    d_proteomes = { k: {'members' : v.get('members', set()), 
+                        'isReference' : v['isReference'], 
+                        'tax_id' : v['tax_id'], 
+                        'upi' : v['upi'], 
+                        'ncbi_ids' : v['ncbi_ids']}
+                    for k,v in ( i for chunk in chunks if chunk is not None for i in chunk.items() )}
+                    
     try:
         with mp.Pool(initializer=initt, initargs=(terminating,), processes=chunksize) as pool:
-            chunks.extend([x for x in pool.imap_unordered(process, 
+            chunks = [x for x in pool.imap_unordered(process, 
                         (x for x in filter(r.match,glob.iglob("{}/pickled/*".format(config['download_base_dir']))))
-                          , chunksize = chunksize)])
+                          , chunksize = chunksize)]
     except Exception as e:
         utils.error(str(e))
         utils.error('Processing failed')
@@ -568,23 +575,10 @@ def create_proteomes(xml_input, config):
                               'isReference' : v['isReference'], 
                               'tax_id' : v['tax_id'], 
                               'upi' : v['upi']}
-        if hasattr(v, 'ncbi_ids'):
-            d_proteomes[k]['ncbi_ids'] = v['ncbi_ids']
-        else:
-            d_proteomes[k]['ncbi_ids'] = tuple()
         if d_proteomes[k]['upi'] and v['upi']:
+            d_proteomes[k]['members'] = set(d_proteomes[k]['members'])
             d_proteomes[k]['members'].update(v['members'])
-        elif not d_proteomes[k]['upi'] and not v['upi']:
-            d_proteomes[k]['members'].update(v['members'])
-
     
-    # d_proteomes = { k: {'members' : v.get('members', []), 
-    #                     'isReference' : v['isReference'], 
-    #                     'tax_id' : v['tax_id'], 
-    #                     'upi' : v['upi'], 
-    #                     'ncbi_ids' : v['ncbi_ids']}
-    #                 for k,v in ( i for chunk in chunks if chunk is not None for i in chunk.items() )}
-                    
     with open("{}{}".format(config['download_base_dir'],config['relpath_pickle_proteomes']),'wb') as pickle_proteomes:
         pickle.dump(d_proteomes, pickle_proteomes, -1)
     if config['verbose']:

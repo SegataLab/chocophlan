@@ -50,12 +50,8 @@ class Panproteome:
             self.idmapping = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_uniprotkb_uniref_idmap']), 'rb'))
             self.taxontree = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_taxontree']), 'rb'))
             self.proteomes = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_proteomes']), 'rb'))
+            self.d_ranks = self.taxontree.lookup_by_rank()
             
-            # if not self.taxontree.are_leaves_trimmed:
-            #     self.taxontree.remove_subtree_taxonomy_by_level('superkingdom', self.kingdom_to_process)
-            #     self.taxontree.tree.root = self.taxontree.tree.root.clades[4]
-            #     # self.taxontree.remove_leaves_without_proteomes()
-            #     self.taxontree.are_leaves_trimmed=True
             self.config = config
             gc.enable()
             if config['verbose']:
@@ -79,6 +75,7 @@ class Panproteome:
         try:
             item, rank, cluster = item_rank
             cluster_index = 0 if cluster == 100 else (1 if cluster == 90 else 2)
+
             proteomes_to_process = self.get_child_proteomes(item)
             panproteome = {}
             uniref_panproteome = {}
@@ -109,7 +106,6 @@ class Panproteome:
                         uniref_panproteome['members'][uniref_cluster]['proteomes_present'].add(proteome_id)
                         uniref_panproteome['members'][uniref_cluster]['coreness'] = len(uniref_panproteome['members'][uniref_cluster]['proteomes_present'])
                         uniref_panproteome['members'][uniref_cluster]['copy_number'].append(protein)
-                
 
                 if len(uniref_panproteome):
                     pickle.dump(uniref_panproteome, open('{}{}/{}/{}/{}.pkl'.format(self.config['download_base_dir'], self.config['relpath_panproteomes_dir'], rank, cluster, item.tax_id),'wb'))
@@ -131,12 +127,9 @@ class Panproteome:
         for k in ranks_to_process:
             os.makedirs('{}/{}/{}/{}'.format(self.config['download_base_dir'], self.config['relpath_panproteomes_dir'], k, cluster), exist_ok=True)
         
-        d_ranks = self.taxontree.lookup_by_rank()
-        
-        elems = [(item, rank, cluster) for rank in ranks_to_process for item in d_ranks[rank]]
         try:
             with dummy.Pool(20) as pool:
-                d = [_ for _ in pool.imap_unordered(self.process_panproteome, elems)]
+                d = [_ for _ in pool.imap_unordered(self.process_panproteome, ((item, rank, cluster) for rank in ranks_to_process for item in self.d_ranks[rank]))]
 
         except Exception as e:
             utils.error(str(e))
@@ -144,7 +137,7 @@ class Panproteome:
 
 
     def calculate_uniqueness(self, panproteome_fp):
-        panproteome = pickle.load(open(panproteome_fp,'rb'))
+        panproteome = pickle.load(open(panproteome_fp, 'rb'))
         d_taxids = self.taxontree.taxid_n
         panproteome_cluster = panproteome['cluster']
         item_descendant = [x.tax_id for k in (d_taxids[panproteome['tax_id']].get_terminals(), d_taxids[panproteome['tax_id']].get_nonterminals()) for x in k]
@@ -158,7 +151,7 @@ class Panproteome:
             try:
                 uniref = getattr(self, 'uniref{}'.format(cluster))
             except Exception as es:
-                print(cluster, panproteome_fp)
+                print(cluster, panproteome['tax_id'])
                 print(str(es))
 
             if panproteome_cluster == cluster:
@@ -201,9 +194,10 @@ def generate_panproteomes(config):
 
     with dummy.Pool(config['nproc']) as pool:
        d = [_ for _ in pool.imap_unordered(p.create_panproteomes, [100,90,50])]
-
-    for file in glob.glob('{}{}/*/*/*.pkl'.format(p.config['download_base_dir'], p.config['relpath_panproteomes_dir'])):
-        p.calculate_uniqueness(file)
+    
+    with dummy.Pool(config['nproc']) as pool:
+        [_ for _ in pool.imap_unordered(p.calculate_uniqueness, (file for file in glob.iglob('{}{}/*/*/*.pkl'.format(p.config['download_base_dir'], p.config['relpath_panproteomes_dir']))))]
+      
 
 if __name__ == '__main__':
     t0 = time.time()

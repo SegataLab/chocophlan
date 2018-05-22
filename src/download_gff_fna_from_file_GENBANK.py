@@ -22,6 +22,16 @@ import sys
 import tempfile
 import time
 import datetime
+import pickle
+from functools import partial
+import multiprocessing.dummy as dummy
+
+if __name__ == '__main__':
+    import utils
+    from process_proteomes import initt
+else:
+    import src.utils as utils
+    from src.process_proteomes import initt
 
 # try to import urllib.request.urlretrieve for python3
 try:
@@ -33,6 +43,8 @@ except ImportError:
 
 NCBI_URL="ftp://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt"
 GCA_COLUMN=0
+BSA_COLUMN=2
+TAX_COLUMN=5
 FTP_COLUMN=19
 GFF_EXTENSION="_genomic.gff.gz"
 FNA_EXTENSION="_genomic.fna.gz"
@@ -42,14 +54,15 @@ def download_file(url,file):
 
     # try to download the file
     try:
-        print("Downloading: " + url)
         file, headers = urlretrieve(url,file)
-    except EnvironmentError:
-        sys.exit("ERROR: Unable to download "+url)
+        status = 0
+    except:
+        status = 1
 
     # clean the cache, fixes issue with downloading
     # two ftp files one after the next in python2 (some versions)
     urlcleanup()
+    return status
 
 def get_ncbi_assembly_info():
     """ Download the assembly data from NCBI """
@@ -58,10 +71,11 @@ def get_ncbi_assembly_info():
     file_handle, new_file = tempfile.mkstemp(prefix="ncbi_download")
 
     # try to download the file
-    print("Downloading the assembly data info from NCBI")
+    utils.info("Downloading the assembly data info from NCBI\n")
     download_file(NCBI_URL,new_file)
     
     # read in the file, ignoring headers
+    utils.info("Loading assembly data...\n")
     data = []
     for line in open(new_file):
         if not line.startswith("#"):
@@ -81,16 +95,15 @@ def get_gca_ftp(name,data=None):
     # allow for different versions of the gca
     name=name.split(".")[0]+"."
 
-    print("Searching for ftp: "+name)
+    #u tils.info("Searching for ftp: {}\n".format(name))
     ftp=None
     for line in data:
         if line[GCA_COLUMN].startswith(name):
             ftp=line[FTP_COLUMN]+"/"+os.path.basename(line[FTP_COLUMN])
             break
-
     if not ftp or not ftp.startswith("ftp"):
         ftp=None
-        print("ERROR: Unable to find ftp: " + name)
+        utils.error("ERROR: Unable to find ftp: {}".format(name))
 
     return ftp
 
@@ -110,7 +123,7 @@ def download_gff_fna(gca_name, folder, data=None, delete=None, total_size=0):
     # get the url for the gff and fna
     base_ftp=get_gca_ftp(gca_name, data=data)
     if not base_ftp:
-        return total_size
+        return
     gff_ftp=base_ftp+GFF_EXTENSION
     fna_ftp=base_ftp+FNA_EXTENSION
 
@@ -118,43 +131,60 @@ def download_gff_fna(gca_name, folder, data=None, delete=None, total_size=0):
     gff_file=os.path.join(folder,os.path.basename(gff_ftp))
     fna_file=os.path.join(folder,os.path.basename(fna_ftp))
 
+    status = 0
     for url,file in zip([gff_ftp,fna_ftp],[gff_file,fna_file]):
-        download_file(url,file)
-        print("Downloaded file: " + file)
-        file_size_mb = file_size(file)
-        print(file+ " size : " + str(file_size_mb) + " MB")
+        status += download_file(url,file)
         if delete:
             os.remove(file)
-            print("Deleted: " + file)
-        total_size+=file_size_mb
+            utils.info("Deleted: " + file)
+    return status
 
-    return total_size
+def process(item, data, config):
+    if not terminating.is_set():
+        k,v = item
+        ncbi_ids = dict(v['ncbi_ids'])
+        id_ = ''
+        if 'GCSetAcc' in ncbi_ids:
+            id_ = ncbi_ids['GCSetAcc']
+        elif 'Biosample' in ncbi_ids:   
+            id_ = [line[GCA_COLUMN] for line in data if line[BSA_COLUMN] == ncbi_ids['Biosample'] and int(line[TAX_COLUMN]) == v['tax_id']]
+            if len(id_): id_=id_[0]
+        if len(id_):
+            ncbi_ids['GCSetAcc'] = id_
+            try:
+                download_folder = '{}/{}/{}/{}/{}'.format(config['download_base_dir'], config['relpath_genomes'], id_.split('_')[1][0:3],id_.split('_')[1][3:6],id_.split('_')[1][6:9])
+            except:
+                utils.info('{}\n'.format(id_))
+            os.makedirs(download_folder, exist_ok=True)
+            status = download_gff_fna(id_,download_folder,data)
+            if status:
+                utils.info("Download for {} has failed!\n".format(id_))
+                return id_
+    else:
+        terminating.set()
 
-def current_time():
-    print datetime.datetime.fromtimestamp(time.time()).strftime('%m-%d-%Y %H:%M:%S')
-
-def main():
-    # get the two options from the command line
-    gca_file=sys.argv[1]
-    download_folder=sys.argv[2]
-
-    # create download folder if it does not exist
-    if not os.path.isdir(download_folder):
-        os.makedirs(download_folder)
-
+def download_ncbi(config):
     # download the assembly data once
     data = get_ncbi_assembly_info()
+    terminating = dummy.Event()
+    utils.info("Loading proteomes data...\n")
+    proteomes = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_proteomes']), 'rb'))
 
-    # download the files
-    current_time()
-    total_size = 0
-    for line in open(gca_file):
-        id=line.rstrip()
-        total_size=download_gff_fna(id,download_folder,data,False,total_size)
-        current_time()
-    print("Total downloads: " + str(total_size) + " MB")
-    current_time()
+    partial_process = partial(process, data=data, config=config)
+    with dummy.Pool(initializer=initt, initargs=(terminating, ), processes=config['nproc']) as pool:
+        failed = [f for f in pool.imap_unordered(partial_process, [(k,v) for k, v in proteomes.items() if 'ncbi_ids' in v], chunksize=config['nproc'])]
 
+    with open('failed_GCA.txt','w') as f:
+        f.writelines(faield)
+            
 if __name__ == "__main__":
-    main()
+    args = utils.read_params()
+    utils.check_params(args, verbose=args.verbose)
+
+    config = utils.read_configs(args.config_file, verbose=args.verbose)
+    config = utils.check_configs(config)
+    config = config['process_proteomes']
+    config['relpath_genomes'] = '/ncbi'
+
+    download_ncbi(config)
 

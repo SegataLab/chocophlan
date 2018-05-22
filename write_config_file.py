@@ -28,8 +28,6 @@ def read_params():
                                  description=("Parameters for setting download "
                                               "options"))
     group.add_argument('--refseq_ftp_base', default='ftp.ncbi.nlm.nih.gov')
-    group.add_argument('--refseq_bacterial_genomes',
-                       default='/refseq/release/bacteria')
     group.add_argument('--refseq_taxonomic_catalogue',
                        default=('/refseq/release/release-catalog/'))
     group.add_argument('--refseq_taxdump',
@@ -70,8 +68,8 @@ def read_params():
     group.add_argument('--relpath_proteomes_xml',
                        default='/uniprot/proteome_ds.xml.gz',
                        help='')
-    group.add_argument('--relpath_bacterial_genomes',
-                       default='/refseq/genomes',
+    group.add_argument('--relpath_genomes',
+                       default='/ncbi',
                        help='Directory for genome files')
     group.add_argument('--relpath_taxonomic_catalogue',
                        default='/refseq/catalogue/',
@@ -160,8 +158,6 @@ def set_download_options(configparser_object, args, verbose=False):
     configparser_object.add_section('download')
     configparser_object.set('download', 'refseq_ftp_base',
                             args.refseq_ftp_base)
-    configparser_object.set('download', 'refseq_bacterial_genomes',
-                            args.refseq_bacterial_genomes)
     configparser_object.set('download', 'refseq_taxonomic_catalogue',
                             args.refseq_taxonomic_catalogue)
     configparser_object.set('download', 'refseq_taxdump',
@@ -190,8 +186,8 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.uniparc)
     configparser_object.set('download', 'download_base_dir',
                             args.download_base_dir)
-    configparser_object.set('download', 'relpath_bacterial_genomes',
-                            args.relpath_bacterial_genomes)
+    configparser_object.set('download', 'relpath_genomes',
+                            args.relpath_genomes)
     configparser_object.set('download', 'relpath_taxonomic_catalogue',
                             args.relpath_taxonomic_catalogue)
     configparser_object.set('download', 'relpath_taxdump',
@@ -224,8 +220,6 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.relpath_taxdump)
     configparser_object.set('extract', 'relpath_taxonomic_catalogue',
                             args.relpath_taxonomic_catalogue)
-    configparser_object.set('extract', 'relpath_bacterial_genomes',
-                            args.relpath_bacterial_genomes)
     configparser_object.set('extract', 'relpath_pickle_taxid_contigid',
                             args.relpath_pickle_taxid_contigid)
     configparser_object.set('extract', 'relpath_pickle_taxid_taxonomy',
