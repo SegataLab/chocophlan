@@ -22,82 +22,97 @@ if __name__ == '__main__':
 else:
     import src.utils as utils
 
-ranks2code = {'superkingdom': 'k', 'phylum': 'p', 'class': 'c',
-                      'order': 'o', 'family': 'f', 'genus': 'g', 'species': 's', 'taxon': 't'}
-order = ('k', 'p', 'c', 'o', 'f', 'g', 's', 't')
 CLUSTER = 90
 
+class chocophlan2phylophlan:
+    def __init__(self, config):
+        self.taxontree = pickle.load(open("{}/{}".format(config['download_base_dir'],config['relpath_pickle_taxontree']), 'rb'))
+        self.proteomes = pickle.load(open("{}{}".format(config['download_base_dir'],config['relpath_pickle_proteomes']), 'rb'))
+        self.config = config
 
-def chocophlan2phylophlan(config):
-    taxontree = pickle.load(open("{}/{}".format(config['download_base_dir'],config['relpath_pickle_taxontree']), 'rb'))
-    proteomes = pickle.load(open("{}{}".format(config['download_base_dir'],config['relpath_pickle_proteomes']), 'rb'))
-    d_taxids = taxontree.taxid_n
+    def process(self, tax_id):
+        if not self.taxontree.taxid_n[tax_id].rank == 'species':
+            tax_id = self.taxontree.go_up_to_species(tax_id)
 
-    reference_proteomes = [proteome for proteome in proteomes if proteomes[proteome]['isReference']]
-    d_out_core = {}
-    d_out_refp = {}
-
-    
-    for rfid in reference_proteomes:
-        tax_id = proteomes[rfid]['tax_id']
-
-        if not d_taxids[tax_id].rank == 'species':
-            tax_id = taxontree.go_up_to_species(tax_id)
-
-        fp = '{}/{}/{}/{}/{}.pkl'.format(config['download_base_dir'], 
-                                                 config['relpath_panproteomes_dir']+"_old", 
+        fp = '{}/{}/{}/{}/{}.pkl'.format(self.config['download_base_dir'], 
+                                                 self.config['relpath_panproteomes_dir'], 
                                                     'species',
                                                     CLUSTER,
                                                     tax_id)
         if os.path.exists(fp):
             panproteome = pickle.load(open(fp,'rb'))
-            path = [p for p in d_taxids[1].get_path(d_taxids[tax_id]) if p.rank in ranks2code or (p.rank=='norank' and p.initially_terminal)]
-            taxa_str = ''
-            hasSpecies = any([True if p.rank == 'species' else False for p in path])
-            for i in range(0, len(path)):
-                if path[i].rank in ranks2code:
-                    taxa_str += '{}__{}'.format(ranks2code[path[i].rank], path[i].name)
-                elif path[i].rank == 'norank':
-                    if not path[i].initially_terminal:
-                        if path[i+1].rank in ranks2code and order.index(ranks2code[path[i+1].rank])==order.index(ranks2code[path[i-1].rank])+1:
-                            continue
-                        elif path[i+1].rank == 'norank':
-                            if path[i+1].tax_id != tax_id:
-                                continue 
-                        else:
-                            taxa_str += '{}__unclassified_{}'.format(order[order.index(ranks2code[path[i-1].rank])+1], path[i-1].name)
-                    else:
-                        if hasSpecies:
-                            taxa_str += '{}__{}'.format(ranks2code['taxon'], path[i].name)   
-                if i < len(path)-1:
-                    taxa_str += '|'
-                
-
+            taxa_str = self.taxontree.print_full_taxonomy(tax_id)
             core_genes = Panproteome.find_core_genes(panproteome)
             
-            if tax_id not in d_out_core:
-                d_out_core[tax_id] = (taxa_str, set())
-            #TODO
-            #URL OF CORE UNIREF
-            #core_genes = [for ] join con url http://www.uniprot.org/uniref/{}.fasta
-            d_out_core[tax_id][1].update(core_genes)
+            d_out_core = (tax_id, taxa_str, set())
+            d_out_refp = (tax_id, taxa_str, set())
+            d_out_refg = (tax_id, taxa_str, set())
 
-            if tax_id not in d_out_refp:
-                d_out_refp[tax_id] = (taxa_str, set())
+            d_out_core[2].update(core_genes)
+
             #add first reference, non rendundant, redundant
-            d_out_refp[tax_id][1].add('http://www.uniprot.org/uniprot/?query=proteome:{}&compress=yes&force=true&format=fasta'.format(rfid))
+            d_all_prot = {'re':[], 'nr': [], 'rr':[]}
+            for p in self.taxontree.get_child_proteomes(self.taxontree.taxid_n[tax_id]):
+                if self.proteomes[p]['isReference']:
+                    d_all_prot['re'].append(p)
+                elif self.proteomes[p]['upi']:
+                    d_all_prot['rr'].append(p)
+                else:
+                    d_all_prot['nr'].append(p)
+
+            d_out_refp[2].add(d_all_prot['re'] + d_all_prot['rr'] + d_all_prot['nr'])
+
+            d_out_refg[2].update([dict(self.proteomes[p]['ncbi_ids']).get('GCSetAcc','') for p in d_out_refp[2]])
+
+            return (d_out_core, d_out_refp, d_out_refg)
         else:
             print('Panproteome {} not available'.format(fp))
 
-##CREATE DIRS
-##TAXONOMY, URL, VERSION
-    with open('{}/{}/taxa2proteomes.txt'.format(config['export_dir'], config['exportpath_phylophlan']), 'w') as t2p_out:
-        with open('{}/{}/taxa2core.txt'.format(config['export_dir'], config['exportpath_phylophlan']), 'w') as t2c_out:
-            lines_t2p = ['{}\t{}\t{}\n'.format(tax_id, entry[0], ';'.join(entry[1])) for tax_id, entry in d_out_refp.items()]
-            lines_t2c = ['{}\t{}\t{}\n'.format(tax_id, entry[0], ';'.join(entry[1])) for tax_id, entry in d_out_core.items()]
+    def chocophlan2phylophlan(self):
+        d_out_core = {}
+        d_out_refp = {}
+        d_out_refg = {}
 
-            t2p_out.writelines(lines_t2p)
-            t2c_out.writelines(lines_t2c)
+        reference_species = set(
+            self.proteomes[proteome]['tax_id'] 
+            if self.taxontree.taxid_n[tax_id].rank == 'species' 
+            else self.taxontree.go_up_to_species(tax_id) 
+            for proteome in self.proteomes if self.proteomes[proteome]['isReference']
+            )
+
+        with dummy.Pool(self.config['nproc']) as pool:
+            d = [x for x in pool.imap_unordered(self.process, reference_species, chunksize=10)]
+
+        for item in d:
+            core, ref, gen = item
+            if core[0] not in d_out_core:
+                d_out_core[core[0]] = (core[1], set())
+            d_out_core[core[0]][1].update(core[2])
+
+            if ref[0] not in d_out_refp:
+                d_out_refp[ref[0]] = (ref[1], set())
+            d_out_refp[ref[0]][1].update(ref[2])
+
+            if gen[0] not in d_out_refg:
+                d_out_refg[gen[0]] = (gen[1], set())
+            d_out_refg[gen[0]][1].update(gen[2])
+
+    ##CREATE DIRS
+    ##TAXONOMY, URL, VERSION
+        with open('{}/{}/taxa2proteomes.txt'.format(self.config['export_dir'], self.config['exportpath_phylophlan']), 'w') as t2p_out:
+            with open('{}/{}/taxa2core.txt'.format(self.config['export_dir'], self.config['exportpath_phylophlan']), 'w') as t2c_out:
+                with open('{}/{}/taxa2genomes.txt'.format(self.config['export_dir'], self.config['exportpath_phylophlan']), 'w') as t2g_out:
+                    lines_t2p = ['#'+open('data/relnotes.txt').readline().strip()]
+                    lines_t2c = ['#'+open('data/relnotes.txt').readline().strip()]
+                    lines_t2g = ['#'+open('data/relnotes.txt').readline().strip()]
+
+                    lines_t2p.update(['{}\t{}\thttp://www.uniprot.org/uniprot/?query=proteome:\{\}&compress=yes&force=true&format=fasta {}\n'.format(tax_id, entry[0], ';'.join(entry[1])) for tax_id, entry in d_out_refp.items()])
+                    lines_t2c.update(['{}\t{}\thttp://www.uniprot.org/uniref/UniRef90_\{\}.fasta {}\n'.format(tax_id, entry[0], ';'.join(entry[1])) for tax_id, entry in d_out_core.items()])
+                    lines_t2g.update(['{}\t{}\t{}\n'.format(tax_id, entry[0], ';'.join(entry[1])) for tax_id, entry in d_out_refg.items()])
+
+                    t2p_out.writelines(lines_t2p)
+                    t2c_out.writelines(lines_t2c)
+                    t2g_out.writelines(lines_t2g)
 
 
 if __name__ == '__main__':
@@ -107,7 +122,8 @@ if __name__ == '__main__':
     config = utils.read_configs(args.config_file, verbose=args.verbose)
     config = utils.check_configs(config, verbose=args.verbose)
     config = config['chocophlan2phylophlan']
-    chocophlan2phylophlan(config)
+    c = chocophlan2phylophlan(config)
+    c.chocophlan2phylophlan()
     t1 = time.time()
     utils.info('Total elapsed time {}s\n'.format(int(t1 - t0)))
     sys.exit(0)

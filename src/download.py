@@ -22,6 +22,7 @@ import pickle
 import sys
 import tarfile
 import tempfile
+import traceback
 import time
 if __name__ == '__main__':
     import utils
@@ -30,14 +31,7 @@ else:
 import re
 from lxml import etree 
 from functools import partial
-
-# try to import urllib.request.urlretrieve for python3
-try:
-    from urllib.request import urlretrieve
-    from urllib.request import urlcleanup
-except ImportError:
-    from urllib import urlretrieve
-    from urllib import urlcleanup
+from urllib.parse import urlparse
 
 def initt(terminating_):
     # This places terminating in the global namespace of the worker subprocesses.
@@ -271,14 +265,17 @@ def download_file(url,file):
 
     # try to download the file
     try:
-        file, headers = urlretrieve(url,file)
+        url = urlparse(url)
+
+        ftp = ftplib.FTP(url.netloc)  # Login to ftp server
+        ftp.login()
+        with open(file, "wb") as fileout:
+            ftp.retrbinary("RETR " + url.path, fileout.write)
+
+        ftp.quit()
         status = 0
     except:
         status = 1
-
-    # clean the cache, fixes issue with downloading
-    # two ftp files one after the next in python2 (some versions)
-    urlcleanup()
     return status
 
 def get_ncbi_assembly_info():
@@ -369,11 +366,17 @@ def process(item, data, config):
         if len(id_):
             ncbi_ids['GCSetAcc'] = id_
             try:
-                download_folder = '{}/{}/{}/{}/{}'.format(config['download_base_dir'], config['relpath_genomes'], id_.split('_')[1][0:3],id_.split('_')[1][3:6],id_.split('_')[1][6:9])
+                download_folder = '{}/{}/{}/{}'.format(config['download_base_dir'], config['relpath_genomes'], id_.split('_')[1][0:6],id_.split('_')[1][6:9])
             except:
                 utils.info('{}\n'.format(id_))
             os.makedirs(download_folder, exist_ok=True)
-            status = download_gff_fna(id_,download_folder,data)
+            try:
+                status = download_gff_fna(id_,download_folder,data)
+            except Exception as e:
+                utils.error('Failed to download {}'.format(id_))
+                utils.error(str(e))
+                utils.info(traceback.print_exc())
+                raise
             if status:
                 utils.info("Download for {} has failed!\n".format(id_))
                 return id_
@@ -389,10 +392,13 @@ def download_ncbi(config):
 
     partial_process = partial(process, data=data, config=config)
     with dummy.Pool(initializer=initt, initargs=(terminating, ), processes=config['nproc']) as pool:
-        failed = [f for f in pool.imap_unordered(partial_process, [(k,v) for k, v in proteomes.items() if 'ncbi_ids' in v], chunksize=config['nproc'])]
+        failed = [f for f in pool.imap_unordered(partial_process, ((k,v) for k, v in proteomes.items() if 'ncbi_ids' in v), chunksize=config['nproc'])]
 
     with open('failed_GCA.txt','w') as f:
         f.writelines(faield)
+
+    with open('{}{}'.format(config['export_dir'],config['relpath_gca2taxa']), 'w') as f:
+        [f.write('{}\t{}\n'.format(k,v)) for k, v in {dict(v['ncbi_ids']).get('GCSetAcc'):v['tax_id'] for k, v in proteomes.items() if 'ncbi_ids' in v}.items()]
             
 def decompress(config, verbose):
     ls = glob.glob(config['download_base_dir']+config['relpath_reference_proteomes']+'/*')

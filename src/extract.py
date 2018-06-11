@@ -233,7 +233,7 @@ class Nodes:
     def go_up_to_species(self, taxid):
         father = self.taxid_n[taxid].parent_tax_id
         if not self.taxid_n[father].rank == 'species':
-            return go_up_to_species(self, father)
+            return self.go_up_to_species( father)
         return father
 
     def get_child_proteomes(self, clade):
@@ -244,6 +244,57 @@ class Nodes:
             pp.update(self.get_child_proteomes(c))
         return pp
     
+    def print_full_taxonomy(self, tax_id):
+        ranks2code = {'superkingdom': 'k', 'phylum': 'p', 'class': 'c',
+                      'order': 'o', 'family': 'f', 'genus': 'g', 'species': 's', 'taxon': 't'}
+        order = ('k', 'p', 'c', 'o', 'f', 'g', 's', 't')
+        path = [p for p in self.taxid_n[1].get_path(self.taxid_n[tax_id]) if p.rank in ranks2code or (p.rank=='norank')][1:]
+        taxa_str = []
+        hasSpecies = any([True if p.rank == 'species' else False for p in path])
+        hasTaxon = any([True if p.rank == 'norank' and p.initially_terminal else False for p in path])
+
+        if hasSpecies and hasTaxon:
+            i=-1
+            isSpecies=False
+            while not isSpecies:
+                if not path[i].initially_terminal and path[i].rank=='norank':
+                    path.remove(path[i])
+                if path[i].rank=='species':
+                    isSpecies=True
+                    path[-1].rank = 'taxon'
+                i-=1
+        path = [p for p in path if p.rank != 'norank']
+        taxa_str = ['{}__{}'.format(ranks2code[path[x].rank], path[x].name) for x in range(len(path)) if path[x].rank != 'norank']
+
+        for x in range(len(order)-1) if not hasTaxon else range(len(order)):
+            if not taxa_str[x].startswith(order[x]):
+                end_lvl = order.index(taxa_str[x][0])
+                missing_levels = ['{}__{}_unclassified'.format(order[i], path[x-1].name) for i in range(x, end_lvl)]
+                for i in range(len(missing_levels)):
+                    taxa_str.insert(x+i, missing_levels[i])
+
+        return '|'.join(taxa_str)
+        # for i in range(0, len(path)):
+        #     if path[i].rank in ranks2code and order.index(ranks2code[path[i].rank]) == order.index(ranks2code[path[i-1 if i > 0 else 0].rank])+ (1 if i > 0 else 0):
+        #         taxa_str.append('{}__{}'.format(ranks2code[path[i].rank], path[i].name))
+
+        #     elif order.index(ranks2code[path[i].rank])!=order.index(ranks2code[path[i-1].rank])+1:
+        #         for k in range(order.index(ranks2code[path[i-1].rank])+1, order.index(ranks2code[path[i].rank])+1):
+        #             taxa_str.append('{}__{}_unclassified'.format(order[k], path[i-1].name))
+        #     elif path[i].rank == 'norank':
+        #         if not path[i].initially_terminal:
+        #             if path[i+1].rank in ranks2code and order.index(ranks2code[path[i+1].rank])==order.index(ranks2code[path[i-1].rank])+1:
+        #                 continue
+        #             elif path[i+1].rank == 'norank':
+        #                 if path[i+1].tax_id != tax_id:
+        #                     continue 
+        #             else:
+        #                 taxa_str.append('{}__unclassified_{}'.format(order[order.index(ranks2code[path[i-1].rank])+1], path[i-1].name))
+        #         else:
+        #             if hasSpecies:
+        #                 taxa_str.append('{}__{}'.format(ranks2code['taxon'], path[i].name))
+        # return '|'.join(taxa_str)
+        
     def print_tree(self, out_file_name, reduced=False):
 
         tree = self.reduced_tree if reduced else self.tree
@@ -441,7 +492,6 @@ class Names:
 def do_extraction(config, verbose=False):
     taxdump_dir = config['download_base_dir'] + config['relpath_taxdump']
     catalogue_dir = glob.glob('{}/{}/RefSeq-release*.catalog.gz'.format(config['download_base_dir'], config['relpath_taxonomic_catalogue']))[0]
-    genomes_dir = config['download_base_dir'] + config['relpath_bacterial_genomes']
 
     names_buf, nodes_buf = read_taxdump(taxdump_dir)
 
@@ -456,7 +506,14 @@ def do_extraction(config, verbose=False):
     tax_tree.tree.root.clades = tax_tree.tree.root.clades[0:2] + tax_tree.tree.root.clades[4::]
 
     utils.info("Refining tree... ")
-    tax_tree.get_tree_with_reduced_taxonomy()
+    # tax_tree.get_tree_with_reduced_taxonomy()
+    candidatus_taxid = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search(u'(C|c)andidatus_',tax_tree.taxid_n[x].name)]
+    cags_taxid = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search(u'_CAG_',tax_tree.taxid_n[x].name)]
+    sps_taxid = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search(u'_sp(_|$)',tax_tree.taxid_n[x].name)]
+    bacterium_taxis = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if '_bacterium_' in tax_tree.taxid_n[x].name]
+
+    [tax_tree.taxid_n[x].__setattr__('is_low_quality', True) for i in (candidatus_taxid,cags_taxid,sps_taxid,bacterium_taxis) for x in i]
+
     utils.info('Finished postprocessing the taxonomy\n')
 
     utils.info("Pickling tree... ")

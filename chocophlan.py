@@ -22,6 +22,9 @@ def decompressed():
     print('Decompressed.')
 
 def chocophlan():
+    utils.info('CHOCOPhlAn: Cluster of HOmologous Cdses fOr PHyLogenetic ANalysis\n')
+    utils.info('Running using ')
+    utils.info(open('data/relnotes.txt').readline())
     args = utils.read_params()
     utils.check_params(args, verbose=args.verbose)
 
@@ -33,10 +36,10 @@ def chocophlan():
     #                    args=[config['download'], config['download']['verbose']],
     #                    callback=decompressed)
     # extract.do_extraction(config['extract'], verbose=config['extract']['verbose'])
-    # process_proteomes.process_proteomes(config['process_proteomes'])
+    process_proteomes.process_proteomes(config['process_proteomes'])
     # panproteomes.generate_panproteomes(config['panproteomes'])
-    config['process_proteomes']['relpath_genomes'] = '/ncbi'
-    download.download_ncbi(config['process_proteomes'])
+    # config['process_proteomes']['relpath_genomes'] = '/ncbi'
+    # download.download_ncbi(config['process_proteomes'])
 
 if __name__ == '__main__':
     t0 = time.time()
