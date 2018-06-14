@@ -136,6 +136,16 @@ def read_params():
     group.add_argument('--relpath_pickle_uniref50_idmap',
                        default='/pickled/uniref50_idmap.pkl',
                        help='')
+    group.add_argument('--relpath_pickle_uniref100_taxid_idmap',
+                       default='/pickled/uniref100_taxid_map.pkl',
+                       help='')
+    group.add_argument('--relpath_pickle_uniref90_taxid_idmap',
+                       default='/pickled/uniref90_taxid_map.pkl',
+                       help='')
+    group.add_argument('--relpath_pickle_uniref50_taxid_idmap',
+                       default='/pickled/uniref50_taxid_map.pkl',
+                       help='')
+   
     group.add_argument('--relpath_pickle_contigid_filename',
                        default='/pickled/contigid_filename.pkl',
                        help='')
@@ -238,6 +248,8 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.uniprot_reference_proteomes)
     configparser_object.set('process_proteomes', 'download_base_dir',
                             args.download_base_dir)
+    configparser_object.set('process_proteomes', 'relpath_genomes',
+                            args.relpath_genomes)
     configparser_object.set('process_proteomes', 'relpath_reference_proteomes',
                             args.relpath_reference_proteomes)
     configparser_object.set('process_proteomes', 'relpath_idmapping',
@@ -268,6 +280,14 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.relpath_pickle_uniref90_idmap)
     configparser_object.set('process_proteomes', 'relpath_pickle_uniref50_idmap',
                             args.relpath_pickle_uniref50_idmap)
+
+    configparser_object.set('process_proteomes', 'relpath_pickle_uniref100_taxid_idmap',
+                            args.relpath_pickle_uniref100_taxid_idmap)
+    configparser_object.set('process_proteomes', 'relpath_pickle_uniref90_taxid_idmap',
+                            args.relpath_pickle_uniref90_taxid_idmap)
+    configparser_object.set('process_proteomes', 'relpath_pickle_uniref50_taxid_idmap',
+                            args.relpath_pickle_uniref50_taxid_idmap)
+
     configparser_object.set('process_proteomes', 'relpath_pickle_uniprotkb_idmap',
                             args.relpath_pickle_uniprotkb_idmap)
     configparser_object.set('process_proteomes', 'relpath_taxon_to_process',
@@ -291,12 +311,12 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.download_base_dir)
     configparser_object.set('panproteomes', 'relpath_pickle_uniprotkb_uniref_idmap',
                             args.relpath_pickle_uniprotkb_uniref_idmap)
-    configparser_object.set('panproteomes', 'relpath_pickle_uniref100_idmap',
-                            args.relpath_pickle_uniref100_idmap)
-    configparser_object.set('panproteomes', 'relpath_pickle_uniref90_idmap',
-                            args.relpath_pickle_uniref90_idmap)
-    configparser_object.set('panproteomes', 'relpath_pickle_uniref50_idmap',
-                            args.relpath_pickle_uniref50_idmap)
+    configparser_object.set('panproteomes', 'relpath_pickle_uniref100_taxid_idmap',
+                            args.relpath_pickle_uniref100_taxid_idmap)
+    configparser_object.set('panproteomes', 'relpath_pickle_uniref90_taxid_idmap',
+                            args.relpath_pickle_uniref90_taxid_idmap)
+    configparser_object.set('panproteomes', 'relpath_pickle_uniref50_taxid_idmap',
+                            args.relpath_pickle_uniref50_taxid_idmap)
     configparser_object.set('panproteomes', 'relpath_pickle_uniprotkb_idmap',
                             args.relpath_pickle_uniprotkb_idmap)
     configparser_object.set('panproteomes', 'relpath_pickle_proteomes',
@@ -305,19 +325,21 @@ def set_download_options(configparser_object, args, verbose=False):
     configparser_object.set('panproteomes', 'nproc', str(args.nproc))
 
 
-    configparser_object.add_section('chocophlan2phylophlan')
-    configparser_object.set('panproteomes', 'download_base_dir',
+    configparser_object.add_section('export')
+    configparser_object.set('export', 'download_base_dir',
                             args.download_base_dir)
-    configparser_object.set('panproteomes', 'export_dir',
+    configparser_object.set('export', 'export_dir',
                             args.export_dir)
-    configparser_object.set('panproteomes', 'exportpath_phylophlan',
+    configparser_object.set('export', 'exportpath_phylophlan',
                             args.exportpath_phylophlan)
-    configparser_object.set('panproteomes', 'relpath_panproteomes_dir',
+    configparser_object.set('export', 'relpath_panproteomes_dir',
                             args.relpath_panproteomes_dir)
-    configparser_object.set('panproteomes', 'relpath_pickle_proteomes',
+    configparser_object.set('export', 'relpath_pickle_proteomes',
                             args.relpath_pickle_proteomes)
-    configparser_object.set('panproteomes', 'relpath_pickle_taxontree',
+    configparser_object.set('export', 'relpath_pickle_taxontree',
                             args.relpath_pickle_taxontree)
+
+    
     return configparser_object
 
 

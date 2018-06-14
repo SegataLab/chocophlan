@@ -14,6 +14,7 @@ import src.extract as extract
 import src.download as download
 import src.process_proteomes as process_proteomes
 import src.panproteomes as panproteomes
+import src.chocophlan2phylophlan as chocophlan2phylophlan
 import time
 from src.extract import Nodes as Nodes
 import sys
@@ -36,6 +37,7 @@ def chocophlan():
     #                    args=[config['download'], config['download']['verbose']],
     #                    callback=decompressed)
     # extract.do_extraction(config['extract'], verbose=config['extract']['verbose'])
+    # chocophlan2phylophlan.export_to_phylophlan(config['export'])
     process_proteomes.process_proteomes(config['process_proteomes'])
     # panproteomes.generate_panproteomes(config['panproteomes'])
     # config['process_proteomes']['relpath_genomes'] = '/ncbi'

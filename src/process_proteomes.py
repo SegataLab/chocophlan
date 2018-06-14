@@ -180,9 +180,11 @@ def create_uniref_dataset(xml, config):
         try:
             for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(uniref_xml), GROUP_CHUNK),1):
                 d={x[0]:x for x in pool.imap_unordered(parse_uniref_xml_elem_partial, group, chunksize=chunksize) if x is not None}
+
                 upids.extend([(m[0],c[0]) for c in d.values() for m in c[2] if 'UPI' in m[0]])
-                pickle.dump(d, open("{}/pickled/{}_{}.pkl".format(config['download_base_dir'],cluster, file_chunk),'wb'), -1)
                 idmap.update(dict.fromkeys(d.keys(), file_chunk))
+                taxon_map.update({k:(tuple(v[1] for t in v[2]), v[3:6]) for k,v in d.items()})
+                pickle.dump(d, open("{}/pickled/{}_{}.pkl".format(config['download_base_dir'],cluster, file_chunk),'wb'), -1)
         except Exception as e:
             utils.error(str(e))
             utils.error('Processing of {} failed.'.format(xml_input))
@@ -727,8 +729,8 @@ def process_proteomes(config):
     utils.info('Done.\n')
     
     # parse_uniprotkb_xml(config['download_base_dir']+config['relpath_uniprot_sprot'], config)
-    parse_uniprotkb_xml(config['download_base_dir']+config['relpath_uniprot_trembl'], config)
-    # parse_uniparc_xml(config['download_base_dir']+config['relpath_uniparc'],config)
+    # parse_uniprotkb_xml(config['download_base_dir']+config['relpath_uniprot_trembl'], config)
+    parse_uniparc_xml(config['download_base_dir']+config['relpath_uniparc'],config)
 
     # merge_idmap(config)
     # create_proteomes(config['download_base_dir']+config['relpath_proteomes_xml'], config)
