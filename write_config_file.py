@@ -150,6 +150,12 @@ def read_params():
                        default='/pickled/contigid_filename.pkl',
                        help='')
 
+    group.add_argument('--uniref_cluster_panproteomes',
+                      default='90')
+
+    group.add_argument('--discard_low_quality_genomes',
+                      action='store_true',
+                      default=True)
 
     group.add_argument('--export_dir',
                        default='/export',
@@ -321,6 +327,11 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.relpath_pickle_uniprotkb_idmap)
     configparser_object.set('panproteomes', 'relpath_pickle_proteomes',
                             args.relpath_pickle_proteomes)
+    configparser_object.set('panproteomes', 'uniref_cluster_panproteomes',
+                            args.uniref_cluster_panproteomes)
+    configparser_object.set('panproteomes', 'discard_low_quality_genomes',
+                            args.discard_low_quality_genomes)
+
     configparser_object.set('panproteomes', 'verbose', str(verbose))
     configparser_object.set('panproteomes', 'nproc', str(args.nproc))
 

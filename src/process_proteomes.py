@@ -100,7 +100,7 @@ def uniprot_tuple_to_dict(v):
              'UniRef90' : v[15],
              'UniRef50' : v[16]
             }
-
+## EXTRACT SEQUENCE FROM referenceMember if missing
 def parse_uniref_xml_elem(elem, config):
     if not terminating.is_set() and elem is not None:
         elem = etree.fromstring(elem)
@@ -183,7 +183,7 @@ def create_uniref_dataset(xml, config):
 
                 upids.extend([(m[0],c[0]) for c in d.values() for m in c[2] if 'UPI' in m[0]])
                 idmap.update(dict.fromkeys(d.keys(), file_chunk))
-                taxon_map.update({k:(tuple(v[1] for t in v[2]), v[3:6]) for k,v in d.items()})
+                taxon_map.update({k:(set(t[1] for t in v[2]), v[3:6]) for k,v in d.items()})
                 pickle.dump(d, open("{}/pickled/{}_{}.pkl".format(config['download_base_dir'],cluster, file_chunk),'wb'), -1)
         except Exception as e:
             utils.error(str(e))
@@ -360,17 +360,22 @@ def parse_uniparc_xml(xml_input, config):
     idmap = {}
     parse_uniparc_xml_elem_partial = partial(parse_uniparc_xml_elem, config=config)
     for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(tree), GROUP_CHUNK),1000):
-        with mpdummy.Pool(initializer=initt, initargs=(terminating,), processes=int(chunksize)) as pool:
-            d={x[0]:x for x in pool.imap_unordered(parse_uniparc_xml_elem_partial, group, chunksize=int(GROUP_CHUNK/chunksize)) if x is not None}
-        try:
-            if len(d):
-                idmap.update(dict.fromkeys(d.keys(), file_chunk))
-                with open("{}/pickled/uniparc_{}.pkl".format(config['download_base_dir'], file_chunk),'wb') as pickle_chunk:
-                    pickle.dump(d, pickle_chunk, -1)
-        except Exception as e:
-            utils.error(str(e))
-            utils.error('Processing of {} failed.'.format(xml_input),  exit=True)
-            raise
+        if file_chunk == 1022:
+            with mpdummy.Pool(initializer=initt, initargs=(terminating,), processes=int(chunksize)) as pool:
+                d={x[0]:x for x in pool.imap_unordered(parse_uniparc_xml_elem_partial, group, chunksize=int(GROUP_CHUNK/chunksize)) if x is not None}
+            try:
+                if len(d):
+                    # idmap.update(dict.fromkeys(d.keys(), file_chunk))
+                    with open("{}/pickled/uniparc_{}.pkl".format(config['download_base_dir'], file_chunk),'wb') as pickle_chunk:
+                        pickle.dump(d, pickle_chunk, -1)
+            except Exception as e:
+                utils.error(str(e))
+                utils.error('Processing of {} failed.'.format(xml_input),  exit=True)
+                raise
+        elif file_chunk < 1022:
+            continue
+        else:
+            return
     pickle.dump(idmap, open("{}/pickled/uniparc_idmap.pkl".format(config['download_base_dir']),'wb'), -1)
     if config['verbose']:
         utils.info('Done processing {} file!\n'.format(xml_input))
@@ -703,9 +708,9 @@ def process_proteomes(config):
     os.makedirs('{}/pickled'.format(config['download_base_dir']), exist_ok=True)
     os.makedirs('{}/pickled/uniparc_entries'.format(config['download_base_dir']), exist_ok=True)
 
-    # create_uniref_dataset(config['download_base_dir']+config['relpath_uniref100'],config)
-    # create_uniref_dataset(config['download_base_dir']+config['relpath_uniref90'],config)
-    # create_uniref_dataset(config['download_base_dir']+config['relpath_uniref50'],config)
+    create_uniref_dataset(config['download_base_dir']+config['relpath_uniref100'],config)
+    create_uniref_dataset(config['download_base_dir']+config['relpath_uniref90'],config)
+    create_uniref_dataset(config['download_base_dir']+config['relpath_uniref50'],config)
 
     global uniprotkb_uniref_idmap
 
@@ -718,23 +723,23 @@ def process_proteomes(config):
     else:
         utils.error('NCBI taxonomic tree not found. Exiting...', exit = True)
         
-    # parse_uniprotkb_uniref_idmapping(config)
-    # if all([os.path.exists("{}/pickled/{}_uniparc_idmap.pkl".format(config['download_base_dir'],c)) for c in ('uniref100','uniref90','uniref50')]) and os.path.exists('{}{}'.format(config['download_base_dir'],config['relpath_pickle_uniprotkb_uniref_idmap'])):
-    #     merge_uniparc_idmapping(config)
-    # else:
-    #     utils.error('Failed to process UniRef database. Exiting...', exit = True)
+    parse_uniprotkb_uniref_idmapping(config)
+    if all([os.path.exists("{}/pickled/{}_uniparc_idmap.pkl".format(config['download_base_dir'],c)) for c in ('uniref100','uniref90','uniref50')]) and os.path.exists('{}{}'.format(config['download_base_dir'],config['relpath_pickle_uniprotkb_uniref_idmap'])):
+        merge_uniparc_idmapping(config)
+    else:
+        utils.error('Failed to process UniRef database. Exiting...', exit = True)
     
     utils.info('Loading UniProtKB-UniRef mapping...')
     uniprotkb_uniref_idmap = pickle.load(open('{}{}'.format(config['download_base_dir'],config['relpath_pickle_uniprotkb_uniref_idmap']),'rb'))
     utils.info('Done.\n')
     
-    # parse_uniprotkb_xml(config['download_base_dir']+config['relpath_uniprot_sprot'], config)
-    # parse_uniprotkb_xml(config['download_base_dir']+config['relpath_uniprot_trembl'], config)
+    parse_uniprotkb_xml(config['download_base_dir']+config['relpath_uniprot_sprot'], config)
+    parse_uniprotkb_xml(config['download_base_dir']+config['relpath_uniprot_trembl'], config)
     parse_uniparc_xml(config['download_base_dir']+config['relpath_uniparc'],config)
 
-    # merge_idmap(config)
-    # create_proteomes(config['download_base_dir']+config['relpath_proteomes_xml'], config)
-    # annotate_taxon_tree(config)
+    merge_idmap(config)
+    create_proteomes(config['download_base_dir']+config['relpath_proteomes_xml'], config)
+    annotate_taxon_tree(config)
 
 if __name__ == '__main__':
     t0=time.time()
