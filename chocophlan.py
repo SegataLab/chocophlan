@@ -38,8 +38,8 @@ def chocophlan():
     #                    callback=decompressed)
     # extract.do_extraction(config['extract'], verbose=config['extract']['verbose'])
     # chocophlan2phylophlan.export_to_phylophlan(config['export'])
-    # process_proteomes.process_proteomes(config['process_proteomes'])
-    panproteomes.generate_panproteomes(config['panproteomes'])
+    process_proteomes.process_proteomes(config['process_proteomes'])
+    # panproteomes.generate_panproteomes(config['panproteomes'])
     # config['process_proteomes']['relpath_genomes'] = '/ncbi'
     # download.download_ncbi(config['process_proteomes'])
 

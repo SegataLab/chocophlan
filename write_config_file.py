@@ -160,9 +160,15 @@ def read_params():
     group.add_argument('--export_dir',
                        default='/export',
                        help='')
+    
     group.add_argument('--exportpath_phylophlan',
-                       default='phylophlan',
+                       default='phylophlan/',
                        help='')
+
+    group.add_argument('--exportpath_core_proteins',
+                       default='core_proteins/',
+                       help='')
+
 
     group.add_argument('--nproc', default=7,
                        help='Number of parallel processes')
@@ -303,10 +309,20 @@ def set_download_options(configparser_object, args, verbose=False):
     configparser_object.set('process_proteomes', 'nproc', str(args.nproc))
 
     configparser_object.add_section('stats')
+    configparser_object.set('stats', 'download_base_dir',
+                            args.download_base_dir)
     configparser_object.set('stats', 'relpath_pickle_proteomes',
                             args.relpath_pickle_proteomes)
     configparser_object.set('stats', 'relpath_pickle_taxontree',
                             args.relpath_pickle_taxontree)
+    configparser_object.set('stats', 'relpath_pickle_uniref100_idmap',
+                            args.relpath_pickle_uniref100_idmap)
+    configparser_object.set('stats', 'relpath_pickle_uniref90_idmap',
+                            args.relpath_pickle_uniref90_idmap)
+    configparser_object.set('stats', 'relpath_pickle_uniref50_idmap',
+                            args.relpath_pickle_uniref50_idmap)
+    configparser_object.set('stats', 'export_dir',
+                            args.export_dir)
 
     configparser_object.add_section('panproteomes')
     configparser_object.set('panproteomes', 'relpath_panproteomes_dir',
@@ -349,7 +365,8 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.relpath_pickle_proteomes)
     configparser_object.set('export', 'relpath_pickle_taxontree',
                             args.relpath_pickle_taxontree)
-
+    configparser_object.set('export', 'exportpath_core_proteins',
+                            args.exportpath_core_proteins)
     
     return configparser_object
 

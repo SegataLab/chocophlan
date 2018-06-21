@@ -5,7 +5,7 @@ __author__ = ('Nicola Segata (nicola.segata@unitn.it), '
               'Francesco Beghini (francesco.beghini@unitn.it)'
               'Nicolai Karcher (karchern@gmail.com),'
               'Francesco Asnicar (f.asnicar@unitn.it)')
-__version__ = '0.01'
+from _version import __version__
 __date__ = '03 Oct 2017'
 
 

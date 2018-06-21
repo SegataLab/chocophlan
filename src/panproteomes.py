@@ -4,7 +4,7 @@ author__ = ('Nicola Segata (nicola.segata@unitn.it), '
             'Nicolai Karcher (karchern@gmail.com),'
             'Francesco Asnicar (f.asnicar@unitn.it)')
 
-__version__ = '0.01'
+from _version import __version__
 __date__ = '04 Jan 2018'
 
 
@@ -154,8 +154,7 @@ class Panproteome:
             try:
                 terminating_p = dummy.Event()
                 with dummy.Pool(initializer=init_parse, initargs=(terminating_p, ), processes=100) as pool:
-                    # d = [_ for _ in pool.imap_unordered(self.process_panproteome, ((item, rank, cluster) for rank in ranks_to_process for item in self.d_ranks[rank]), chunksize=50)]
-                    d = [_ for _ in pool.imap_unordered(self.process_panproteome, ((item, 'species', 90) for item in f), chunksize=50)]
+                    d = [_ for _ in pool.imap_unordered(self.process_panproteome, ((item, rank, cluster) for rank in ranks_to_process for item in self.d_ranks[rank]), chunksize=50)]
             except Exception as e:
                 utils.error(str(e))
                 raise
@@ -164,7 +163,7 @@ class Panproteome:
 
     @staticmethod
     def find_core_genes(panproteome):
-        return [gene for gene, _ in filter(lambda gene:gene[1]['coreness'] >= panproteome['coreness_threshold'], panproteome['members'].items())]
+        return Counter({gene:panproteome['members'][gene]['coreness'] for gene, _ in filter(lambda gene:gene[1]['coreness'] >= panproteome['coreness_threshold'], panproteome['members'].items())})
 
 
     def rank_genes(self, panproteome):

@@ -4,7 +4,7 @@ __author__ = ('Nicola Segata (nicola.segata@unitn.it), '
               'Francesco Beghini (francesco.beghini@unitn.it)'
               'Nicolai Karcher (karchern@gmail.com),'
               'Francesco Asnicar (f.asnicar@unitn.it)')
-__version__ = '0.01'
+from _version import __version__
 __date__ = '7 Nov 2017'
 
 if __name__ == '__main__':
@@ -100,7 +100,7 @@ def uniprot_tuple_to_dict(v):
              'UniRef90' : v[15],
              'UniRef50' : v[16]
             }
-## EXTRACT SEQUENCE FROM referenceMember if missing
+
 def parse_uniref_xml_elem(elem, config):
     if not terminating.is_set() and elem is not None:
         elem = etree.fromstring(elem)
@@ -109,7 +109,8 @@ def parse_uniref_xml_elem(elem, config):
             d_uniref = {}
             d_uniref['id'] = elem.get('id')
             d_uniref['members'] =[]
-            d_uniref['sequence'] = elem.get('sequence')
+            d_uniref['sequence'] = elem.find('.//{http://uniprot.org/uniref}sequence').text.replace('\n','')
+
             for tag in tag_to_parse:
                 tag_children = '{http://uniprot.org/uniref}'+tag
                 if tag == 'property':
@@ -498,9 +499,9 @@ def parse_proteomes_xml_elem(elem, config):
     else:
         terminating.set()
 
-def get_request(requestURL, session=None):
-    r = session.get(requestURL, timeout = None)
-    return r
+# def get_request(requestURL, session=None):
+#     r = session.get(requestURL, timeout = None)
+#     return r
 
 # def get_upp(accession):
 #     baseURL = "https://www.ebi.ac.uk/proteins/api/uniparc/proteome/{}?offset={}&size={}&rfActive=true"
@@ -686,27 +687,8 @@ def merge_idmap(config):
     
     utils.info('Done merging UniProtKB ids.\n')
 
-def extract_uniref_taxonomy(fp):
-    u = pickle.load(open(fp,'rb'))
-    utils.info(fp+'\n')
-    ret = {}
-    for k, v in u.items():
-        ret[k] = set(x[1] for x in v[2])
-    return ret
-
-def export_uniref_taxonomy():
-    # from src.utils import *
-    # from src.panproteomes import *
-    # from blist import sorteddict
-
-    with mpdummy.Pool(30) as pool:
-        # u50 = [x for x in pool.imap_unordered(extract_uniref_taxonomy, ['data/pickled/uniref50_{}.pkl'.format(x) for x in range(1,32)], chunksize = 10)]
-        # u90 = [x for x in pool.imap_unordered(extract_uniref_taxonomy, ['data/pickled/uniref90_{}.pkl'.format(x) for x in range(1,75)], chunksize = 10)]
-        u100 = [x for x in pool.imap_unordered(extract_uniref_taxonomy, ['data/pickled/uniref100_{}.pkl'.format(x) for x in range(1,144)], chunksize = 10)]
-        [u.update(x) for x in u100]
 def process_proteomes(config):
     os.makedirs('{}/pickled'.format(config['download_base_dir']), exist_ok=True)
-    os.makedirs('{}/pickled/uniparc_entries'.format(config['download_base_dir']), exist_ok=True)
 
     create_uniref_dataset(config['download_base_dir']+config['relpath_uniref100'],config)
     create_uniref_dataset(config['download_base_dir']+config['relpath_uniref90'],config)
