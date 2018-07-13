@@ -159,9 +159,7 @@ def parse_uniref_xml_elem(elem, config):
             
         except Exception as e:
             utils.error('Failed to elaborate item: '+ elem.get('id'))
-            raise
-    else:
-        terminating.set()
+            terminating.set()
 
 def create_uniref_dataset(xml, config):  
     uniref_xml = etree.iterparse(gzip.GzipFile(xml), events = ('end',), tag = '{http://uniprot.org/uniref}entry', huge_tree = True)
@@ -263,9 +261,7 @@ def parse_uniprotkb_xml_elem(elem, config):
 
         except Exception as e:
             utils.error('Failed to elaborate item: '+ elem.find('.//{}accession'.format(nsprefix)).text)
-            raise
-    else:
-        terminating.set()
+            terminating.set()
     
 def parse_uniprotkb_xml(xml_input, config):
     terminating = mp.Event()
@@ -285,7 +281,7 @@ def parse_uniprotkb_xml(xml_input, config):
     
     with mpdummy.Pool(initializer=initt, initargs=(terminating, ), processes=chunksize) as pool:
         for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(tree), GROUP_CHUNK),1):
-            d = {x[0]:x for x in pool.imap_unordered(parse_uniprotkb_xml_elem_partial, group, chunksize=int(GROUP_CHUNK/chunksize)) if x is not None}
+            d = {x[0]:x for x in pool.imap_unordered(parse_uniprotkb_xml_elem_partial, group, chunksize=chunksize) if x is not None}
             try:
                 if len(d):
                     idmap.update(dict.fromkeys(d.keys(), db*file_chunk))
@@ -465,10 +461,8 @@ def process(f):
             utils.error(f)
             utils.error(str(e))
             utils.error('Processing failed',  exit=True)
-            raise
+            terminating.set()
         return d_proteome
-    else:
-        terminating.set()
 
 def parse_proteomes_xml_elem(elem, config):
     if not terminating.is_set() and elem is not None:
@@ -495,9 +489,7 @@ def parse_proteomes_xml_elem(elem, config):
         except Exception as e:
             utils.error('Failed to elaborate item: '+str(e))
             utils.error(elem.attrib['upid'])
-            raise
-    else:
-        terminating.set()
+            terminating.set()
 
 # def get_request(requestURL, session=None):
 #     r = session.get(requestURL, timeout = None)
@@ -690,9 +682,9 @@ def merge_idmap(config):
 def process_proteomes(config):
     os.makedirs('{}/pickled'.format(config['download_base_dir']), exist_ok=True)
 
-    create_uniref_dataset(config['download_base_dir']+config['relpath_uniref100'],config)
-    create_uniref_dataset(config['download_base_dir']+config['relpath_uniref90'],config)
-    create_uniref_dataset(config['download_base_dir']+config['relpath_uniref50'],config)
+    # create_uniref_dataset(config['download_base_dir']+config['relpath_uniref100'],config)
+    # create_uniref_dataset(config['download_base_dir']+config['relpath_uniref90'],config)
+    # create_uniref_dataset(config['download_base_dir']+config['relpath_uniref50'],config)
 
     global uniprotkb_uniref_idmap
 

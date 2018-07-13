@@ -7,7 +7,6 @@ __author__ = ('Nicola Segata (nicola.segata@unitn.it), '
               'Francesco Asnicar (f.asnicar@unitn.it)')
 from _version import __version__
 __date__ = '03 Jan 2018'
- 
 
 import os
 import sys
@@ -104,6 +103,7 @@ class Stats:
         stdev_proteomes_present = statistics.stdev(iter_proteomes_present) if len(iter_proteomes_present) else None
 
         ret_d = { 'panproteome_{}_number_members'.format(cluster) : number_members,
+               'panproteome_{}_number_core_proteins'.format(cluster) : number_core_proteins,
                'panproteome_{}_mean_cores_coreness'.format(cluster): mean_core_coreness, 
                'panproteome_{}_mean_coreness'.format(cluster): mean_coreness, 
                'panproteome_{}_median_coreness'.format(cluster): median_coreness,
@@ -122,6 +122,9 @@ class Stats:
             ret_d['panproteome_{}_stdev_{}_uniqueness'.format(cluster, cc)] = stdev_uniqueness[cc]
 
         return ret_d
+
+    def pangenes_stats(self, panproteome):
+
 
     def stats(self):
         all_stat = { 'Total number of species' : sum(1 for b in self.d_ranks['species'] if self.taxontree.get_child_proteomes(b)),
@@ -161,16 +164,18 @@ class Stats:
             writer.writeheader()
             for k,v in d_new.items():
                 writer.writerow(v)
-                
+
+def generate_stats(config):
+    s = Stats(config)
+    s.stats()
+    
 if __name__ == '__main__':
     args = utils.read_params()
     utils.check_params(args, verbose=args.verbose)
 
     config = utils.read_configs(args.config_file, verbose=args.verbose)
     config = utils.check_configs(config)
-    config = config['panproteomes']            #UPDATE TO STATS
+    config = config['stats']            #UPDATE TO STATS
 
     s = Stats(config)
     s.stats()
-
-    sys.exit(0)

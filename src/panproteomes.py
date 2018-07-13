@@ -38,7 +38,7 @@ def init_parse(terminating_):
 class Panproteome:
     ranks = ('superkingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species')
     kingdom_to_process = ('Archaea', 'Bacteria')
-    
+
     def __init__(self, config):
         if config['verbose']:
             utils.info('Loading pickled databases...')
@@ -97,9 +97,12 @@ class Panproteome:
                         if uniref_cluster not in uniref_panproteome['members']:
                             uniref_panproteome['members'][uniref_cluster] = { 'coreness': 0,
                                                                    'uniqueness': {},
+                                                                   'uniqueness_nosp' : {},
                                                                    'copy_number': Counter(),
                                                                    'proteomes_present': set(),
-                                                                   'external_hits' : {}
+                                                                   'external_hits' : {},
+                                                                   'external_species' : {},
+                                                                   'external_species_nosp' : {}
                                                                  }
                         uniref_panproteome['members'][uniref_cluster]['proteomes_present'].add(proteome_id)
                         uniref_panproteome['members'][uniref_cluster]['coreness'] = len(uniref_panproteome['members'][uniref_cluster]['proteomes_present'])
@@ -120,15 +123,21 @@ class Panproteome:
                         for pangene, uniref_id in files_to_load:
                             uniref_id = 'UniRef{}_{}'.format(cluster, uniref_id) if 'UniRef' not in uniref_id else uniref_id
                             taxa_is_present = set(destination_clusters.get('{}'.format(uniref_id),[''])[0])
-                            external_hits = [x for x in taxa_is_present if x not in item_descendant]
 
-                            uniref_panproteome['members'][pangene]['uniqueness']['{}_{}'.format(panproteome_cluster,cluster)] = len(external_hits)
+                            external_hits = [x for x in taxa_is_present if x not in item_descendant]
+                            external_species = set(self.taxontree.go_up_to_species(taxid) for taxid in external_hits)
+                            if None in external_species: external_species.remove(None)
+                            external_species_nosp = set(taxid for taxid in external_species if not self.taxontree.taxid_n[taxid].is_low_quality)
+
+                            uniref_panproteome['members'][pangene]['uniqueness']['{}_{}'.format(panproteome_cluster,cluster)] = len(external_species)
+                            uniref_panproteome['members'][pangene]['uniqueness_nosp']['{}_{}'.format(panproteome_cluster,cluster)] = len(external_species_nosp)
+                            uniref_panproteome['members'][pangene]['external_species']['{}_{}'.format(panproteome_cluster,cluster)] = external_species
+                            uniref_panproteome['members'][pangene]['external_species_nosp']['{}_{}'.format(panproteome_cluster,cluster)] = external_species_nosp
                             uniref_panproteome['members'][pangene]['external_hits']['{}_{}'.format(panproteome_cluster,cluster)] = external_hits
                     except Exception as e:
                         print(e)
                         print(item.tax_id)
                         terminating.set()
-                        raise
 
 
                 if len(uniref_panproteome):
@@ -137,38 +146,30 @@ class Panproteome:
             terminating.set()
             
     def create_panproteomes(self, cluster):
-        if not terminating.is_set():
-            if cluster == 100:
-                ranks_to_process = self.ranks[-1::]
-            elif cluster == 90:
-                ranks_to_process = self.ranks[:3:-1]
-            else:
-                ranks_to_process = self.ranks
-            
-            if self.config['verbose']:
-                utils.info('Starting creating panproteomes for {}...\n'.format(', '.join(ranks_to_process)))
-
-            for k in ranks_to_process:
-                os.makedirs('{}/{}/{}/{}'.format(self.config['download_base_dir'], self.config['relpath_panproteomes_dir'], k, cluster), exist_ok=True)
-        
-            try:
-                terminating_p = dummy.Event()
-                with dummy.Pool(initializer=init_parse, initargs=(terminating_p, ), processes=100) as pool:
-                    d = [_ for _ in pool.imap_unordered(self.process_panproteome, ((item, rank, cluster) for rank in ranks_to_process for item in self.d_ranks[rank]), chunksize=50)]
-            except Exception as e:
-                utils.error(str(e))
-                raise
+        if cluster == 100:
+            ranks_to_process = self.ranks[-1::]
+        elif cluster == 90:
+            ranks_to_process = self.ranks[:3:-1]
         else:
-            terminating.set()
+            ranks_to_process = self.ranks
+        
+        if self.config['verbose']:
+            utils.info('Starting creating panproteomes for {}...\n'.format(', '.join(ranks_to_process)))
+
+        for k in ranks_to_process:
+            os.makedirs('{}/{}/{}/{}'.format(self.config['download_base_dir'], self.config['relpath_panproteomes_dir'], k, cluster), exist_ok=True)
+    
+        try:
+            terminating_p = dummy.Event()
+            with dummy.Pool(initializer=init_parse, initargs=(terminating_p, ), processes=100) as pool:
+                d = [_ for _ in pool.imap_unordered(self.process_panproteome, ((item, rank, cluster) for rank in ranks_to_process for item in self.d_ranks[rank]), chunksize=50)]
+        except Exception as e:
+            utils.error(str(e))
+            raise
 
     @staticmethod
     def find_core_genes(panproteome):
         return Counter({gene:panproteome['members'][gene]['coreness'] for gene, _ in filter(lambda gene:gene[1]['coreness'] >= panproteome['coreness_threshold'], panproteome['members'].items())})
-
-
-    def rank_genes(self, panproteome):
-        pass
-
 
     def extract_protein_sequence(self, items):
         if not terminating.is_set():
@@ -185,7 +186,7 @@ class Panproteome:
 
 
     @staticmethod
-    def export_panproteome_fasta(self, panproteome):
+    def export_panproteome_fasta(panproteome):
         # with open('export/{}_uniref{}_panproteome.txt'.format(panproteome['tax_id'], panproteome['cluster'])) as export:
         pass
         files_to_load = itemgetter(*filter(None,panproteome['members'].keys()))(self.uniref90)
@@ -218,9 +219,9 @@ def generate_panproteomes(config):
     for c in p.get_upper_clusters(max(clusters)):
         p.__setattr__('uniref{}_tax_id_map'.format(c), pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_uniref{}_taxid_idmap'.format(c)]),'rb')))
 
-    terminating = dummy.Event()
-    with dummy.Pool(initializer=init_parse, initargs=(terminating, ), processes=len(clusters)) as pool:
-        [_ for _ in pool.imap_unordered(p.create_panproteomes, clusters)]
+    for cluster in clusters:
+        p.create_panproteomes(cluster)
+
     gc.enable()      
 
 if __name__ == '__main__':

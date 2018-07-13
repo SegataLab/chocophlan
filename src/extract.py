@@ -58,7 +58,8 @@ class Nodes:
     #   hidden subtree root flag (1 or 0)       -- 1 if this subtree has no sequence data yet
     #   comments                -- free-text comments and citations
     #
-
+    reduced_tax_levels = ['superkingdom', 'phylum',
+                      'class', 'order', 'family', 'genus', 'species']
     def __init__(self):
         pass
 
@@ -232,10 +233,16 @@ class Nodes:
             self.get_leave_ids(c, recur=True)
 
     def go_up_to_species(self, taxid):
-        father = self.taxid_n[taxid].parent_tax_id
-        if not self.taxid_n[father].rank == 'species':
-            return self.go_up_to_species( father)
-        return father
+        if taxid in self.taxid_n and taxid > 1:
+            rank = self.taxid_n[taxid].rank
+            rank_index = self.reduced_tax_levels.index(rank) if rank in self.reduced_tax_levels else float('infinity')
+            if rank_index > self.reduced_tax_levels.index('species'):
+                father = self.taxid_n[taxid].parent_tax_id
+                return self.go_up_to_species(father)
+            elif rank_index == self.reduced_tax_levels.index('species'):
+                return taxid
+            else:
+                return None
 
     def get_child_proteomes(self, clade):
         if clade.initially_terminal and hasattr(clade,'proteomes'):
@@ -249,10 +256,12 @@ class Nodes:
         ranks2code = {'superkingdom': 'k', 'phylum': 'p', 'class': 'c',
                       'order': 'o', 'family': 'f', 'genus': 'g', 'species': 's', 'taxon': 't'}
         order = ('k', 'p', 'c', 'o', 'f', 'g', 's', 't')
-        path = [p for p in self.taxid_n[1].get_path(self.taxid_n[tax_id]) if p.rank in ranks2code or (p.rank=='norank')][1:]
+        path = [p for p in self.taxid_n[1].get_path(self.taxid_n[tax_id]) if p.rank in ranks2code or (p.rank=='norank')]
+        if path[0].name == 'cellular_organisms':
+            _ = path.pop(0)
         taxa_str = []
         hasSpecies = any([True if p.rank == 'species' else False for p in path])
-        hasTaxon = any([True if p.rank == 'norank' and p.initially_terminal else False for p in path])
+        hasTaxon = any([True if p.rank == 'norank' or p.rank == 'taxon' and p.initially_terminal else False for p in path])
 
         if hasSpecies and hasTaxon:
             i=-1
@@ -270,7 +279,7 @@ class Nodes:
         for x in range(len(order)-1) if not hasTaxon else range(len(order)):
             if not taxa_str[x].startswith(order[x]):
                 end_lvl = order.index(taxa_str[x][0])
-                missing_levels = ['{}__{}_unclassified'.format(order[i], path[x-1].name) for i in range(x, end_lvl)]
+                missing_levels = ['{}__{}_unclassified'.format(order[i], taxa_str[x-1][3:]) for i in range(x, end_lvl)]
                 for i in range(len(missing_levels)):
                     taxa_str.insert(x+i, missing_levels[i])
 
@@ -359,7 +368,7 @@ class Nodes:
         self.reduced_tree = copy.deepcopy(self.tree)
 
         def add_noranks(clade):
-            if not clade.rank in reduced_tax_levels:
+            if not clade.rank in self.reduced_tax_levels:
                 clade.rank = 'norank'
             for c in clade.clades:
                 add_noranks(c)
@@ -375,7 +384,7 @@ class Nodes:
                     # if len(c.clades) and c.rank not in reduced_tax_levels:
                     # if not hasattr(c,"sequence_data") and c.rank not in
                     # reduced_tax_levels:
-                    if len(c.clades) and c.rank not in reduced_tax_levels:
+                    if len(c.clades) and c.rank not in self.reduced_tax_levels:
                         run = True
                         c.rank = "norank"
                         new_clades += c.clades
@@ -383,7 +392,7 @@ class Nodes:
                         new_clades.append(c)
                     # if hasattr(c,"sequence_data") and c.rank not in
                     # reduced_tax_levels:
-                    if c.rank not in reduced_tax_levels:
+                    if c.rank not in self.reduced_tax_levels:
                         c.rank = "norank"
                 clade.clades = new_clades
             for c in clade.clades:
@@ -411,21 +420,21 @@ class Nodes:
         def add_internal_missing_levels(clade, lev=1):
             if clade.rank == "taxon":
                 return
-            cur_lev = reduced_tax_levels.index(clade.rank) if lev > 0 else 0
+            cur_lev = self.reduced_tax_levels.index(clade.rank) if lev > 0 else 0
 
             jumps, to_add = [], ""
             for i, c in enumerate(clade.clades):
                 if c.rank == 'taxon':
                     continue
-                next_lev = reduced_tax_levels.index(c.rank)
+                next_lev = self.reduced_tax_levels.index(c.rank)
                 if next_lev == cur_lev + 1 or c.rank == 'superkingdom':
                     add_internal_missing_levels(c)
                     continue
 
-                for i, l in enumerate(reduced_tax_levels[:-1]):
-                    if clade.rank == l and c.rank != reduced_tax_levels[i + 1]:
+                for i, l in enumerate(self.reduced_tax_levels[:-1]):
+                    if clade.rank == l and c.rank != self.reduced_tax_levels[i + 1]:
                         jumps.append(c)
-                        to_add = reduced_tax_levels[i + 1]
+                        to_add = self.reduced_tax_levels[i + 1]
             if jumps:
                 children_ok = [c for c in clade.clades if c not in jumps]
                 newclade = copy.deepcopy(clade)
@@ -513,7 +522,7 @@ def do_extraction(config, verbose=False):
     cags_taxid = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search(u'_CAG_',tax_tree.taxid_n[x].name)]
     sps_taxid = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search(u'_sp(_|$)',tax_tree.taxid_n[x].name)]
     bacterium_taxis = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if '_bacterium_' in tax_tree.taxid_n[x].name]
-    merged_low_quality = itertools.chain.from_iterable((candidatus_taxid,cags_taxid,sps_taxid,bacterium_taxis))
+    merged_low_quality = list(itertools.chain.from_iterable((candidatus_taxid,cags_taxid,sps_taxid,bacterium_taxis)))
     [tax_tree.taxid_n[x].__setattr__('is_low_quality', True) for x in merged_low_quality]
     [tax_tree.taxid_n[x].__setattr__('is_low_quality', False) for x in set(tax_tree.taxid_n.keys()).difference(merged_low_quality)]
     utils.info('Finished postprocessing the taxonomy\n')

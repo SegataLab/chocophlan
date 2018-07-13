@@ -6,6 +6,7 @@ __author__ = ('Nicola Segata (nicola.segata@unitn.it), '
               'Nicolai Karcher (karchern@gmail.com),'
               'Francesco Asnicar (f.asnicar@unitn.it)'
               'Lauren McIver (lauren.j.mciver@gmail.com)')
+
 from _version import __version__
 __date__ = '01 Oct 2017'
 
@@ -23,6 +24,7 @@ import sys
 import tarfile
 import tempfile
 import traceback
+import requests
 import time
 if __name__ == '__main__':
     import utils
@@ -32,6 +34,15 @@ import re
 from lxml import etree 
 from functools import partial
 from urllib.parse import urlparse
+
+
+NCBI_URL="https://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt"
+GCA_COLUMN=0
+BSA_COLUMN=2
+TAX_COLUMN=5
+FTP_COLUMN=19
+GFF_EXTENSION="_genomic.gff.gz"
+FNA_EXTENSION="_genomic.fna.gz"
 
 def initt(terminating_):
     # This places terminating in the global namespace of the worker subprocesses.
@@ -250,41 +261,23 @@ def download(config, verbose=False):
             sys.exit("MD5 checksums do not correspond! Delete previously downloaded files so they are re-downloaded")
         else:
             utils.info("{} checksum correspond\n".format(d))
-    
-
-NCBI_URL="ftp://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt"
-GCA_COLUMN=0
-BSA_COLUMN=2
-TAX_COLUMN=5
-FTP_COLUMN=19
-GFF_EXTENSION="_genomic.gff.gz"
-FNA_EXTENSION="_genomic.fna.gz"
 
 def download_file(url,file):
-    """ Download the url to the file location """
-
-    # try to download the file
     try:
-        url = urlparse(url)
-
-        ftp = ftplib.FTP(url.netloc)  # Login to ftp server
-        ftp.login()
+        response = requests.get(url, stream=True)
         with open(file, "wb") as fileout:
-            ftp.retrbinary("RETR " + url.path, fileout.write)
-
-        ftp.quit()
+            for chunk in response.iter_content(chunk_size=512):
+                if chunk:
+                    fileout.write(chunk)
         status = 0
     except:
         status = 1
     return status
 
 def get_ncbi_assembly_info():
-    """ Download the assembly data from NCBI """
-
     # create a tempfile for the download
     file_handle, new_file = tempfile.mkstemp(prefix="ncbi_download")
 
-    # try to download the file
     utils.info("Downloading the assembly data info from NCBI\n")
     download_file(NCBI_URL,new_file)
     
@@ -297,7 +290,6 @@ def get_ncbi_assembly_info():
 
     # remove the temp file
     os.remove(new_file)
-
     return data
 
 def get_gca_ftp(name,data=None):
@@ -315,37 +307,24 @@ def get_gca_ftp(name,data=None):
         if line[GCA_COLUMN].startswith(name):
             ftp=line[FTP_COLUMN]+"/"+os.path.basename(line[FTP_COLUMN])
             break
-    if not ftp or not ftp.startswith("ftp"):
-        ftp=None
-        utils.error("ERROR: Unable to find ftp: {}".format(name))
-
     return ftp
 
-def file_size(file):
-    """ Return the size of the file in MB """
-
-    try:
-        size = os.path.getsize(file) / (1024.0**2)
-    except OSError:
-        size = 0
-
-    return size
 
 def download_gff_fna(gca_name, folder, data=None, delete=None, total_size=0):
     """ Download the gff and fna for the given gca to the folder specified """
 
     # get the url for the gff and fna
+    status = 0
     base_ftp=get_gca_ftp(gca_name, data=data)
     if not base_ftp:
-        return
-    gff_ftp=base_ftp+GFF_EXTENSION
-    fna_ftp=base_ftp+FNA_EXTENSION
+        return status
+    gff_ftp = base_ftp.replace('ftp:','https:') + GFF_EXTENSION
+    fna_ftp = base_ftp.replace('ftp:','https:') + FNA_EXTENSION
 
     # download the files
     gff_file=os.path.join(folder,os.path.basename(gff_ftp))
     fna_file=os.path.join(folder,os.path.basename(fna_ftp))
 
-    status = 0
     for url,file in zip([gff_ftp,fna_ftp],[gff_file,fna_file]):
         status += download_file(url,file)
         if delete:
@@ -358,11 +337,13 @@ def process(item, data, config):
         k,v = item
         ncbi_ids = dict(v['ncbi_ids'])
         id_ = ''
+        ret = ()
         if 'GCSetAcc' in ncbi_ids:
             id_ = ncbi_ids['GCSetAcc']
-        elif 'Biosample' in ncbi_ids:   
+        elif 'Biosample' in ncbi_ids:
             id_ = [line[GCA_COLUMN] for line in data if line[BSA_COLUMN] == ncbi_ids['Biosample'] and int(line[TAX_COLUMN]) == v['tax_id']]
             if len(id_): id_=id_[0]
+            ret = (k, id_)
         if len(id_):
             ncbi_ids['GCSetAcc'] = id_
             try:
@@ -374,12 +355,13 @@ def process(item, data, config):
                 status = download_gff_fna(id_,download_folder,data)
             except Exception as e:
                 utils.error('Failed to download {}'.format(id_))
-                utils.error(str(e))
-                utils.info(traceback.print_exc())
-                raise
+                terminating.set()
+
             if status:
-                utils.info("Download for {} has failed!\n".format(id_))
+                utils.info("{} was not found!\n".format(id_))
                 return id_
+            elif ret:
+                return ret
     else:
         terminating.set()
 
@@ -395,7 +377,7 @@ def download_ncbi(config):
         failed = [f for f in pool.imap_unordered(partial_process, ((k,v) for k, v in proteomes.items() if 'ncbi_ids' in v), chunksize=config['nproc'])]
 
     with open('failed_GCA.txt','w') as f:
-        f.writelines(faield)
+        f.writelines(failed)
 
     with open('{}{}'.format(config['export_dir'],config['relpath_gca2taxa']), 'w') as f:
         [f.write('{}\t{}\n'.format(k,v)) for k, v in {dict(v['ncbi_ids']).get('GCSetAcc'):v['tax_id'] for k, v in proteomes.items() if 'ncbi_ids' in v}.items()]

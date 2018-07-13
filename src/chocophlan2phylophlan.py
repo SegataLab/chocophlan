@@ -113,6 +113,8 @@ class chocophlan2phylophlan:
         if self.config['verbose']:
             utils.info('Exporting core proteins, proteomes and genomes...\n')
 
+        # REMOVE SPECIES WITHOUT ANY GENOME
+        # NO PROTEOMES
         with open('{}/{}/taxa2proteomes.txt'.format(self.config['export_dir'], self.config['exportpath_phylophlan']), 'w') as t2p_out:
             with open('{}/{}/taxa2core.txt'.format(self.config['export_dir'], self.config['exportpath_phylophlan']), 'w') as t2c_out:
                 with open('{}/{}/taxa2genomes.txt'.format(self.config['export_dir'], self.config['exportpath_phylophlan']), 'w') as t2g_out:
@@ -121,7 +123,7 @@ class chocophlan2phylophlan:
                     lines_t2g = ['#CHOCOPhlAn version {}\n'.format(__version__), '#'+open('data/relnotes.txt').readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of genomes\n']
 
                     lines_t2p.extend(['{}\t{}\thttp://www.uniprot.org/uniprot/?query=proteome:{{}}&compress=yes&force=true&format=fasta\t{}\n'.format(tax_id, entry[0], ';'.join(entry[1])) for tax_id, entry in d_out_refp.items()])
-                    lines_t2c.extend(['{}\t{}\thttp://www.uniprot.org/uniref/UniRef90_{{}}.fast\at{}\n'.format(tax_id, entry[0], ';'.join(entry[1])) for tax_id, entry in d_out_core.items()])
+                    lines_t2c.extend(['{}\t{}\thttp://www.uniprot.org/uniref/UniRef90_{{}}.fasta\t{}\n'.format(tax_id, entry[0], ';'.join(entry[1])) for tax_id, entry in d_out_core.items()])
                     lines_t2g.extend(['{}\t{}\t{}\n'.format(tax_id, entry[0], ';'.join(entry[1])) for tax_id, entry in d_out_refg.items()])
 
                     t2p_out.writelines(lines_t2p)
