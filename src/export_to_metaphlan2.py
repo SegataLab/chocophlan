@@ -61,28 +61,27 @@ class export_to_metaphlan2:
         if config['verbose']:
             utils.info('Finished.\n')
 
-    CORE_CORENESS_THRESOLD = 0.9
-    CORE_UNIQUENESS_90_THRESHOLD = 1
-    CORE_UNIQUENESS_50_THRESHOLD = 10
-    ## Coreness greater or equal than  90%
-    ## Uniqueness 90_50 less or equal than 10
-    ## Uniqueness 90_90 less or equal than 1, no sps
-    ## Copy number less than 1.5
-
     @staticmethod
     def rank_genes(panproteome, config):
-        pc_coreness_thresold = 0.9 * panproteome['number_proteomes']
-        cores_to_use = {k:v for k,v in Panproteome.find_core_genes(panproteome).items() if v > pc_coreness_thresold}
+        pc_coreness_thresold = config['core_coreness_thresold'] * panproteome['number_proteomes']
+        cores_to_use = {k:v['coreness'] for k,v in panproteome['members'].items() if v['coreness'] >= pc_coreness_thresold}
 
         markers = [core for core in cores_to_use 
-                        if panproteome['members'][core]['uniqueness']['90_90'] <= 1 
-                    and panproteome['members'][core]['uniqueness']['90_50'] <= 10]
+                        if panproteome['members'][core]['uniqueness_nosp']['90_90'] <= config['core_uniqueness_90_threshold'] 
+                    and panproteome['members'][core]['uniqueness_nosp']['90_50'] <= config['core_uniqueness_50_threshold']]
         return markers
 
-
-    def elaborate(self):
-        with open('export/genomes_list.txt',"wt") as wout:
-            [wout.write('{}\t{}\t{}\n'.format(self.proteomes[p]['tax_id'], self.taxontree.print_full_taxonomy(self.proteomes[p]['tax_id']), dict(self.proteomes[p]['ncbi_ids']).get('GCSetAcc',''))) for p in self.proteomes]
+    """
+    Remove all external hits from Shigella species to improve uniqueness statistic
+    """
+    def get_ecoli_markers(self, panproteome):
+        shigella_ids = [x.tax_id for x in self.taxontree.taxid_n.values() if 'Shigella' in x.name]
+        for pangene in panproteome['members']:
+            if len(pangene):
+                for cluster in panproteome['members'][pangene]['external_hits']:
+                    external_species_nosp = set(taxid for taxid in panproteome['members'][pangene]['external_species_nosp'][cluster] if taxid not in shigella_ids)
+                    panproteome['members'][pangene]['uniqueness_nosp'][cluster] = len(external_species_nosp)
+        return export_to_metaphlan2.rank_genes(panproteome, self.config)
 
     # def exctract_gene_from_genome(self, item):
     #     if not terminating.is_set():
@@ -179,7 +178,10 @@ class export_to_metaphlan2:
     def get_uniref_uniprotkb_from_panproteome(self, panproteome):
         if not terminating.is_set():
             panproteome = pickle.load(open(panproteome, 'rb'))
-            possible_markers = Panproteome.rank_genes(panproteome)
+            if panproteome['tax_id'] == 562:
+                possible_markers = self.get_ecoli_markers(panproteome, self.config)
+            else:
+                possible_markers = export_to_metaphlan2.rank_genes(panproteome, self.config)
             gc = {}
             upid = ""
             nucls = []
@@ -236,7 +238,7 @@ class export_to_metaphlan2:
                     with open('export/metaphlan2/{}.fasta'.format(panproteome['tax_id']), 'wt') as fasta_markers:
                         [fasta_markers.write(marker.format('fasta')) for marker in nucls]
         else:
-            terminating.set():
+            terminating.set()
     # def get_uniprotkb_from_panproteome(self, uniprotkb_id):
     #     pass
     #     cores = Panproteome.find_core_genes(panproteome)
@@ -252,4 +254,4 @@ class export_to_metaphlan2:
         species = glob.glob('data/pickled/panproteomes/species/90/*')
         terminating = dummy.Event()
         with dummy.Pool(initializer=init_parse, initargs=(terminating, ), processes=150) as pool:
-            failed = [x for x in pool.imap_unordered(self.get_uniref_uniprotkb_from_panproteome, species, chunksize=50) if x is not None]
+            failed = [x for x in pool.imap_unordered(self.get_uniref_uniprotkb_from_panproteome, species, chunksize=50)]

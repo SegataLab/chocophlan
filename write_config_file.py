@@ -169,6 +169,9 @@ def read_params():
                        default='core_proteins/',
                        help='')
 
+    group.add_argument('--core_coreness_thresold', default='0.5')
+    group.add_argument('--core_uniqueness_90_threshold', default='1')
+    group.add_argument('--core_uniqueness_50_threshold', default='10')
 
     group.add_argument('--nproc', default=7,
                        help='Number of parallel processes')
@@ -373,6 +376,13 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.relpath_pickle_taxontree)
     configparser_object.set('export', 'exportpath_core_proteins',
                             args.exportpath_core_proteins)
+    configparser_object.set('export', 'core_coreness_thresold',
+                            args.core_coreness_thresold)
+    configparser_object.set('export', 'core_uniqueness_90_threshold',
+                            args.core_uniqueness_90_threshold)
+    configparser_object.set('export', 'core_uniqueness_50_threshold',
+                            args.core_uniqueness_50_threshold)
+
     configparser_object.set('export', 'verbose', str(verbose))
     configparser_object.set('export', 'nproc', str(args.nproc))
 

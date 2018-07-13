@@ -111,6 +111,15 @@ def check_configs(config, verbose=False):
                           .format('{}: {}\n    '.join(zip(['section_key', 'section', 'value'],
                                                           [section_key, section, value]))),
                           init_new_line=True, exit=True)
+            elif 'core' in section and 'threshold' in section:
+                try:
+                    section_dic[section] = int(value)
+                except Exception as e:
+                    error(str(e), init_new_line=True)
+                    error('Is not an int!\n    {}'
+                          .format('{}: {}\n    '.join(zip(['section_key', 'section', 'value'],
+                                                          [section_key, section, value]))),
+                          init_new_line=True, exit=True)
             elif 'verbose' in section:
                 try:
                     section_dic[section] = value == 'True'
