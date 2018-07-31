@@ -11,7 +11,7 @@ __author__ = ('Nicola Segata (nicola.segata@unitn.it),'
               'Francesco Beghini (francesco.beghini@unitn.it),'
               'Nicolai Karcher (karchern@gmail.com),'
               'Francesco Asnicar (f.asnicar@unitn.it)')
-from _version import __version__
+from _version import __CHOCOPhlAn_version__
 __date__ = '22 Oct 2017'
 
 if __name__ == '__main__':
@@ -251,7 +251,7 @@ class Nodes:
         for c in clade.clades:
             pp.update(self.get_child_proteomes(c))
         return pp
-    
+     
     def print_full_taxonomy(self, tax_id):
         ranks2code = {'superkingdom': 'k', 'phylum': 'p', 'class': 'c',
                       'order': 'o', 'family': 'f', 'genus': 'g', 'species': 's', 'taxon': 't'}
@@ -261,7 +261,7 @@ class Nodes:
             _ = path.pop(0)
         taxa_str = []
         hasSpecies = any([True if p.rank == 'species' else False for p in path])
-        hasTaxon = any([True if p.rank == 'norank' or p.rank == 'taxon' and p.initially_terminal else False for p in path])
+        hasTaxon = any([True if (p.rank == 'norank' or p.rank == 'taxon') and p.initially_terminal else False for p in path])
 
         if hasSpecies and hasTaxon:
             i=-1
@@ -384,7 +384,7 @@ class Nodes:
                     # if len(c.clades) and c.rank not in reduced_tax_levels:
                     # if not hasattr(c,"sequence_data") and c.rank not in
                     # reduced_tax_levels:
-                    if len(c.clades) and c.rank not in self.reduced_tax_levels:
+                    if len(c.clades) and c.rank not in reduced_tax_levels:
                         run = True
                         c.rank = "norank"
                         new_clades += c.clades
@@ -392,7 +392,7 @@ class Nodes:
                         new_clades.append(c)
                     # if hasattr(c,"sequence_data") and c.rank not in
                     # reduced_tax_levels:
-                    if c.rank not in self.reduced_tax_levels:
+                    if c.rank not in reduced_tax_levels:
                         c.rank = "norank"
                 clade.clades = new_clades
             for c in clade.clades:

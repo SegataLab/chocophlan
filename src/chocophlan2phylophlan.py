@@ -7,7 +7,7 @@ author__ = ('Nicola Segata (nicola.segata@unitn.it), '
 __date__ = '11 Apr 2018'
 
 
-from _version import __version__
+from _version import __CHOCOPhlAn_version__
 import os
 import argparse as ap
 import configparser as cp
@@ -118,9 +118,9 @@ class chocophlan2phylophlan:
         with open('{}/{}/taxa2proteomes.txt'.format(self.config['export_dir'], self.config['exportpath_phylophlan']), 'w') as t2p_out:
             with open('{}/{}/taxa2core.txt'.format(self.config['export_dir'], self.config['exportpath_phylophlan']), 'w') as t2c_out:
                 with open('{}/{}/taxa2genomes.txt'.format(self.config['export_dir'], self.config['exportpath_phylophlan']), 'w') as t2g_out:
-                    lines_t2p = ['#CHOCOPhlAn version {}\n'.format(__version__), '#'+open('data/relnotes.txt').readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of proteomes\n']
-                    lines_t2c = ['#CHOCOPhlAn version {}\n'.format(__version__), '#'+open('data/relnotes.txt').readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of core proteins\n']
-                    lines_t2g = ['#CHOCOPhlAn version {}\n'.format(__version__), '#'+open('data/relnotes.txt').readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of genomes\n']
+                    lines_t2p = ['#CHOCOPhlAn version {}\n'.format(__CHOCOPhlAn_version__), '#'+open('data/relnotes.txt').readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of proteomes\n']
+                    lines_t2c = ['#CHOCOPhlAn version {}\n'.format(__CHOCOPhlAn_version__), '#'+open('data/relnotes.txt').readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of core proteins\n']
+                    lines_t2g = ['#CHOCOPhlAn version {}\n'.format(__CHOCOPhlAn_version__), '#'+open('data/relnotes.txt').readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of genomes\n']
 
                     lines_t2p.extend(['{}\t{}\thttp://www.uniprot.org/uniprot/?query=proteome:{{}}&compress=yes&force=true&format=fasta\t{}\n'.format(tax_id, entry[0], ';'.join(entry[1])) for tax_id, entry in d_out_refp.items()])
                     lines_t2c.extend(['{}\t{}\thttp://www.uniprot.org/uniref/UniRef90_{{}}.fasta\t{}\n'.format(tax_id, entry[0], ';'.join(entry[1])) for tax_id, entry in d_out_core.items()])

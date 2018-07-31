@@ -5,7 +5,7 @@ __author__ = ('Nicola Segata (nicola.segata@unitn.it), '
               'Francesco Beghini (francesco.beghini@unitn.it)'
               'Nicolai Karcher (karchern@gmail.com),'
               'Francesco Asnicar (f.asnicar@unitn.it)')
-from _version import __version__
+from _version import __CHOCOPhlAn_version__
 __date__ = '03 Oct 2017'
 
 
@@ -65,7 +65,7 @@ def read_params():
 
 def check_params(args, verbose=False):
     if args.version:
-        info('ChocoPhlAn version {} ({})\n'.format(__version__, __date__),
+        info('ChocoPhlAn version {} ({})\n'.format(__CHOCOPhlAn_version__, __date__),
              exit=True)
     # checking configuration file
     if not args.config_file:

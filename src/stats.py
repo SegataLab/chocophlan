@@ -5,7 +5,8 @@ __author__ = ('Nicola Segata (nicola.segata@unitn.it), '
               'Francesco Beghini (francesco.beghini@unitn.it)'
               'Nicolai Karcher (karchern@gmail.com),'
               'Francesco Asnicar (f.asnicar@unitn.it)')
-from _version import __version__
+
+from _version import __CHOCOPhlAn_version__
 __date__ = '03 Jan 2018'
 
 import os
@@ -18,12 +19,15 @@ import glob
 import csv
 import statistics
 import multiprocessing.dummy as dummy
-if __name__ == '__main__':
+import pandas as pd
+import importlib
+if __name__ == "__main__":
     import utils
-    from panproteomes import Panproteome
+    import panproteomes
 else:
-    import src.utils as utils
-    from src.panproteomes import Panproteome
+    utils = importlib.import_module('src.utils')
+    panproteomes = importlib.import_module('src.panproteomes')
+
 def init_parse(terminating_):
     global terminating
     terminating = terminating_
@@ -72,11 +76,11 @@ class Stats:
             return {}
 
         number_members = len(panproteome['members'])
-        number_core_proteins = len(Panproteome.find_core_genes(panproteome))
+        number_core_proteins = len(panproteomes.Panproteome.find_core_genes(panproteome))
 
         #coreness
         iter_coreness = [p['coreness'] for p in panproteome['members'].values()]
-        core_coreness = [panproteome['members'][p]['coreness'] for p in Panproteome.find_core_genes(panproteome)]
+        core_coreness = [panproteome['members'][p]['coreness'] for p in panproteomes.Panproteome.find_core_genes(panproteome)]
         mean_core_coreness = statistics.mean(core_coreness) if len(core_coreness) else 0
         mean_coreness = statistics.mean(iter_coreness) if len(iter_coreness) else None
         median_coreness = statistics.median(iter_coreness) if len(iter_coreness) else None
@@ -123,7 +127,21 @@ class Stats:
 
         return ret_d
 
-    def pangenes_stats(self, panproteome):
+    ##TODO: Create panproteme stats folder
+    @staticmethod
+    def pangenes_stats(panproteome, config):
+        species = panproteome['tax_id']
+        res = {'{}_{}'.format(species,pangene) : {'tax_id':species,
+                   'coreness' : panproteome['members'][pangene]['coreness']/panproteome['number_proteomes'],
+                   'external_hits_50' : ';'.join(str(x) for x in panproteome['members'][pangene]['external_hits']['90_50']),
+                   'external_hits_90' : ';'.join(str(x) for x in panproteome['members'][pangene]['external_hits']['90_90']),
+                   'uniqueness_90' : panproteome['members'][pangene]['uniqueness']['90_90'],
+                   'uniqueness_50' : panproteome['members'][pangene]['uniqueness']['90_50'],
+                   'uniqueness_nosp_90' : panproteome['members'][pangene]['uniqueness_nosp']['90_90'],
+                   'uniqueness_nosp_50' : panproteome['members'][pangene]['uniqueness_nosp']['90_50']
+                  } for pangene, v in panproteome['members'].items() if len(pangene)}
+        res_df = pd.DataFrame(res).T.sort_values('coreness', ascending=False)
+        res_df.to_csv('{}/{}/{}.txt'.format(config['export_dir'], config['panproteomes_stats'], species), sep='\t')
 
 
     def stats(self):

@@ -137,13 +137,13 @@ def read_params():
                        default='/pickled/uniref50_idmap.pkl',
                        help='')
     group.add_argument('--relpath_pickle_uniref100_taxid_idmap',
-                       default='/pickled/uniref100_taxid_map.pkl',
+                       default='/pickled/uniref100_taxid_idmap.pkl',
                        help='')
     group.add_argument('--relpath_pickle_uniref90_taxid_idmap',
-                       default='/pickled/uniref90_taxid_map.pkl',
+                       default='/pickled/uniref90_taxid_idmap.pkl',
                        help='')
     group.add_argument('--relpath_pickle_uniref50_taxid_idmap',
-                       default='/pickled/uniref50_taxid_map.pkl',
+                       default='/pickled/uniref50_taxid_idmap.pkl',
                        help='')
    
     group.add_argument('--relpath_pickle_contigid_filename',
@@ -169,7 +169,7 @@ def read_params():
                        default='core_proteins/',
                        help='')
 
-    group.add_argument('--core_coreness_thresold', default='0.5')
+    group.add_argument('--core_coreness_threshold', default='50')
     group.add_argument('--core_uniqueness_90_threshold', default='1')
     group.add_argument('--core_uniqueness_50_threshold', default='10')
 
@@ -348,6 +348,10 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.relpath_pickle_uniref90_taxid_idmap)
     configparser_object.set('panproteomes', 'relpath_pickle_uniref50_taxid_idmap',
                             args.relpath_pickle_uniref50_taxid_idmap)
+    configparser_object.set('panproteomes', 'export_dir',
+                            args.export_dir)
+    configparser_object.set('panproteomes', 'relpath_panproteomes_dir',
+                            args.relpath_panproteomes_dir)
     configparser_object.set('panproteomes', 'relpath_pickle_uniprotkb_idmap',
                             args.relpath_pickle_uniprotkb_idmap)
     configparser_object.set('panproteomes', 'relpath_pickle_proteomes',
@@ -376,8 +380,8 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.relpath_pickle_taxontree)
     configparser_object.set('export', 'exportpath_core_proteins',
                             args.exportpath_core_proteins)
-    configparser_object.set('export', 'core_coreness_thresold',
-                            args.core_coreness_thresold)
+    configparser_object.set('export', 'core_coreness_threshold',
+                            args.core_coreness_threshold)
     configparser_object.set('export', 'core_uniqueness_90_threshold',
                             args.core_uniqueness_90_threshold)
     configparser_object.set('export', 'core_uniqueness_50_threshold',

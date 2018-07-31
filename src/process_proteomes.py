@@ -4,7 +4,7 @@ __author__ = ('Nicola Segata (nicola.segata@unitn.it), '
               'Francesco Beghini (francesco.beghini@unitn.it)'
               'Nicolai Karcher (karchern@gmail.com),'
               'Francesco Asnicar (f.asnicar@unitn.it)')
-from _version import __version__
+from _version import __CHOCOPhlAn_version__
 __date__ = '7 Nov 2017'
 
 if __name__ == '__main__':
@@ -182,7 +182,7 @@ def create_uniref_dataset(xml, config):
 
                 upids.extend([(m[0],c[0]) for c in d.values() for m in c[2] if 'UPI' in m[0]])
                 idmap.update(dict.fromkeys(d.keys(), file_chunk))
-                taxon_map.update({k:(set(t[1] for t in v[2]), v[3:6]) for k,v in d.items()})
+                taxon_map.update({k:(set(t[:2] for t in v[2]), v[3:6]) for k,v in d.items()})
                 pickle.dump(d, open("{}/pickled/{}_{}.pkl".format(config['download_base_dir'],cluster, file_chunk),'wb'), -1)
         except Exception as e:
             utils.error(str(e))
@@ -624,8 +624,8 @@ def merge_uniparc_idmapping(config):
     if config['verbose']:
         utils.info('Started merging UniParc-UniRef idmapping.\n')
     uniparc_idmapping = {}
-    clusters = ('uniref100','uniref90','uniref50')
-    for c in clusters:
+    ur_clusters = ('uniref100','uniref90','uniref50')
+    for c in ur_clusters:
         cluster_idmapping = pickle.load(open("{}/pickled/{}_uniparc_idmap.pkl".format(config['download_base_dir'],c),'rb'))
         
         for upi, cluster in cluster_idmapping:
@@ -639,7 +639,6 @@ def merge_uniparc_idmapping(config):
         ur90 = [x.split('_')[1] for x in clusters if 'UniRef90_' in x]
         ur50 = [x.split('_')[1] for x in clusters if 'UniRef50_' in x]
         clusters = [ur100[0] if len(ur100) else '', ur90[0] if len(ur90) else '', ur50[0] if len(ur50) else '']
-                   
         uniparc_idmapping[upi] = tuple(clusters)
     
     idmapping = pickle.load(open('{}{}'.format(config['download_base_dir'],config['relpath_pickle_uniprotkb_uniref_idmap']),'rb'))
@@ -682,9 +681,9 @@ def merge_idmap(config):
 def process_proteomes(config):
     os.makedirs('{}/pickled'.format(config['download_base_dir']), exist_ok=True)
 
-    # create_uniref_dataset(config['download_base_dir']+config['relpath_uniref100'],config)
-    # create_uniref_dataset(config['download_base_dir']+config['relpath_uniref90'],config)
-    # create_uniref_dataset(config['download_base_dir']+config['relpath_uniref50'],config)
+    create_uniref_dataset(config['download_base_dir']+config['relpath_uniref100'],config)
+    create_uniref_dataset(config['download_base_dir']+config['relpath_uniref90'],config)
+    create_uniref_dataset(config['download_base_dir']+config['relpath_uniref50'],config)
 
     global uniprotkb_uniref_idmap
 

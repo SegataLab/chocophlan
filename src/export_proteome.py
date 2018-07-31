@@ -19,7 +19,7 @@ from Bio.SeqRecord import SeqRecord
 from Bio.Alphabet import ProteinAlphabet
 from Bio.Seq import Seq
 from Bio import SeqIO
-from _version import __version__
+from _version import __CHOCOPhlAn_version__
 
 if __name__ == '__main__':
     import utils

@@ -4,7 +4,7 @@ author__ = ('Nicola Segata (nicola.segata@unitn.it), '
             'Nicolai Karcher (karchern@gmail.com),'
             'Francesco Asnicar (f.asnicar@unitn.it)')
 
-from _version import __version__
+from _version import __CHOCOPhlAn_version__
 __date__ = '04 Jan 2018'
 
 
@@ -23,13 +23,15 @@ import itertools
 import gc
 import re
 from operator import itemgetter
-
-if __name__ == '__main__':
+import importlib
+if __name__ == "__main__":
     import utils
+    import stats
     import process_proteomes
 else:
-    import src.utils as utils
-    import src.process_proteomes as process_proteomes
+    utils = importlib.import_module('src.utils')
+    stats = importlib.import_module('src.stats')
+    process_proteomes = importlib.import_module('src.process_proteomes')
 
 def init_parse(terminating_):
     global terminating
@@ -124,8 +126,8 @@ class Panproteome:
                             uniref_id = 'UniRef{}_{}'.format(cluster, uniref_id) if 'UniRef' not in uniref_id else uniref_id
                             taxa_is_present = set(destination_clusters.get('{}'.format(uniref_id),[''])[0])
 
-                            external_hits = [x for x in taxa_is_present if x not in item_descendant]
-                            external_species = set(self.taxontree.go_up_to_species(taxid) for taxid in external_hits)
+                            external_hits = [x for x in taxa_is_present if x[1] not in item_descendant]
+                            external_species = set(self.taxontree.go_up_to_species(taxid) for upkb, taxid in external_hits)
                             if None in external_species: external_species.remove(None)
                             external_species_nosp = set(taxid for taxid in external_species if not self.taxontree.taxid_n[taxid].is_low_quality)
 
@@ -141,6 +143,7 @@ class Panproteome:
 
 
                 if len(uniref_panproteome):
+                    stats.Stats.pangenes_stats(uniref_panproteome, config)
                     pickle.dump(uniref_panproteome, open('{}{}/{}/{}/{}.pkl'.format(self.config['download_base_dir'], self.config['relpath_panproteomes_dir'], rank, panproteome_cluster, item.tax_id),'wb'))
         else:
             terminating.set()
@@ -162,7 +165,7 @@ class Panproteome:
         try:
             terminating_p = dummy.Event()
             with dummy.Pool(initializer=init_parse, initargs=(terminating_p, ), processes=100) as pool:
-                d = [_ for _ in pool.imap_unordered(self.process_panproteome, ((item, rank, cluster) for rank in ranks_to_process for item in self.d_ranks[rank]), chunksize=50)]
+                d = [_ for _ in pool.imap_unordered(self.process_panproteome, ((item, rank, cluster) for rank in ranks_to_process for item in self.d_ranks[rank] if self.taxontree.get_child_proteomes(item)), chunksize=50)]
         except Exception as e:
             utils.error(str(e))
             raise
@@ -202,12 +205,6 @@ class Panproteome:
             result = [pangene for pangene in pool.imap_unordered(extract_protein_sequence, d_files_to_load.items())]
 
 
-    def export_pangenome_fasta(self, panproteome):
-
-
-        pass
-
-
 def generate_panproteomes(config):
     gc.disable()
     p = Panproteome(config)
@@ -234,4 +231,3 @@ if __name__ == '__main__':
     config = utils.check_configs(config)
     config = config['panproteomes']
     generate_panproteomes(config)
-    

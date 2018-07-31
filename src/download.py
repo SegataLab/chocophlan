@@ -7,7 +7,7 @@ __author__ = ('Nicola Segata (nicola.segata@unitn.it), '
               'Francesco Asnicar (f.asnicar@unitn.it)'
               'Lauren McIver (lauren.j.mciver@gmail.com)')
 
-from _version import __version__
+from _version import __CHOCOPhlAn_version__
 __date__ = '01 Oct 2017'
 
 
