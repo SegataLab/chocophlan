@@ -19,7 +19,7 @@ import re
 import gzip
 import itertools
 import shutil
-import gc
+import logging
 import importlib
 import pandas as pd
 import numpy as np
@@ -56,6 +56,9 @@ class export_to_metaphlan2:
         self.config = config
         self.uniprot = {}
         self.uniparc = {}
+        self.log = logging.getLogger(__name__)
+        logger_handler = logging.FileHandler('CHOCOPhlAn_export_to_metaphlan.log')
+        self.log.addHandler(logger_handler)
 
         all_uprot_chunks = filter(re.compile('(trembl|sprot)_[0-9]{1,}.pkl').match, os.listdir('{}/pickled'.format(config['download_base_dir'])))
         all_uparc_chunks = filter(re.compile('uniparc_[0-9]{4}.pkl').match, os.listdir('{}/pickled'.format(config['download_base_dir'])))
@@ -91,13 +94,13 @@ class export_to_metaphlan2:
                 return [{'gene' : core,
                          'coreness': (panproteome['members'][core]['coreness'] / panproteome['number_proteomes']),
                          'uniqueness_90' : panproteome['members'][core]['uniqueness_nosp']['90_90'],
-                         'uniqueness_50' : panproteome['members'][core]['uniqueness_nosp']['90_50']} for core in cores_to_use 
+                         'uniqueness_50' : panproteome['members'][core]['uniqueness_nosp']['90_50']} for core in cores_to_use if len(core)
                                 if panproteome['members'][core]['uniqueness_nosp']['90_90'] <= core_uniqueness_90_threshold 
                             and panproteome['members'][core]['uniqueness_nosp']['90_50'] <= core_uniqueness_50_threshold]
             except:
                 utils.info('Something went wrong in the extractiion of markers for panproteome {}\n'.format(panproteome['tax_id']))
 
-        markers = extract_markers(panproteome)        
+        markers = extract_markers(panproteome)
         if len(markers) >= 200:
             markers = rank_markers(markers)
             markers = markers[:200]
@@ -174,7 +177,8 @@ class export_to_metaphlan2:
     def get_uniref90_nucl_seq(self, item):
         upid, t = item
         gca = dict(self.proteomes[upid]['ncbi_ids']).get('GCSetAcc','').split('.')[0]
-        taxonomy = self.taxontree.print_full_taxonomy(self.taxontree.go_up_to_species(self.proteomes[upid]['tax_id']))
+        taxid = self.proteomes[upid]['tax_id']
+        taxonomy = self.taxontree.print_full_taxonomy(self.taxontree.go_up_to_species(taxid))
         seqs_dir = 'data/ncbi/{}/{}/'.format(gca[4:][:6], gca[4:][6:])
         if not os.path.exists(seqs_dir) or not len(os.listdir(seqs_dir)):
             utils.error('Missing genome and GFF annotation for {} / {} '.format(gca, upid))
@@ -188,7 +192,7 @@ class export_to_metaphlan2:
                 with gzip.open(in_seq_file, 'rb') as fna_gz, open(fna_decompressed.name, 'wb') as fna_out:
                     shutil.copyfileobj(fna_gz, fna_out)
             except Exception:
-                utils.error('Missing genome or GFF annotation for {} / {} '.format(gca, upid))
+                self.log.error('Missing genome or GFF annotation for {} / {} '.format(gca, upid))
                 return None
 
             nucls = []
@@ -201,7 +205,7 @@ class export_to_metaphlan2:
                 found = False
                 for gene_name in gene_names:
                     c = gff_db.conn.cursor()
-                    _ = c.execute("{} WHERE featuretype == 'gene' AND attributes LIKE '%{}%'".format(gffutils.constants._SELECT, gene_name))
+                    _ = c.execute("{} WHERE featuretype == 'gene' AND attributes LIKE '%\"{}\"%'".format(gffutils.constants._SELECT, gene_name))
                     results = c.fetchone()
                     if results is not None:
                         feature = gffutils.Feature(**results)
@@ -210,10 +214,10 @@ class export_to_metaphlan2:
 
                 if found:  
                     nuc_seq = feature.sequence(fna_decompressed.name)
-                    record = SeqIO.SeqRecord(seq=Seq(nuc_seq, alphabet=DNAAlphabet()), id=feature['Name'][0], description='UniRef90_{} {} {}'.format(core, taxonomy, gca))
+                    record = SeqIO.SeqRecord(seq=Seq(nuc_seq, alphabet=DNAAlphabet()), id='{}_{}_{}'.format(taxid, core, feature['Name'][0]), description='UniRef90_{} {} {}'.format(core, taxonomy, gca))
                     nucls.append(record)
                 else:
-                    utils.info('Marker {} with feature {} not found in {}\n'.format(core, gene_names, gca))
+                    self.log.info('Marker {} with feature {} not found in {}\n'.format(core, gene_names, gca))
 
         return nucls
 
@@ -265,9 +269,9 @@ class export_to_metaphlan2:
                     else:
                         continue
             except:
-                utils.info('proteome: {}\nmarker: {}\n'.format(panproteome['tax_id'], marker))
+                self.log.info('proteome: {}\nmarker: {}\n'.format(panproteome['tax_id'], marker))
 
-            if len(upid):
+            if len(upid) and len(gene_names):
                 if upid not in gc:
                     gc[upid] = []
                 gc[upid].append((marker, gene_names))
