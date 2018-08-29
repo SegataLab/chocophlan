@@ -182,7 +182,7 @@ def create_uniref_dataset(xml, config):
 
                 upids.extend([(m[0],c[0]) for c in d.values() for m in c[2] if 'UPI' in m[0]])
                 idmap.update(dict.fromkeys(d.keys(), file_chunk))
-                taxon_map.update({k:(set(t[:2] for t in v[2]), v[3:6]) for k,v in d.items()})
+                taxon_map.update({k:(set(t[:3] for t in v[2]), v[3:6]) for k,v in d.items()})
                 pickle.dump(d, open("{}/pickled/{}_{}.pkl".format(config['download_base_dir'],cluster, file_chunk),'wb'), -1)
         except Exception as e:
             utils.error(str(e))

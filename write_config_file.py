@@ -378,6 +378,8 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.relpath_pickle_proteomes)
     configparser_object.set('export', 'relpath_pickle_taxontree',
                             args.relpath_pickle_taxontree)
+    configparser_object.set('export', 'relpath_pickle_uniref90_taxid_idmap',
+                            args.relpath_pickle_uniref90_taxid_idmap)
     configparser_object.set('export', 'exportpath_core_proteins',
                             args.exportpath_core_proteins)
     configparser_object.set('export', 'core_coreness_threshold',

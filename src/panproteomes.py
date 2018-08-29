@@ -20,7 +20,6 @@ from functools import partial
 import copy
 import glob
 import itertools
-import gc
 import re
 from operator import itemgetter
 import importlib
@@ -206,7 +205,6 @@ class Panproteome:
 
 
 def generate_panproteomes(config):
-    gc.disable()
     p = Panproteome(config)
     clusters = [int(x) for x in p.config['uniref_cluster_panproteomes'].split(',')]
     terminating = dummy.Event()
@@ -217,9 +215,7 @@ def generate_panproteomes(config):
         p.__setattr__('uniref{}_tax_id_map'.format(c), pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_uniref{}_taxid_idmap'.format(c)]),'rb')))
 
     for cluster in clusters:
-        p.create_panproteomes(cluster)
-
-    gc.enable()      
+        p.create_panproteomes(cluster)     
 
 if __name__ == '__main__':
     t0 = time.time()

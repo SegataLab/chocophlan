@@ -246,7 +246,7 @@ class Nodes:
 
     def get_child_proteomes(self, clade):
         if clade.initially_terminal and hasattr(clade,'proteomes'):
-            return clade.proteomes
+            return copy.deepcopy(clade.proteomes)
         pp = copy.deepcopy(clade.proteomes) if hasattr(clade,'proteomes') else set()
         for c in clade.clades:
             pp.update(self.get_child_proteomes(c))
@@ -256,7 +256,7 @@ class Nodes:
         ranks2code = {'superkingdom': 'k', 'phylum': 'p', 'class': 'c',
                       'order': 'o', 'family': 'f', 'genus': 'g', 'species': 's', 'taxon': 't'}
         order = ('k', 'p', 'c', 'o', 'f', 'g', 's', 't')
-        path = [p for p in self.taxid_n[1].get_path(self.taxid_n[tax_id]) if p.rank in ranks2code or (p.rank=='norank')]
+        path = [p for p in self.tree.root.get_path(self.taxid_n[tax_id]) if p.rank in ranks2code or (p.rank=='norank')]
         if path[0].name == 'cellular_organisms':
             _ = path.pop(0)
         taxa_str = []
@@ -277,11 +277,12 @@ class Nodes:
         taxa_str = ['{}__{}'.format(ranks2code[path[x].rank], path[x].name) for x in range(len(path)) if path[x].rank != 'norank']
 
         for x in range(len(order)-1) if not hasTaxon else range(len(order)):
-            if not taxa_str[x].startswith(order[x]):
-                end_lvl = order.index(taxa_str[x][0])
-                missing_levels = ['{}__{}_unclassified'.format(order[i], taxa_str[x-1][3:]) for i in range(x, end_lvl)]
-                for i in range(len(missing_levels)):
-                    taxa_str.insert(x+i, missing_levels[i])
+            if x < len(taxa_str):
+                if not taxa_str[x].startswith(order[x]):
+                    end_lvl = order.index(taxa_str[x][0])
+                    missing_levels = ['{}__{}_unclassified'.format(order[i], taxa_str[x-1][3:]) for i in range(x, end_lvl)]
+                    for i in range(len(missing_levels)):
+                        taxa_str.insert(x+i, missing_levels[i])
 
         return '|'.join(taxa_str)
         # for i in range(0, len(path)):
