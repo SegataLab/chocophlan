@@ -38,6 +38,9 @@ class chocophlan2phylophlan:
         self.taxontree = pickle.load(open("{}/{}".format(config['download_base_dir'],config['relpath_pickle_taxontree']), 'rb'))
         self.proteomes = pickle.load(open("{}{}".format(config['download_base_dir'],config['relpath_pickle_proteomes']), 'rb'))
         self.config = config
+        self.exportpath = '{}/{}'.format(self.config['export_dir'], self.config['exportpath_phylophlan'])
+        if not os.path.exists(self.exportpath):
+            os.makedirs(self.exportpath)
         if config['verbose']:
             utils.info('Finished.\n')
 
@@ -115,9 +118,9 @@ class chocophlan2phylophlan:
 
         # REMOVE SPECIES WITHOUT ANY GENOME
         # NO PROTEOMES
-        with open('{}/{}/taxa2proteomes.txt'.format(self.config['export_dir'], self.config['exportpath_phylophlan']), 'w') as t2p_out:
-            with open('{}/{}/taxa2core.txt'.format(self.config['export_dir'], self.config['exportpath_phylophlan']), 'w') as t2c_out:
-                with open('{}/{}/taxa2genomes.txt'.format(self.config['export_dir'], self.config['exportpath_phylophlan']), 'w') as t2g_out:
+        with open('{}/taxa2proteomes.txt'.format(self.exportpath), 'w') as t2p_out:
+            with open('{}/taxa2core.txt'.format(self.exportpath), 'w') as t2c_out:
+                with open('{}/taxa2genomes.txt'.format(self.exportpath), 'w') as t2g_out:
                     lines_t2p = ['#CHOCOPhlAn version {}\n'.format(__CHOCOPhlAn_version__), '#'+open('data/relnotes.txt').readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of proteomes\n']
                     lines_t2c = ['#CHOCOPhlAn version {}\n'.format(__CHOCOPhlAn_version__), '#'+open('data/relnotes.txt').readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of core proteins\n']
                     lines_t2g = ['#CHOCOPhlAn version {}\n'.format(__CHOCOPhlAn_version__), '#'+open('data/relnotes.txt').readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of genomes\n']

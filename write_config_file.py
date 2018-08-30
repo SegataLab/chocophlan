@@ -165,6 +165,10 @@ def read_params():
                        default='phylophlan/',
                        help='')
 
+    group.add_argument('--exportpath_metaphlan2',
+                       default='metaphlan2/',
+                       help='')
+    
     group.add_argument('--exportpath_core_proteins',
                        default='core_proteins/',
                        help='')
@@ -372,6 +376,8 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.export_dir)
     configparser_object.set('export', 'exportpath_phylophlan',
                             args.exportpath_phylophlan)
+    configparser_object.set('export', 'exportpath_metaphlan2',
+                        args.exportpath_metaphlan2)
     configparser_object.set('export', 'relpath_panproteomes_dir',
                             args.relpath_panproteomes_dir)
     configparser_object.set('export', 'relpath_pickle_proteomes',

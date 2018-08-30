@@ -65,7 +65,7 @@ class export_to_metaphlan2:
         self.uniprot = {}
         self.uniparc = {}
         self.uniref90_taxid_map = {}
-
+        self.exportpath = '{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'])
         all_uprot_chunks = filter(re.compile('(trembl|sprot)_[0-9]{1,}.pkl').match, os.listdir('{}/pickled'.format(config['download_base_dir'])))
         all_uparc_chunks = filter(re.compile('uniparc_[0-9]{4}.pkl').match, os.listdir('{}/pickled'.format(config['download_base_dir'])))
         all_uniref_chunks = filter(re.compile('uniref90_[0-9]{1,}.pkl').match, os.listdir('{}/pickled'.format(config['download_base_dir'])))
@@ -82,6 +82,10 @@ class export_to_metaphlan2:
             uniref90_chunk = pickle.load(open('{}/pickled/{}'.format(config['download_base_dir'], i),'rb'))
             self.uniref90_taxid_map.update({k:(set(t[:3] for t in v[2]), v[3:6]) for k,v in uniref90_chunk.items()})
 
+        ## Check if export folder exists, if not, it creates it
+        if not os.path.exists(self.exportpath):
+            os.makedirs(self.exportpath)
+            
         if config['verbose']:
             utils.info('Finished.\n')
 
@@ -215,6 +219,7 @@ class export_to_metaphlan2:
                 shutil.copyfileobj(fna_gz, fna_out)
 
             nucls = []
+            failed = []
             taxonomy_db = '{}|t__{}'.format(taxonomy, gca)
             for core, gene_names, ext_species in t:
                 if type(gene_names) == tuple:
@@ -256,8 +261,8 @@ class export_to_metaphlan2:
                                               'score': 0,
                                               'taxon': taxonomy }
                 else:
-                    self.log.info('Marker {} with feature {} not found in {}\n'.format(core, gene_names, gca))
-        return nucls
+                    failed.append(core)
+        return (nucls, failed, )
 
     """
     Use centroid of UniRef90 as plausible marker
@@ -347,16 +352,17 @@ class export_to_metaphlan2:
                     gc[(upid, panproteome['tax_id'], taxonomy)].add((marker, gene_names, tuple(panproteome['members'][marker]['external_species_nosp']['90_90'])))
 
             try:
-                with dummy.Pool(processes=3) as pool:
-                    res = [x for _ in pool.imap_unordered(self.get_uniref90_nucl_seq, gc.items(), chunksize=10) if _ is not None for x in _]
+                markers_nucls, failed = zip(*map(self.get_uniref90_nucl_seq, gc.items()))
             except TypeError:
                 self.log.error('Cannot parse panproteome {}'.format(panproteome['tax_id']))
                 return panproteome['tax_id']
             else:
                 #create export/metaphlan2
-                if len(res):
+                if len(failed):
+                    self.log.warning("Failed to find features of markers {}".format(','.join(failed)))
+                if len(markers_nucls):
                     with open('export/metaphlan2/{}.fasta'.format(panproteome['tax_id']), 'wt') as fasta_markers:
-                        [fasta_markers.write(marker.format('fasta')) for marker in res]
+                        [fasta_markers.write(marker.format('fasta')) for marker in markers_nucls]
         except Exception as ex:
             self.log.error("FAILED TO PRECESS PANPROTOEME: {}".format(pp_tax_id))
             raise ex
