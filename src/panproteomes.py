@@ -44,10 +44,10 @@ class Panproteome:
         if config['verbose']:
             utils.info('Loading pickled databases...')
         self.uniparc = {}
-        for i in filter(re.compile('uniparc_[0-9]{4}.pkl').match, os.listdir('{}/pickled'.format(config['download_base_dir']))):
+        for i in filter(re.compile('uniparc_[0-9]{4}.pkl').match, os.listdir('{}/{}/uniparc'.format(config['download_base_dir'], config['pickled_dir']))):
             if config['verbose']:
                 utils.info('{}\n'.format(i))
-            self.uniparc.update({k:v[6] for k,v in pickle.load(open('data/pickled/{}'.format(i),'rb')).items() })
+            self.uniparc.update({k:v[6] for k,v in pickle.load(open('{}/{}/uniparc/{}'.format(config['download_base_dir'], config['pickled_dir'], i),'rb')).items() })
         self.idmapping = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_uniprotkb_uniref_idmap']), 'rb'))
         self.taxontree = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_taxontree']), 'rb'))
         self.proteomes = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_proteomes']), 'rb'))
@@ -177,7 +177,7 @@ class Panproteome:
         if not terminating.is_set():
             chunk, ids = items
             cluster = ids[0].split('_')[0]
-            with open('{}/pickled/{}_{}'.format(self.config['download_base_dir'], cluster, chunk), 'rb') as pickled_chunk:
+            with open('{}/{}/{}_{}'.format(self.config['download_base_dir'], config['pickled_dir'], cluster, chunk), 'rb') as pickled_chunk:
                 uniprot_chunk = pickle.load(pickled_chunk)
             entries = itemgetter(*ids)(uniprot_chunk)
             seqs = [itemgetter(0,2)(i) for i in entries]

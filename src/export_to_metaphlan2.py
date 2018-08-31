@@ -66,26 +66,26 @@ class export_to_metaphlan2:
         self.uniparc = {}
         self.uniref90_taxid_map = {}
         self.exportpath = '{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'])
-        all_uprot_chunks = filter(re.compile('(trembl|sprot)_[0-9]{1,}.pkl').match, os.listdir('{}/pickled'.format(config['download_base_dir'])))
-        all_uparc_chunks = filter(re.compile('uniparc_[0-9]{4}.pkl').match, os.listdir('{}/pickled'.format(config['download_base_dir'])))
-        all_uniref_chunks = filter(re.compile('uniref90_[0-9]{1,}.pkl').match, os.listdir('{}/pickled'.format(config['download_base_dir'])))
+        all_uprot_chunks = filter(re.compile('(trembl|sprot)_[0-9]{1,}.pkl').match, os.listdir('{}/{}/uniprotkb/'.format(config['download_base_dir'], config['pickled_dir'])))
+        all_uparc_chunks = filter(re.compile('uniparc_[0-9]{4}.pkl').match, os.listdir('{}/{}/uniparc/'.format(config['download_base_dir'], config['pickled_dir'])))
+        all_uniref_chunks = filter(re.compile('uniref90_[0-9]{1,}.pkl').match, os.listdir('{}/{}/uniref90/'.format(config['download_base_dir'], config['pickled_dir'])))
 
         for i in all_uprot_chunks:
-            uniprot_chunk = pickle.load(open('{}/pickled/{}'.format(config['download_base_dir'], i),'rb'))
+            uniprot_chunk = pickle.load(open('{}/{}/uniprotkb/{}'.format(config['download_base_dir'], config['pickled_dir'], i),'rb'))
             self.uniprot.update({k : [v[3],v[4],v[1]] for k,v in uniprot_chunk.items()})
 
         for i in all_uparc_chunks:
-            uniparc_chunk = pickle.load(open('{}/pickled/{}'.format(config['download_base_dir'], i),'rb'))
+            uniparc_chunk = pickle.load(open('{}/{}/uniparc/{}'.format(config['download_base_dir'], config['pickled_dir'], i),'rb'))
             self.uniparc.update({k : v[1] for k,v in uniparc_chunk.items()})
 
         for i in all_uniref_chunks:
-            uniref90_chunk = pickle.load(open('{}/pickled/{}'.format(config['download_base_dir'], i),'rb'))
+            uniref90_chunk = pickle.load(open('{}/{}/uniref90/{}'.format(config['download_base_dir'], config['pickled_dir'], i),'rb'))
             self.uniref90_taxid_map.update({k:(set(t[:3] for t in v[2]), v[3:6]) for k,v in uniref90_chunk.items()})
 
         ## Check if export folder exists, if not, it creates it
         if not os.path.exists(self.exportpath):
             os.makedirs(self.exportpath)
-            
+
         if config['verbose']:
             utils.info('Finished.\n')
 
@@ -118,21 +118,24 @@ class export_to_metaphlan2:
                 utils.info('Something went wrong in the extractiion of markers for panproteome {}\n'.format(panproteome['tax_id']))
 
         markers = extract_markers(panproteome)
-        if len(markers) >= 200:
-            markers = rank_markers(markers)
-            markers = markers[:200]
-            tier = 'A'
+        if not len(markers):
+            tier = 'Z'
         else:
-            markers = extract_markers(panproteome, 70, 5, 30)
-            if len(markers) >= 150:
+            if len(markers) >= 200:
                 markers = rank_markers(markers)
-                markers = markers[:150]
-                tier = 'B'
+                markers = markers[:200]
+                tier = 'A'
             else:
-                markers = extract_markers(panproteome, 50, float('Inf'), float('Inf') )
-                markers = rank_markers(markers)
-                markers = markers[:50]
-                tier = 'C'
+                markers = extract_markers(panproteome, 70, 5, 30)
+                if len(markers) >= 150:
+                    markers = rank_markers(markers)
+                    markers = markers[:150]
+                    tier = 'B'
+                else:
+                    markers = extract_markers(panproteome, 50, float('Inf'), float('Inf') )
+                    markers = rank_markers(markers)
+                    markers = markers[:50]
+                    tier = 'C'
         return (markers, tier, )
 
     '''
@@ -256,7 +259,7 @@ class export_to_metaphlan2:
                             ext_genomes.append(dict(self.proteomes[next(iter(cp))].get('ncbi_ids',{})).get('GCSetAcc','').split('.')[0])
 
                     self.db['markers'][mpa_marker] = { 'clade': '{}__{}'.format(clade.rank[0], clade.name),
-                                              'ext': ext_genomes,
+                                              'ext': ext _genomes,
                                               'len': len(record),
                                               'score': 0,
                                               'taxon': taxonomy }

@@ -170,6 +170,9 @@ def create_uniref_dataset(xml, config):
     if config['verbose']:
         utils.info("Starting processing UniRef {} database\n".format(cluster))
 
+    if not os.path.exists("{}/{}/{}".format(config['download_base_dir'], config['pickled_dir'], cluster)):
+        os.makedirs("{}/{}/{}".format(config['download_base_dir'], config['pickled_dir'], cluster))
+
     idmap={}
     taxon_map = {}
     upids = []
@@ -183,15 +186,15 @@ def create_uniref_dataset(xml, config):
                 upids.extend([(m[0],c[0]) for c in d.values() for m in c[2] if 'UPI' in m[0]])
                 idmap.update(dict.fromkeys(d.keys(), file_chunk))
                 # taxon_map.update({k:(set(t[:3] for t in v[2]), v[3:6]) for k,v in d.items()})
-                pickle.dump(d, open("{}/pickled/{}_{}.pkl".format(config['download_base_dir'],cluster, file_chunk),'wb'), -1)
+                pickle.dump(d, open("{}/{}/{}/{}_{}.pkl".format(config['download_base_dir'], config['pickled_dir'], cluster, cluster, file_chunk),'wb'), -1)
         except Exception as e:
             utils.error(str(e))
             utils.error('Processing of {} failed.'.format(xml_input))
             raise
-    with open("{}/pickled/{}_uniparc_idmap.pkl".format(config['download_base_dir'],cluster),'wb') as pickle_uniref_uniparc_idmap:
+    with open("{}/{}/{}_uniparc_idmap.pkl".format(config['download_base_dir'],config['pickled_dir'], cluster),'wb') as pickle_uniref_uniparc_idmap:
         pickle.dump(upids, pickle_uniref_uniparc_idmap, -1)
 
-    with open("{}/pickled/{}_idmap.pkl".format(config['download_base_dir'],cluster),'wb') as pickle_uniref_idmap:
+    with open("{}/{}/{}_idmap.pkl".format(config['download_base_dir'],config['pickled_dir'], cluster),'wb') as pickle_uniref_idmap:
         pickle.dump(idmap, pickle_uniref_idmap, -1)
 
     # with open("{}/pickled/{}_taxid_idmap.pkl".format(config['download_base_dir'],cluster),'wb') as pickle_taxid_map:
@@ -270,6 +273,9 @@ def parse_uniprotkb_xml(xml_input, config):
     db= -1 if 'uniprot_sprot' in xml_input else +1
     db_name = 'sprot' if db == -1 else 'trembl'
 
+    if not os.path.exists("{}/{}/{}".format(config['download_base_dir'], config['pickled_dir'], 'uniprotkb')):
+        os.makedirs("{}/{}/{}".format(config['download_base_dir'], config['pickled_dir'], 'uniprotkb'))
+
     if config['verbose']:
         utils.info('Starting processing {} file...\n'.format(xml_input))
     
@@ -285,7 +291,7 @@ def parse_uniprotkb_xml(xml_input, config):
             try:
                 if len(d):
                     idmap.update(dict.fromkeys(d.keys(), db*file_chunk))
-                    with open("{}/pickled/{}_{}.pkl".format(config['download_base_dir'],db_name, file_chunk),'wb') as pickle_chunk:
+                    with open("{}/{}/uniprotkb/{}_{}.pkl".format(config['download_base_dir'], config['pickled_dir'], db_name, file_chunk),'wb') as pickle_chunk:
                         pickle.dump(d, pickle_chunk, -1)
             except Exception as e:
                 utils.error(str(e))
@@ -293,7 +299,7 @@ def parse_uniprotkb_xml(xml_input, config):
                 utils.error('Processing of {} failed.'.format(xml_input),  exit=True)
                 raise
     if len(idmap):
-        with open("{}/pickled/uniprotkb_{}_idmap.pkl".format(config['download_base_dir'],db_name),'wb') as pickle_idmap:
+        with open("{}/{}/uniprotkb_{}_idmap.pkl".format(config['download_base_dir'], config['pickled_dir'], db_name),'wb') as pickle_idmap:
             pickle.dump(idmap, pickle_idmap, -1)
     if config['verbose']:
         utils.info('Done processing {} file!\n'.format(xml_input))
@@ -349,6 +355,8 @@ def parse_uniparc_xml_elem(elem, config):
 def parse_uniparc_xml(xml_input, config):
     terminating = mp.Event()
     chunksize = config['nproc']
+    if not os.path.exists("{}/{}/{}".format(config['download_base_dir'], config['pickled_dir'], 'uniparc')):
+        os.makedirs("{}/{}/{}".format(config['download_base_dir'], config['pickled_dir'], 'uniparc'))
     if config['verbose']:
         utils.info('Starting processing {} file...\n'.format(xml_input))
 
@@ -357,23 +365,20 @@ def parse_uniparc_xml(xml_input, config):
     idmap = {}
     parse_uniparc_xml_elem_partial = partial(parse_uniparc_xml_elem, config=config)
     for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(tree), GROUP_CHUNK),1000):
-        if file_chunk == 1022:
-            with mpdummy.Pool(initializer=initt, initargs=(terminating,), processes=int(chunksize)) as pool:
-                d={x[0]:x for x in pool.imap_unordered(parse_uniparc_xml_elem_partial, group, chunksize=int(GROUP_CHUNK/chunksize)) if x is not None}
-            try:
-                if len(d):
-                    # idmap.update(dict.fromkeys(d.keys(), file_chunk))
-                    with open("{}/pickled/uniparc_{}.pkl".format(config['download_base_dir'], file_chunk),'wb') as pickle_chunk:
-                        pickle.dump(d, pickle_chunk, -1)
-            except Exception as e:
-                utils.error(str(e))
-                utils.error('Processing of {} failed.'.format(xml_input),  exit=True)
-                raise
-        elif file_chunk < 1022:
-            continue
+        with mpdummy.Pool(initializer=initt, initargs=(terminating,), processes=int(chunksize)) as pool:
+            d={x[0]:x for x in pool.imap_unordered(parse_uniparc_xml_elem_partial, group, chunksize=int(GROUP_CHUNK/chunksize)) if x is not None}
+        try:
+            if len(d):
+                # idmap.update(dict.fromkeys(d.keys(), file_chunk))
+                with open("{}/{}/uniparc/uniparc_{}.pkl".format(config['download_base_dir'], config['pickled_dir'], file_chunk),'wb') as pickle_chunk:
+                    pickle.dump(d, pickle_chunk, -1)
+        except Exception as e:
+            utils.error(str(e))
+            utils.error('Processing of {} failed.'.format(xml_input),  exit=True)
+            raise
         else:
             return
-    pickle.dump(idmap, open("{}/pickled/uniparc_idmap.pkl".format(config['download_base_dir']),'wb'), -1)
+    pickle.dump(idmap, open("{}/{}/uniparc_idmap.pkl".format(config['download_base_dir'], config['pickled_dir'], ),'wb'), -1)
     if config['verbose']:
         utils.info('Done processing {} file!\n'.format(xml_input))
 
@@ -424,17 +429,6 @@ def parse_uniprotkb_uniref_idmapping(config):
         pickle.dump(idmapping, pickle_idmapping, -1)
     if config['verbose']:
         utils.info('Done processing idmapping.gz\n')
-
-def get_uniprotkb_entry(idmap, accession,config):
-    fn = idmap[accession]
-    if fn < 0:
-        db = 'sprot'
-    elif fn < 1000:
-        db = 'trembl'
-    else:
-        db = 'uniparc'
-    chunk = pickle.load(open('{}/pickled/{}_{}.pkl'.format(config['download_base_dir'],db,abs(fn)),'rb'))
-    return uniprot_tuple_to_dict(chunk[accession])
 
 def process(f):
     if not terminating.is_set():
@@ -491,50 +485,6 @@ def parse_proteomes_xml_elem(elem, config):
             utils.error(elem.attrib['upid'])
             terminating.set()
 
-# def get_request(requestURL, session=None):
-#     r = session.get(requestURL, timeout = None)
-#     return r
-
-# def get_upp(accession):
-#     baseURL = "https://www.ebi.ac.uk/proteins/api/uniparc/proteome/{}?offset={}&size={}&rfActive=true"
-#     requestURL = baseURL.format(accession, 0, API_SIZE)
-#     entries = []
-#     print('Downloading ' + accession)
-#     with requests.Session() as s:
-#         s.headers.update({ "Accept" : "application/xml"})
-#         r = s.get(requestURL, timeout = None)
-#         entries.append(r.text)
-        
-#         total_records = int(r.headers['x-pagination-totalrecords'])
-#         step = int(r.links['self']['url'].split('?')[1].split('&')[1].split('=')[1])
-#         first_offset = int(r.links['self']['url'].split('?')[1].split('&')[0].split('=')[1])
-#         last_offset = int(r.links['last']['url'].split('?')[1].split('&')[0].split('=')[1])
-
-#         if last_offset != first_offset:
-#             requestURLs = [baseURL.format(accession,offset,step) for offset in range(step, last_offset+step, step)]
-#             get_request_p = partial(get_request, session=s)
-#             with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-#                 [entries.append(r.text) for r in executor.map(get_request_p, requestURLs, chunksize=10)]
-#         d = []
-#         if sum([e.count('<entry') for e in entries]) == total_records:
-#             for entry in entries:
-#                 entry = etree.fromstring(entry.encode())
-#                 d.extend([parse_uniparc_xml_elem(etree.tostring(e), config) for e in entry])
-#         else:
-#             pickle.dump(entries, open('{}.pkl'.format(accession)))
-#             utils.error('Failed to elaborate proteome: '+accession)
-#             raise
-#     print('Downloaded ' + accession)
-#     return (accession, d)
-    
-# async def download(proteomes):
-#     with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
-#         loop = asyncio.get_event_loop()
-#         futures = [loop.run_in_executor(executor, get_upp, k) for k,v in proteomes.items() if v['upi']]
-#         results = [x for x in await asyncio.gather(*futures)]
-#         utils.info('Downloaded.')
-#         return results
-
 def create_proteomes(xml_input, config):
     if config['verbose']:
         utils.info('Starting proteomes processing...\n')
@@ -567,7 +517,7 @@ def create_proteomes(xml_input, config):
     try:
         with mp.Pool(initializer=initt, initargs=(terminating,), processes=chunksize) as pool:
             chunks = [x for x in pool.imap_unordered(process, 
-                        (x for x in filter(r.match,glob.iglob("{}/pickled/*".format(config['download_base_dir']))))
+                        (x for x in filter(r.match,glob.iglob("{}/{}/uniparc/*".format(config['download_base_dir'], config['pickled_dir']))))
                           , chunksize = chunksize)]
     except Exception as e:
         utils.error(str(e))
@@ -626,13 +576,13 @@ def merge_uniparc_idmapping(config):
     uniparc_idmapping = {}
     ur_clusters = ('uniref100','uniref90','uniref50')
     for c in ur_clusters:
-        cluster_idmapping = pickle.load(open("{}/pickled/{}_uniparc_idmap.pkl".format(config['download_base_dir'],c),'rb'))
+        cluster_idmapping = pickle.load(open("{}/{}/{}_uniparc_idmap.pkl".format(config['download_base_dir'],config['pickled_dir'], c),'rb'))
         
         for upi, cluster in cluster_idmapping:
             if upi not in uniparc_idmapping:
                 uniparc_idmapping[upi] = []
             uniparc_idmapping[upi].append(cluster)
-        os.unlink("{}/pickled/{}_uniparc_idmap.pkl".format(config['download_base_dir'],c))
+        os.unlink("{}/{}/{}_uniparc_idmap.pkl".format(config['download_base_dir'],config['pickled_dir'], c))
 
     for upi, clusters in uniparc_idmapping.items():
         ur100 = [x.split('_')[1] for x in clusters if 'UniRef100_' in x]
@@ -650,22 +600,11 @@ def merge_uniparc_idmapping(config):
     if config['verbose']:
         utils.info('Done.\n')
 
-def get_uniref_entry(config, accession):
-    if 'UniRef100' in accession:
-        cluster = 'uniref100'
-    elif 'UniRef90' in accession:
-        cluster = 'uniref90'
-    else:
-        cluster = 'uniref50'
-    idmap = pickle.load(open("{}/pickled/{}_idmap.pkl".format(config['download_base_dir'],cluster),'rb'))
-    fn = idmap[accession]
-    chunk = pickle.load(open('{}_{}.pkl'.format(cluster,fn),'rb'))
-    return uniref_tuple_to_dict(chunk[accession])
 
 def merge_idmap(config):
-    x = ["{}/pickled/uniprotkb_{}_idmap.pkl".format(config['download_base_dir'], 'sprot'), 
-         "{}/pickled/uniprotkb_{}_idmap.pkl".format(config['download_base_dir'], 'trembl'),
-         "{}/pickled/{}_idmap.pkl".format(config['download_base_dir'], 'uniparc')]
+    x = ["{}/{}/uniprotkb_{}_idmap.pkl".format(config['download_base_dir'],config['pickled_dir'],  'sprot'), 
+         "{}/{}/uniprotkb_{}_idmap.pkl".format(config['download_base_dir'], config['pickled_dir'], 'trembl'),
+         "{}/{}/{}_idmap.pkl".format(config['download_base_dir'], config['pickled_dir'], 'uniparc')]
     utils.info('Merging UniProtKB and UniParc ids...\n')
 
     idmap = {}
@@ -679,7 +618,7 @@ def merge_idmap(config):
     utils.info('Done merging UniProtKB ids.\n')
 
 def process_proteomes(config):
-    os.makedirs('{}/pickled'.format(config['download_base_dir']), exist_ok=True)
+    os.makedirs('{}/{}'.format(config['download_base_dir'],config['pickled_dir']), exist_ok=True)
 
     create_uniref_dataset(config['download_base_dir']+config['relpath_uniref100'],config)
     create_uniref_dataset(config['download_base_dir']+config['relpath_uniref90'],config)
@@ -697,7 +636,7 @@ def process_proteomes(config):
         utils.error('NCBI taxonomic tree not found. Exiting...', exit = True)
         
     parse_uniprotkb_uniref_idmapping(config)
-    if all([os.path.exists("{}/pickled/{}_uniparc_idmap.pkl".format(config['download_base_dir'],c)) for c in ('uniref100','uniref90','uniref50')]) and os.path.exists('{}{}'.format(config['download_base_dir'],config['relpath_pickle_uniprotkb_uniref_idmap'])):
+    if all([os.path.exists("{}/{}/{}_uniparc_idmap.pkl".format(config['download_base_dir'], config['pickled_dir'], c)) for c in ('uniref100','uniref90','uniref50')]) and os.path.exists('{}{}'.format(config['download_base_dir'],config['relpath_pickle_uniprotkb_uniref_idmap'])):
         merge_uniparc_idmapping(config)
     else:
         utils.error('Failed to process UniRef database. Exiting...', exit = True)

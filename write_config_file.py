@@ -64,7 +64,9 @@ def read_params():
                            '/knowledgebase/idmapping/idmapping_selected.tab.gz'))
     group.add_argument('--download_base_dir', default='data/',
                        help='Base directory for raw files to be downloaded to')
-    
+    group.add_argument('--pickled_dir', default='pickled/',
+                       help='Base directory for picked files')
+
     group.add_argument('--relpath_proteomes_xml',
                        default='/uniprot/proteome_ds.xml.gz',
                        help='')
@@ -215,6 +217,9 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.uniparc)
     configparser_object.set('download', 'download_base_dir',
                             args.download_base_dir)
+    configparser_object.set('download', 'pickled_dir',
+                            args.pickled_dir)
+    
     configparser_object.set('download', 'relpath_genomes',
                             args.relpath_genomes)
     configparser_object.set('download', 'relpath_taxonomic_catalogue',
@@ -247,6 +252,8 @@ def set_download_options(configparser_object, args, verbose=False):
     configparser_object.add_section('extract')
     configparser_object.set('extract', 'download_base_dir',
                             args.download_base_dir)
+    configparser_object.set('extract', 'pickled_dir',
+                            args.pickled_dir)
     configparser_object.set('extract', 'relpath_taxdump',
                             args.relpath_taxdump)
     configparser_object.set('extract', 'relpath_taxonomic_catalogue',
@@ -269,6 +276,8 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.uniprot_reference_proteomes)
     configparser_object.set('process_proteomes', 'download_base_dir',
                             args.download_base_dir)
+    configparser_object.set('process_proteomes', 'pickled_dir',
+                            args.pickled_dir)
     configparser_object.set('process_proteomes', 'relpath_genomes',
                             args.relpath_genomes)
     configparser_object.set('process_proteomes', 'relpath_reference_proteomes',
@@ -320,6 +329,8 @@ def set_download_options(configparser_object, args, verbose=False):
     configparser_object.add_section('stats')
     configparser_object.set('stats', 'download_base_dir',
                             args.download_base_dir)
+    configparser_object.set('stats', 'pickled_dir',
+                            args.pickled_dir)
     configparser_object.set('stats', 'relpath_pickle_proteomes',
                             args.relpath_pickle_proteomes)
     configparser_object.set('stats', 'relpath_pickle_taxontree',
@@ -344,6 +355,8 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.relpath_pickle_taxontree)
     configparser_object.set('panproteomes', 'download_base_dir',
                             args.download_base_dir)
+    configparser_object.set('panproteomes', 'pickled_dir',
+                            args.pickled_dir)
     configparser_object.set('panproteomes', 'relpath_pickle_uniprotkb_uniref_idmap',
                             args.relpath_pickle_uniprotkb_uniref_idmap)
     configparser_object.set('panproteomes', 'relpath_pickle_uniref100_taxid_idmap',
@@ -372,6 +385,8 @@ def set_download_options(configparser_object, args, verbose=False):
     configparser_object.add_section('export')
     configparser_object.set('export', 'download_base_dir',
                             args.download_base_dir)
+    configparser_object.set('export', 'pickled_dir',
+                            args.pickled_dir)    
     configparser_object.set('export', 'export_dir',
                             args.export_dir)
     configparser_object.set('export', 'exportpath_phylophlan',
@@ -397,7 +412,7 @@ def set_download_options(configparser_object, args, verbose=False):
 
     configparser_object.set('export', 'verbose', str(verbose))
     configparser_object.set('export', 'nproc', str(args.nproc))
-
+ 
     return configparser_object
 
 
