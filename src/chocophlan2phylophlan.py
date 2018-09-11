@@ -7,7 +7,7 @@ author__ = ('Nicola Segata (nicola.segata@unitn.it), '
 __date__ = '11 Apr 2018'
 
 
-from _version import __CHOCOPhlAn_version__
+from _version import *
 import os
 import argparse as ap
 import configparser as cp
@@ -94,7 +94,7 @@ class chocophlan2phylophlan:
             self.proteomes[proteome]['tax_id'] 
             if self.taxontree.taxid_n[self.proteomes[proteome]['tax_id']].rank == 'species' 
             else self.taxontree.go_up_to_species(self.proteomes[proteome]['tax_id']) 
-            for proteome in self.proteomes if self.proteomes[proteome]['isReference']
+            for proteome in self.proteomes
             )
 
         if self.config['verbose']:
@@ -107,7 +107,7 @@ class chocophlan2phylophlan:
         if self.config['verbose']:
             utils.info('Done.\n')
 
-        for item in d:
+        for item in filter(None,d):
             cor, ref, gen = item
             d_out_core[cor[0]] = (cor[1], cor[2])
             d_out_refp[ref[0]] = (ref[1], ref[2])
@@ -118,9 +118,9 @@ class chocophlan2phylophlan:
 
         # REMOVE SPECIES WITHOUT ANY GENOME
         # NO PROTEOMES
-        with open('{}/taxa2proteomes.txt'.format(self.exportpath), 'w') as t2p_out:
-            with open('{}/taxa2core.txt'.format(self.exportpath), 'w') as t2c_out:
-                with open('{}/taxa2genomes.txt'.format(self.exportpath), 'w') as t2g_out:
+        with open('{}/taxa2proteomes_cpa_{}_up_{}.txt'.format(self.exportpath,__CHOCOPhlAn_version__, __UniRef_version__), 'w') as t2p_out:
+            with open('{}/taxa2core_cpa_{}_up_{}.txt'.format(self.exportpath,__CHOCOPhlAn_version__, __UniRef_version__), 'w') as t2c_out:
+                with open('{}/taxa2genomes_cpa_{}_up_{}.txt'.format(self.exportpath,__CHOCOPhlAn_version__, __UniRef_version__), 'w') as t2g_out:
                     lines_t2p = ['#CHOCOPhlAn version {}\n'.format(__CHOCOPhlAn_version__), '#'+open('data/relnotes.txt').readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of proteomes\n']
                     lines_t2c = ['#CHOCOPhlAn version {}\n'.format(__CHOCOPhlAn_version__), '#'+open('data/relnotes.txt').readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of core proteins\n']
                     lines_t2g = ['#CHOCOPhlAn version {}\n'.format(__CHOCOPhlAn_version__), '#'+open('data/relnotes.txt').readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of genomes\n']
