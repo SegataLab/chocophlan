@@ -365,13 +365,50 @@ def process(item, data, config):
     else:
         terminating.set()
 
-def download_ncbi(config):
+def process_from_file(item, data, config):
+    if not terminating.is_set():
+        try:
+            download_folder = '{}/{}/{}/{}'.format(config['download_base_dir'], config['relpath_genomes'], item.split('_')[1][0:6],item.split('_')[1][6:9])
+        except:
+            utils.info('{}\n'.format(item))
+        os.makedirs(download_folder, exist_ok=True)
+        try:
+            status = download_gff_fna(item,download_folder,data)
+        except Exception as e:
+            utils.error('Failed to download {}'.format(item))
+            terminating.set()
+
+        if status:
+            utils.info("{} was not found!\n".format(item))
+            return item
+    else:
+        terminating.set()
+
+def download_ncbi_from_txt(input_file, config):
+    # download the assembly data once
+    data = get_ncbi_assembly_info()
+    terminating = dummy.Event()
+    utils.info("Loading input file with GCA ids to download...\n")
+    assembly_ids = [x.strip() for x in open(input_file).readlines()]
+    config['relpath_genomes'] = "{}_{}".format(config['relpath_genomes'], datetime.date.today().strftime ("%Y%m%d"))
+    partial_process = partial(process_from_file, data=data, config=config)
+    with dummy.Pool(initializer=initt, initargs=(terminating, ), processes=config['nproc']) as pool:
+        failed = [f for f in pool.imap_unordered(partial_process, assembly_ids, chunksize=config['nproc'])]
+
+    with open('failed_GCA.txt','w') as f:
+        f.writelines(failed)
+
+    with open('{}{}'.format(config['export_dir'],config['relpath_gca2taxa']), 'w') as f:
+        [f.write('{}\t{}\n'.format(k,v)) for k, v in {dict(v['ncbi_ids']).get('GCSetAcc'):v['tax_id'] for k, v in proteomes.items() if 'ncbi_ids' in v}.items()]
+
+
+def download_ncbi_from_proteome_pickle(config):
     # download the assembly data once
     data = get_ncbi_assembly_info()
     terminating = dummy.Event()
     utils.info("Loading proteomes data...\n")
     proteomes = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_proteomes']), 'rb'))
-
+    config['relpath_genomes'] = "{}_{}".format(config['relpath_genomes'], datetime.date.today().strftime ("%Y%m%d"))
     partial_process = partial(process, data=data, config=config)
     with dummy.Pool(initializer=initt, initargs=(terminating, ), processes=config['nproc']) as pool:
         failed = [f for f in pool.imap_unordered(partial_process, ((k,v) for k, v in proteomes.items() if 'ncbi_ids' in v), chunksize=config['nproc'])]
