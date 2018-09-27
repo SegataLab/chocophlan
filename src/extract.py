@@ -502,7 +502,6 @@ class Names:
 
 def do_extraction(config, verbose=False):
     taxdump_dir = config['download_base_dir'] + config['relpath_taxdump']
-    catalogue_dir = glob.glob('{}/{}/RefSeq-release*.catalog.gz'.format(config['download_base_dir'], config['relpath_taxonomic_catalogue']))[0]
 
     names_buf, nodes_buf = read_taxdump(taxdump_dir)
 

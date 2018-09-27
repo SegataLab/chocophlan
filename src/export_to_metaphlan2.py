@@ -80,7 +80,7 @@ class export_to_metaphlan2:
 
         for i in all_uniref_chunks:
             uniref90_chunk = pickle.load(open('{}/{}/uniref90/{}'.format(config['download_base_dir'], config['pickled_dir'], i),'rb'))
-            self.uniref90_taxid_map.update({k:(set(t[:3] for t in v[2]), v[3:6]) for k,v in uniref90_chunk.items()})
+            self.uniref90_taxid_map.update({k:(set(t[:3] for t in v[2]), v[3:6], len(v[6])) for k,v in uniref90_chunk.items()})
 
         ## Check if export folder exists, if not, it creates it
         if not os.path.exists(self.exportpath):
@@ -89,55 +89,78 @@ class export_to_metaphlan2:
         if config['verbose']:
             utils.info('Finished.\n')
 
+    def extract_markers(self, panproteome, core_coreness_threshold=80, core_uniqueness_90_threshold=1, core_uniqueness_50_threshold=10):
+        pc_coreness_threshold = (core_coreness_threshold * panproteome['number_proteomes'])//100
+        cores_to_use = {k:v['coreness'] for k,v in panproteome['members'].items() if v['coreness'] >= pc_coreness_threshold}
 
+        if panproteome['number_proteomes'] > 1:
+            markers = [{'gene' : core,
+                        'tier' : None,
+                        'len' : self.uniref90_taxid_map['UniRef90_{}'.format(core)][2], 
+                        'coreness': (panproteome['members'][core]['coreness'] / panproteome['number_proteomes']),
+                        'uniqueness_90' : panproteome['members'][core]['uniqueness_nosp']['90_90'],
+                        'uniqueness_50' : panproteome['members'][core]['uniqueness_nosp']['90_50']} for core in cores_to_use if len(core)
+                            if panproteome['members'][core]['uniqueness_nosp']['90_90'] <= core_uniqueness_90_threshold 
+                            and panproteome['members'][core]['uniqueness_nosp']['90_50'] <= core_uniqueness_50_threshold]
 
-    @staticmethod
-    def get_p_markers(panproteome):
+        else:
+            markers = [{'gene' : core,
+                        'tier' : None,
+                        'len' : self.uniref90_taxid_map['UniRef90_{}'.format(core)][2], 
+                        'coreness': (panproteome['members'][core]['coreness'] / panproteome['number_proteomes']),
+                        'uniqueness_90' : panproteome['members'][core]['uniqueness']['90_90'],
+                        'uniqueness_50' : panproteome['members'][core]['uniqueness']['90_50']} for core in cores_to_use if len(core)
+                            if panproteome['members'][core]['uniqueness']['90_90'] <= core_uniqueness_90_threshold 
+                            and panproteome['members'][core]['uniqueness']['90_50'] <= core_uniqueness_50_threshold]
 
-        def rank_markers(markers):
-            markers = pd.DataFrame(markers)
-            markers['coreness_rank'] = np.power(markers.coreness, 1/6)
-            markers['uniqueness_50_rank'] = -np.log(1-((10000-np.minimum(10000,markers.uniqueness_50))/10000-0.00001))/5
-            markers['uniqueness_90_rank'] = -np.log(1-((10000-np.minimum(10000,markers.uniqueness_90))/10000-0.00001))/5
-            markers['ranking'] = markers.coreness_rank * markers.uniqueness_50_rank * markers.uniqueness_90_rank
+        markers = pd.DataFrame(markers)
+        if len(markers):
+            markers = markers[((markers.len > 100) & (markers.len < 1000))]
+        return markers
+
+    def rank_markers(self, markers):
+        if len(markers):
+            markers['coreness_rank'] = np.power(markers['coreness'], 1/2)
+            markers['uniqueness_50_rank'] = -np.log(1-((10000-np.minimum(10000,markers['uniqueness_50']))/10000-0.00001))/5
+            markers['uniqueness_90_rank'] = -np.log(1-((10000-np.minimum(10000,markers['uniqueness_90']))/10000-0.00001))/5
+            markers['ranking'] = (markers['coreness_rank'] * markers['uniqueness_50_rank'] * markers['uniqueness_90_rank'])
             markers = markers.sort_values('ranking',ascending=False)
             return markers
 
-        def extract_markers(panproteome, core_coreness_threshold=80, core_uniqueness_90_threshold=1, core_uniqueness_50_threshold=10):
-            pc_coreness_threshold = (core_coreness_threshold * panproteome['number_proteomes'])//100
-            cores_to_use = {k:v['coreness'] for k,v in panproteome['members'].items() if v['coreness'] >= pc_coreness_threshold}
-
-            try:
-                return [{'gene' : core,
-                         'coreness': (panproteome['members'][core]['coreness'] / panproteome['number_proteomes']),
-                         'uniqueness_90' : panproteome['members'][core]['uniqueness_nosp']['90_90'],
-                         'uniqueness_50' : panproteome['members'][core]['uniqueness_nosp']['90_50']} for core in cores_to_use if len(core)
-                                if panproteome['members'][core]['uniqueness_nosp']['90_90'] <= core_uniqueness_90_threshold 
-                            and panproteome['members'][core]['uniqueness_nosp']['90_50'] <= core_uniqueness_50_threshold]
-            except:
-                utils.info('Something went wrong in the extractiion of markers for panproteome {}\n'.format(panproteome['tax_id']))
-
-        markers = extract_markers(panproteome)
-        if not len(markers):
-            markers = pd.DataFrame({'gene':[]})
-            tier = 'Z'
-        else:
+    def get_p_markers(self, panproteome):
+        if panproteome['number_proteomes'] > 1 and not self.taxontree.taxid_n[panproteome['tax_id']].is_low_quality:
+            markers = self.extract_markers(panproteome)
             if len(markers) >= 200:
-                markers = rank_markers(markers)
+                markers = self.rank_markers(markers)
                 markers = markers[:200]
-                tier = 'A'
             else:
-                markers = extract_markers(panproteome, 70, 5, 30)
+                markers = self.extract_markers(panproteome, 70, 5, 30)
                 if len(markers) >= 150:
-                    markers = rank_markers(markers)
+                    markers = self.rank_markers(markers)
                     markers = markers[:150]
-                    tier = 'B'
                 else:
-                    markers = extract_markers(panproteome, 50, float('Inf'), float('Inf') )
-                    markers = rank_markers(markers)
+                    markers = self.extract_markers(panproteome, 50, float('Inf'), float('Inf') )
+                    markers = self.rank_markers(markers)
                     markers = markers[:50]
-                    tier = 'C'
-        return (markers, tier, )
+
+            if not len(markers):
+                markers = pd.DataFrame({'gene':[], 'tier':'Z'})
+            else:
+                markers.loc[markers['coreness'] >= 0.5, 'tier'] = 'C'
+                markers.loc[(markers['coreness'] >= 0.7)  & 
+                            (markers['uniqueness_90'] <= 5) &
+                            (markers['uniqueness_50'] <= 30), 'tier'] = 'B'
+                markers.loc[(markers['coreness'] >= 0.8) & (markers['uniqueness_90'] <= 1) & (markers['uniqueness_50'] <= 10),'tier'] = 'A'
+        else:
+            markers = self.extract_markers(panproteome, 80, 0, 0)
+            if not len(markers):
+                markers = pd.DataFrame({'gene':[], 'tier':'Z'})
+            else:
+                markers = self.rank_markers(markers)
+                markers = markers[:100]
+                markers['tier'] = 'U'
+
+        return markers
 
     '''
         Remove all external hits from Shigella species to improve uniqueness statistic
@@ -149,7 +172,7 @@ class export_to_metaphlan2:
                 for cluster in panproteome['members'][pangene]['external_hits']:
                     external_species_nosp = set(taxid for taxid in panproteome['members'][pangene]['external_species_nosp'][cluster] if taxid not in shigella_ids)
                     panproteome['members'][pangene]['uniqueness_nosp'][cluster] = len(external_species_nosp)
-        return export_to_metaphlan2.get_p_markers(panproteome)
+        return self.get_p_markers(panproteome)
 
     # def exctract_gene_from_genome(self, item):
     #     if not terminating.is_set():
@@ -290,9 +313,9 @@ class export_to_metaphlan2:
                 self.log.error(traceback.format_exc())
                 raise ex
         if pp_tax_id == 562:
-            possible_markers, tier = self.get_ecoli_markers(panproteome)
+            possible_markers = self.get_ecoli_markers(panproteome)
         else:
-            possible_markers, tier = self.get_p_markers(panproteome)
+            possible_markers = self.get_p_markers(panproteome)
         gc = {}
         upid = ""
         res = []
@@ -359,34 +382,37 @@ class export_to_metaphlan2:
                     gc[(upid, panproteome['tax_id'], taxonomy)] = set()
                 gc[(upid, panproteome['tax_id'], taxonomy)].add((marker, gene_names, tuple(panproteome['members'][marker]['external_species_nosp']['90_90'])))
 
+
         try:
             markers_nucls, failed = [], []
-            if gc:
-                res = list(zip(*map(self.get_uniref90_nucl_seq, gc.items())))
+            print('Enter here')
+            if len(gc):
+                with dummy.Pool(processes=30) as pool:
+                    res = [x for _ in pool.imap_unordered(self.get_uniref90_nucl_seq, gc.items(), chunksize=10) if _ is not None for x in _]
                 if len(res):
-                    markers_nucls, failed = res 
+                    markers_nucls, failed = res
             else:
                 self.log.error('No markers identified for species {}'.format(panproteome['tax_id']))
         except Exception as ex:
             self.log.error('Cannot parse panproteome {}'.format(panproteome['tax_id']))
             return panproteome['tax_id']
-        else:
-            #create export/metaphlan2
-            if not all(x is None for x in failed):
-                failed = list(filter(None, failed))[0]
-                self.log.warning("{}: Failed to find features of markers {}".format(pp_tax_id, (','.join(failed))))
-            if len(markers_nucls):
-                with open('{}/{}/markers_fasta/{}.fna'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']), 'wt') as fasta_markers:
-                    [fasta_markers.write(marker.format('fasta')) for _ in markers_nucls for marker in _]
-     
+        #create export/markers_fasta
+        if failed is not None and not all(x is None for x in failed):
+            failed = list(filter(None, failed))[0]
+            self.log.warning("{}: Failed to find features of markers {}".format(pp_tax_id, (','.join(failed))))
+        if len(markers_nucls):
+            with open('{}/{}/markers_fasta/{}.fna'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']), 'wt') as fasta_markers:
+                [fasta_markers.write(marker.format('fasta')) for _ in markers_nucls for marker in _]
+
+            possible_markers.to_csv('{}/{}/markers_stats/{}.txt'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']))
 
 def run_all():
     config = utils.read_configs('settings.cfg')
     config = utils.check_configs(config)['export']
     export = export_to_metaphlan2(config)
     species = glob.glob('{}/{}/species/90/*'.format(config['download_base_dir'], config['relpath_panproteomes_dir']))
-    with dummy.Pool(processes=80) as pool:
-        failed = [x for x in pool.imap(export.get_uniref_uniprotkb_from_panproteome, species, chunksize=200)]
+    with dummy.Pool(processes=20) as pool:
+        failed = [x for x in pool.imap(export.get_uniref_uniprotkb_from_panproteome, species, chunksize=20)]
     
     all_gca = [x.split('|')[-1].split('__')[1] for x in self.db['taxonomy'].keys()] 
     [self.db['markers'][x]['ext'].remove(y) for x in self.db['markers'] if self.db['markers'][x]['ext'] for y in (self.db['markers'][x]['ext']) if y not in all_gca ]
