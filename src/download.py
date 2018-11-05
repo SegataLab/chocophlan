@@ -395,12 +395,16 @@ def download_ncbi_from_txt(input_file, config):
     with dummy.Pool(initializer=initt, initargs=(terminating, ), processes=config['nproc']) as pool:
         failed = [f for f in pool.imap_unordered(partial_process, assembly_ids, chunksize=config['nproc'])]
 
+    assembly_noversion = [x.split('.')[0] for x in assembly_ids if x not in failed]
+    failed = [x.split('.')[0] for x in filter(None,failed)]
+
     with open('failed_GCA.txt','w') as f:
-        f.writelines(failed)
+        f.write('\n'.join(failed))
+
+    tax = {x[0].split('.')[0]:int(x[5]) for x in data}
 
     with open('{}{}'.format(config['export_dir'],config['relpath_gca2taxa']), 'w') as f:
         [f.write('{}\t{}\n'.format(k,v)) for k, v in {dict(v['ncbi_ids']).get('GCSetAcc'):v['tax_id'] for k, v in proteomes.items() if 'ncbi_ids' in v}.items()]
-
 
 def download_ncbi_from_proteome_pickle(config):
     # download the assembly data once
@@ -414,7 +418,7 @@ def download_ncbi_from_proteome_pickle(config):
         failed = [f for f in pool.imap_unordered(partial_process, ((k,v) for k, v in proteomes.items() if 'ncbi_ids' in v), chunksize=config['nproc'])]
 
     with open('failed_GCA.txt','w') as f:
-        f.writelines(failed)
+        f.write('\n'.join(list(filter(None, failed))))
 
     with open('{}{}'.format(config['export_dir'],config['relpath_gca2taxa']), 'w') as f:
         [f.write('{}\t{}\n'.format(k,v)) for k, v in {dict(v['ncbi_ids']).get('GCSetAcc'):v['tax_id'] for k, v in proteomes.items() if 'ncbi_ids' in v}.items()]

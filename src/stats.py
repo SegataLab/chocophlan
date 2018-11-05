@@ -132,7 +132,8 @@ class Stats:
     def pangenes_stats(panproteome, config):
         species = panproteome['tax_id']
         res = {'{}_{}'.format(species,pangene) : {'tax_id':species,
-                   'coreness' : panproteome['members'][pangene]['coreness']/panproteome['number_proteomes'],
+                   'coreness' : panproteome['members'][pangene]['coreness'],
+                   'coreness_perc' : panproteome['members'][pangene]['coreness']/panproteome['number_proteomes'],
                    'external_hits_50' : ';'.join(str(x) for x in panproteome['members'][pangene]['external_hits']['90_50']),
                    'external_hits_90' : ';'.join(str(x) for x in panproteome['members'][pangene]['external_hits']['90_90']),
                    'uniqueness_90' : panproteome['members'][pangene]['uniqueness']['90_90'],

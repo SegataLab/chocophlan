@@ -41,11 +41,11 @@ def chocophlan():
     extract.do_extraction(config['extract'], verbose=config['extract']['verbose'])
     process_proteomes.process_proteomes(config['process_proteomes'])
     panproteomes.generate_panproteomes(config['panproteomes'])
+    config['process_proteomes']['relpath_genomes'] = '/ncbi'
+    download.download_ncbi(config['process_proteomes'])
     stats.generate_stats(config['stats'])
     chocophlan2phylophlan.export_to_phylophlan(config['export'])
     export_to_metaphlan2.run_all()
-    config['process_proteomes']['relpath_genomes'] = '/ncbi'
-    download.download_ncbi(config['process_proteomes'])
 
 if __name__ == '__main__':
     t0 = time.time()

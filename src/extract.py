@@ -7,10 +7,12 @@
 # (i.e. species), we create a contig_ID to tax_ID mapping from the refseq
 # catalogue file. We then read the bacterial genome files (data/refseq/genomes/*),
 #  use the contig_ID to tax_ID mapping to write contig sequences to tax_ID files.
+
 __author__ = ('Nicola Segata (nicola.segata@unitn.it),'
               'Francesco Beghini (francesco.beghini@unitn.it),'
               'Nicolai Karcher (karchern@gmail.com),'
               'Francesco Asnicar (f.asnicar@unitn.it)')
+
 from _version import __CHOCOPhlAn_version__
 __date__ = '22 Oct 2017'
 

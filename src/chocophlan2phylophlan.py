@@ -118,9 +118,9 @@ class chocophlan2phylophlan:
 
         # REMOVE SPECIES WITHOUT ANY GENOME
         # NO PROTEOMES
-        with open('{}/taxa2proteomes_cpa_{}_up_{}.txt'.format(self.exportpath,__CHOCOPhlAn_version__, __UniRef_version__), 'w') as t2p_out:
-            with open('{}/taxa2core_cpa_{}_up_{}.txt'.format(self.exportpath,__CHOCOPhlAn_version__, __UniRef_version__), 'w') as t2c_out:
-                with open('{}/taxa2genomes_cpa_{}_up_{}.txt'.format(self.exportpath,__CHOCOPhlAn_version__, __UniRef_version__), 'w') as t2g_out:
+        with open('{}/taxa2proteomes_cpa{}_up{}.txt'.format(self.exportpath,__CHOCOPhlAn_version__, __UniRef_version__), 'w') as t2p_out:
+            with open('{}/taxa2core_cpa{}_up{}.txt'.format(self.exportpath,__CHOCOPhlAn_version__, __UniRef_version__), 'w') as t2c_out:
+                with open('{}/taxa2genomes_cpa{}_up{}.txt'.format(self.exportpath,__CHOCOPhlAn_version__, __UniRef_version__), 'w') as t2g_out:
                     lines_t2p = ['#CHOCOPhlAn version {}\n'.format(__CHOCOPhlAn_version__), '#'+open('data/relnotes.txt').readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of proteomes\n']
                     lines_t2c = ['#CHOCOPhlAn version {}\n'.format(__CHOCOPhlAn_version__), '#'+open('data/relnotes.txt').readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of core proteins\n']
                     lines_t2g = ['#CHOCOPhlAn version {}\n'.format(__CHOCOPhlAn_version__), '#'+open('data/relnotes.txt').readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of genomes\n']
