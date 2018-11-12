@@ -26,8 +26,6 @@ def decompressed():
 
 def chocophlan():
     utils.info('CHOCOPhlAn: Cluster of HOmologous Cdses fOr PHyLogenetic ANalysis\n')
-    utils.info('Running using ')
-    utils.info(open('data/relnotes.txt').readline())
     args = utils.read_params()
     utils.check_params(args, verbose=args.verbose)
 
