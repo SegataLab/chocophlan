@@ -116,8 +116,6 @@ def download(config, verbose=False):
     argument_list = [(config['uniprot_ftp_base'],
                     config['uniprot_uniref100'],
                     config['download_base_dir'] + config['relpath_uniref100'])]
-
-    argument_list.append(("ftp://ftp.uniprot.org", "/pub/databases/uniprot/relnotes.txt", config['download_base_dir'], "relnotes.txt"))
     
     argument_list.append((config['uniprot_ftp_base'],
                           os.path.split(config['uniprot_uniref100'])[0] + "/RELEASE.metalink",
