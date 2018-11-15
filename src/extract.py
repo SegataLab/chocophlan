@@ -520,10 +520,13 @@ def do_extraction(config, verbose=False):
     utils.info("Refining tree... ")
     # tax_tree.get_tree_with_reduced_taxonomy()
 
-    candidatus_taxid = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search(u'(C|c)andidatus_',tax_tree.taxid_n[x].name)]
+    candidatus_taxid = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search(u'(C|c)andidat(e|us)_',tax_tree.taxid_n[x].name)]
     cags_taxid = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search(u'_CAG_',tax_tree.taxid_n[x].name)]
     sps_taxid = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search(u'_sp(_|$)',tax_tree.taxid_n[x].name)]
-    bacterium_taxis = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if '_bacterium_' in tax_tree.taxid_n[x].name]
+    bacterium_taxis = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if '(_|)bacterium_' in tax_tree.taxid_n[x].name]
+    archaeon_taxis = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if '(eury|)archaeo(n_|te)' in tax_tree.taxid_n[x].name]
+    endosymbiont_taxis = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search(u'(endo|)symbiont',tax_tree.taxid_n[x].name)]
+
     merged_low_quality = list(itertools.chain.from_iterable((candidatus_taxid,cags_taxid,sps_taxid,bacterium_taxis)))
     [tax_tree.taxid_n[x].__setattr__('is_low_quality', True) for x in merged_low_quality]
     [tax_tree.taxid_n[x].__setattr__('is_low_quality', False) for x in set(tax_tree.taxid_n.keys()).difference(merged_low_quality)]

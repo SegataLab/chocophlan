@@ -149,7 +149,7 @@ class export_to_metaphlan2:
             markers = self.extract_markers(panproteome)
             if len(markers) >= 200:
                 markers = self.rank_markers(markers)
-                markers = markers[:200]
+                markers = markers[:150]
             else:
                 markers = self.extract_markers(panproteome, 70, 5, 30)
                 if len(markers) >= 150:
@@ -159,16 +159,16 @@ class export_to_metaphlan2:
                     markers = self.extract_markers(panproteome, 50, float('Inf'), float('Inf') )
                     if len(markers) > 0:
                         markers = self.rank_markers(markers)
-                        markers = markers[:50]
+                        markers = markers[:150]
 
             if not len(markers):
                 markers = pd.DataFrame({'gene':[], 'tier':'Z'})
             else:
                 tiers = []
                 for row in markers.itertuples():
-                    if ((row.coreness_perc >= 0.8) & (row.uniqueness_90 <= 1) & (row.uniqueness_50 <= 10)):
+                    if ((row.coreness_perc >= 0.8) & (row.uniqueness_90 <= 1) & (row.uniqueness_50 <= 5)):
                         tiers.append('A')
-                    elif ((row.coreness_perc >= 0.7) & (row.uniqueness_90 <= 5) & (row.uniqueness_50 <= 30)):
+                    elif ((row.coreness_perc >= 0.7) & (row.uniqueness_90 <= 5) & (row.uniqueness_50 <= 10)):
                         tiers.append('B')
                     elif (row.coreness_perc >= 0.5):
                         tiers.append('C')
@@ -179,13 +179,13 @@ class export_to_metaphlan2:
                 
         else:
             markers = self.extract_markers(panproteome, 80, 0, 0)
-            if not len(markers):
+            if not len(markers) or (self.taxontree.taxid_n[panproteome['tax_id']].is_low_quality and len(markers) < 100):
                 markers = pd.DataFrame({'gene':[], 'tier':'Z'})
             else:
                 markers = self.rank_markers(markers)
                 markers = markers[:100]
                 markers = markers.assign(tier = ['U']*len(markers))
-
+                
         return markers
 
     '''
