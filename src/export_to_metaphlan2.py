@@ -4,16 +4,14 @@ author__ = ('Nicola Segata (nicola.segata@unitn.it), '
             'Nicolai Karcher (karchern@gmail.com),'
             'Francesco Asnicar (f.asnicar@unitn.it)')
 
-from _version import __CHOCOPhlAn_version__
 __date__ = '11 Apr 2018'
-
 
 import os
 import argparse as ap
 import configparser as cp
 import pickle
 import multiprocessing.dummy as dummy
-from pathos.multiprocessing import ProcessingPool as Pool
+import version
 import glob
 import time
 import re
@@ -25,7 +23,6 @@ import importlib
 import traceback
 import pandas as pd
 import numpy as np
-# from BCBio import GFF
 import gffutils
 import resource
 import bz2
@@ -185,7 +182,7 @@ class export_to_metaphlan2:
                 markers = self.rank_markers(markers)
                 markers = markers[:100]
                 markers = markers.assign(tier = ['U']*len(markers))
-                
+
         return markers
 
     '''
@@ -413,34 +410,33 @@ class export_to_metaphlan2:
                     if (upid, panproteome['tax_id'], taxonomy) not in gc:
                         gc[(upid, panproteome['tax_id'], taxonomy)] = set()
                     gc[(upid, panproteome['tax_id'], taxonomy)].add((marker, gene_names, tuple(panproteome['members'][marker]['external_species_nosp']['90_90'])))
-            if not self.debug:
-                try:
-                    markers_nucls, db, failed, res = [], {}, [], []
-                    if len(gc):
-                        with CodeTimer(name='Sequence extraction', debug=self.debug, logger=self.log):
-                            #res = [self.get_uniref90_nucl_seq(x) for x in gc.items()]
-                            with dummy.Pool(processes=3) as pool:
-                                res = [_ for _ in pool.imap_unordered(self.get_uniref90_nucl_seq, gc.items(), chunksize=10) if _ is not None]
-                            if len(res):
-                                markers_nucls, db, failed = zip(*res)
-                                for x in db:
-                                    self.db['taxonomy'].update(x['taxonomy'])
-                                    self.db['markers'].update(x['markers'])
-                                markers_nucls = list(itertools.chain.from_iterable(markers_nucls))
-                    else:
-                        self.log.error('No markers identified for species {}'.format(panproteome['tax_id']))
-                        return panproteome['tax_id']
-                except Exception as ex:
-                    self.log.error('Cannot parse panproteome {}'.format(panproteome['tax_id']))
+            try:
+                markers_nucls, db, failed, res = [], {}, [], []
+                if len(gc):
+                    with CodeTimer(name='Sequence extraction', debug=self.debug, logger=self.log):
+                        #res = [self.get_uniref90_nucl_seq(x) for x in gc.items()]
+                        with dummy.Pool(processes=3) as pool:
+                            res = [_ for _ in pool.imap_unordered(self.get_uniref90_nucl_seq, gc.items(), chunksize=10) if _ is not None]
+                        if len(res):
+                            markers_nucls, db, failed = zip(*res)
+                            for x in db:
+                                self.db['taxonomy'].update(x['taxonomy'])
+                                self.db['markers'].update(x['markers'])
+                            markers_nucls = list(itertools.chain.from_iterable(markers_nucls))
+                else:
+                    self.log.error('No markers identified for species {}'.format(panproteome['tax_id']))
                     return panproteome['tax_id']
-                #create export/markers_fasta
-                if failed is not None and not all(x is None for x in failed):
-                    failed = list(filter(None, failed))[0]
-                    self.log.warning("{}: Failed to find features of markers {}".format(pp_tax_id, (','.join(failed))))
-                if len(markers_nucls):
-                    with CodeTimer(name='FNA export', debug=self.debug, logger=self.log):
-                        with open('{}/{}/markers_fasta/{}.fna'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']), 'wt') as fasta_markers:
-                            [fasta_markers.write(marker.format('fasta')) for marker in markers_nucls]
+            except Exception as ex:
+                self.log.error('Cannot parse panproteome {}'.format(panproteome['tax_id']))
+                return panproteome['tax_id']
+            #create export/markers_fasta
+            if failed is not None and not all(x is None for x in failed):
+                failed = list(filter(None, failed))[0]
+                self.log.warning("{}: Failed to find features of markers {}".format(pp_tax_id, (','.join(failed))))
+            if len(markers_nucls):
+                with CodeTimer(name='FNA export', debug=self.debug, logger=self.log):
+                    with open('{}/{}/markers_fasta/{}.fna'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']), 'wt') as fasta_markers:
+                        [fasta_markers.write(marker.format('fasta')) for marker in markers_nucls]
         if len(gc):
             with CodeTimer(name='Pickling markers info', debug=self.debug, logger=self.log):
                 pickle.dump(gc, open('{}/{}/markers_info/{}.txt'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']), 'wb'))
@@ -462,7 +458,7 @@ def run_all():
             if y not in all_gca:
                 self.db['markers'][x]['ext'].remove(y)
 
-    outfile_prefix = 'mpa_v21_CHOCOPhlAn_{}'.format(__CHOCOPhlAn_version__)
+    outfile_prefix = 'mpa_v{}_CHOCOPhlAn_{}'.format(version.__MetaPhlAn2_db_version__, version.__CHOCOPhlAn_version__)
     with bz2.BZ2File('{}/{}/{}.pkl'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix), 'w') as outfile:
         pickle.dump(self.db, outfile, pickle.HIGHEST_PROTOCOL)
 
