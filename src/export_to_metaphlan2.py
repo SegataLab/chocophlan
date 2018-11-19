@@ -11,7 +11,7 @@ import argparse as ap
 import configparser as cp
 import pickle
 import multiprocessing.dummy as dummy
-import version
+import _version as version
 import glob
 import time
 import re
@@ -63,8 +63,7 @@ class export_to_metaphlan2:
     def __init__(self, config):
         self.debug = config['verbose']
         resource.setrlimit(resource.RLIMIT_NOFILE, (131072, 131072))
-        logging.basicConfig(level=logging.INFO, filename='CHOCOPhlAn_export_to_metaphlan.log', filemode='w')
-        ch = logging.StreamHandler()
+        ch = logging.FileHandler('CHOCOPhlAn_export_to_metaphlan.log')
         ch.setLevel(logging.INFO)
         self.log = logging.getLogger('export_to_metaphlan2')
         self.log.addHandler(ch)
@@ -443,24 +442,37 @@ class export_to_metaphlan2:
         with CodeTimer(name='Save marker stats', debug=self.debug, logger=self.log):
             possible_markers.to_csv('{}/{}/markers_stats/{}.txt'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']))
 
-def run_all():
+def run_all(): 
     config = utils.read_configs('settings.cfg')
     config = utils.check_configs(config)['export']
+    outfile_prefix = 'mpa_v{}_CHOCOPhlAn_{}'.format(version.__MetaPhlAn2_db_version__, version.__CHOCOPhlAn_version__)
+
+    if os.path.exists('{}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix)):
+        os.rename('{}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix), 
+            '{}/{}/{}_bak_{}'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix, datetime.datetime.today().strftime('%Y%m%d_%H%M')))
+    for i in ['markers_stats','markers_fasta','markers_info']:
+        os.makedirs('{}/{}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix, i))
+
+    config['exportpath_metaphlan2'] = config['exportpath_metaphlan2'] + '/' + outfile_prefix
+
     species = glob.glob('{}/{}/species/90/*'.format(config['download_base_dir'], config['relpath_panproteomes_dir']))
     export = export_to_metaphlan2(config)
-    
+
+
     with dummy.Pool(processes=30) as pool:
         failed = [x for x in pool.imap(export.get_uniref_uniprotkb_from_panproteome, species, chunksize=200000)]
     
-    all_gca = [x.split('|')[-1].split('__')[1] for x in self.db['taxonomy'].keys()] 
-    for x in self.db['markers']:
-        for y in self.db['markers'][x]['ext']:
-            if y not in all_gca:
-                self.db['markers'][x]['ext'].remove(y)
+    with open('{}/{}/failed_markers.txt'.format(config['export_dir'], config['exportpath_metaphlan2']), 'wt') as ofn_failed:
+        ofn_failed.writelines('\n'.join(str(x) for x in filter(None, failed)))
 
-    outfile_prefix = 'mpa_v{}_CHOCOPhlAn_{}'.format(version.__MetaPhlAn2_db_version__, version.__CHOCOPhlAn_version__)
+    all_gca = [x.split('|')[-1].split('__')[1] for x in export.db['taxonomy'].keys()] 
+    for x in export.db['markers']:
+        for y in export.db['markers'][x]['ext']:
+            if y not in all_gca:
+                export.db['markers'][x]['ext'].remove(y)
+
     with bz2.BZ2File('{}/{}/{}.pkl'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix), 'w') as outfile:
-        pickle.dump(self.db, outfile, pickle.HIGHEST_PROTOCOL)
+        pickle.dump(export.db, outfile, pickle.HIGHEST_PROTOCOL)
 
     os.system('cat {}/{}/markers_fasta/*.fna > {}/{}/{}.fna'.format(config['export_dir'], config['exportpath_metaphlan2'],config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix))
-    os.system('bowtie2-build {}/{}/{}.fna {}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix))
+    os.system('bowtie2-build {}/{}/{}.fna {}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix, config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix))
