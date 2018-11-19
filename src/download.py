@@ -254,7 +254,7 @@ def download(config, verbose=False):
         down_hash = entry.getchildren()[1].getchildren()[0].text
 
 
-        if (md5_tar is None) or (md5_md5 is None):
+        if (calc_hash is None) or (down_hash is None):
             sys.exit("MD5 checksums not found, something went wrong!")
         # compare checksums
         if calc_hash != down_hash:
