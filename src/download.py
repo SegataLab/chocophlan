@@ -249,9 +249,9 @@ def download(config, verbose=False):
 
         calc_hash = md5hash.hexdigest()[:32]
         down_hash = ""
-        with etree.parse(m) as meta:
-            entry = [x for x in find_file(meta) if x.get('name') == os.path.split(f)[1]][0]
-            down_hash = entry.getchildren()[1].getchildren()[0].text
+        meta = etree.parse(m)
+        entry = [x for x in find_file(meta) if x.get('name') == os.path.split(d)[1]][0]
+        down_hash = entry.getchildren()[1].getchildren()[0].text
 
 
         if (md5_tar is None) or (md5_md5 is None):
