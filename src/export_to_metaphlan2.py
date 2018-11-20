@@ -467,9 +467,8 @@ def run_all():
 
     all_gca = [x.split('|')[-1].split('__')[1] for x in export.db['taxonomy'].keys()] 
     for x in export.db['markers']:
-        for y in export.db['markers'][x]['ext']:
-            if y not in all_gca:
-                export.db['markers'][x]['ext'].remove(y)
+        export.db['markers'][x]['ext'] = [y for y in set(export.db['markers'][x]['ext']) if y in all_gca]
+                
 
     with bz2.BZ2File('{}/{}/{}.pkl'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix), 'w') as outfile:
         pickle.dump(export.db, outfile, pickle.HIGHEST_PROTOCOL)
