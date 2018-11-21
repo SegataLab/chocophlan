@@ -523,7 +523,7 @@ def do_extraction(config, verbose=False):
     candidatus_taxid = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search(u'(C|c)andidat(e|us)_',tax_tree.taxid_n[x].name)]
     cags_taxid = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search(u'_CAG_',tax_tree.taxid_n[x].name)]
     sps_taxid = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search(u'_sp(_|$)',tax_tree.taxid_n[x].name)]
-    bacterium_taxis = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if '(_|)bacterium_' in tax_tree.taxid_n[x].name]
+    bacterium_taxis = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if '_bacterium_' in tax_tree.taxid_n[x].name]
     archaeon_taxis = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if '(eury|)archaeo(n_|te)' in tax_tree.taxid_n[x].name]
     endosymbiont_taxis = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search(u'(endo|)symbiont',tax_tree.taxid_n[x].name)]
 

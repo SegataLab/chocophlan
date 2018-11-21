@@ -56,6 +56,7 @@ class Stats:
             avg_number_proteins = statistics.mean(members_panproteome)
             median_number_proteins = statistics.median(members_panproteome)
             stdev_number_proteins = statistics.stdev(members_panproteome) if len(members_panproteome) >2 else None
+            islowquality = self.taxontree.taxid_n[tax_id].is_low_quality
             try:
                 panproteome_100 = self.panproteome_stats(tax_id, 100)
                 panproteome_90 = self.panproteome_stats(tax_id, 90)
@@ -65,7 +66,18 @@ class Stats:
                 terminating.set()
                 raise
 
-            return { tax_id: (self.taxontree.print_full_taxonomy(tax_id), number_proteomes, reference_proteomes, redundant_proteomes, non_redundant_proteomes, avg_number_proteins, panproteome_100, panproteome_90, panproteome_50) }
+            return { tax_id: ( self.taxontree.print_full_taxonomy(tax_id), 
+                               islowquality
+                               number_proteomes, 
+                               reference_proteomes, 
+                               redundant_proteomes, 
+                               non_redundant_proteomes, 
+                               avg_number_proteins, 
+                               panproteome_100, 
+                               panproteome_90, 
+                               panproteome_50
+                              )
+                    }
         else:
             terminating.set()
     def panproteome_stats(self, tax_id, cluster):
@@ -174,8 +186,8 @@ class Stats:
 
         d_new = {}
         for k,v in d.items():
-            v_=dict(zip(['tax_id', 'name', 'number_proteomes', 'number_reference_proteomes', 'number_redundant_proteomes', 'number_non_redundant_proteomes', 'avg_number_proteins'], [k]+list(v[0:6])))
-            [v_.update(y) for y in v[6:9]]
+            v_=dict(zip(['tax_id', 'name', 'is_low_quality' 'number_proteomes', 'number_reference_proteomes', 'number_redundant_proteomes', 'number_non_redundant_proteomes', 'avg_number_proteins'], [k]+list(v[0:6])))
+            [v_.update(y) for y in v[7:10]]
             d_new[k] = v_
 
         with open('{}/panproteomes_stats.csv'.format(self.config['export_dir']), 'w') as csvfile:
