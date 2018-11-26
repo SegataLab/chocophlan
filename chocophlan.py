@@ -20,6 +20,7 @@ import src.export_to_metaphlan2 as export_to_metaphlan2
 import time
 from src.extract import Nodes as Nodes
 import sys
+import multiprocessing as mp
 
 def decompressed():
     print('Decompressed.')
@@ -32,7 +33,7 @@ def chocophlan():
     config = utils.read_configs(args.config_file, verbose=args.verbose)
     config = utils.check_configs(config, verbose=args.verbose)
     download.download(config['download'], verbose=config['download']['verbose'])
-    with Pool(processes=1) as pool:
+    with mp.Pool(processes=1) as pool:
        pool.apply_async(download.decompress, 
                        args=[config['download'], config['download']['verbose']],
                        callback=decompressed)
