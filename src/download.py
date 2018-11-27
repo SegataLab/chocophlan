@@ -401,10 +401,8 @@ def download_ncbi_from_txt(input_file, config):
     with open('failed_GCA.txt','w') as f:
         f.write('\n'.join(failed))
 
-    tax = {x[0].split('.')[0]:int(x[5]) for x in data}
-
-    with open('{}{}'.format(config['export_dir'],config['relpath_gca2taxa']), 'w') as f:
-        [f.write('{}\t{}\n'.format(k,v)) for k, v in {dict(v['ncbi_ids']).get('GCSetAcc'):v['tax_id'] for k, v in proteomes.items() if 'ncbi_ids' in v}.items()]
+def test(v, taxontree=export.taxontree):
+    return (dict(v['ncbi_ids']).get('GCSetAcc'), v['tax_id'], taxontree.print_full_taxonomy(v['tax_id']))
 
 def download_ncbi_from_proteome_pickle(config):
     # download the assembly data once
@@ -412,17 +410,22 @@ def download_ncbi_from_proteome_pickle(config):
     terminating = dummy.Event()
     utils.info("Loading proteomes data...\n")
     proteomes = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_proteomes']), 'rb'))
+    taxontree = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_taxontree']), 'rb'))
     config['relpath_genomes'] = "{}_{}".format(config['relpath_genomes'], datetime.date.today().strftime ("%Y%m%d"))
     partial_process = partial(process, data=data, config=config)
-    with dummy.Pool(initializer=initt, initargs=(terminating, ), processes=config['nproc']) as pool:
+    with dummy.Pool(initializer=initt, initargs=(terminating,), processes=config['nproc']) as pool:
         failed = [f for f in pool.imap_unordered(partial_process, ((k,v) for k, v in proteomes.items() if 'ncbi_ids' in v), chunksize=config['nproc'])]
 
     with open('failed_GCA.txt','w') as f:
         f.write('\n'.join(list(filter(None, failed))))
 
+    x = [v for k, v in export.proteomes.items() if 'ncbi_ids' in v]
+    with mp.Pool(12) as pool:
+        d = [x for x in pool.imap_unordered(test, x)]
+
     with open('{}{}'.format(config['export_dir'],config['relpath_gca2taxa']), 'w') as f:
-        [f.write('{}\t{}\n'.format(k,v)) for k, v in {dict(v['ncbi_ids']).get('GCSetAcc'):v['tax_id'] for k, v in proteomes.items() if 'ncbi_ids' in v}.items()]
-            
+        [f.write('{}\t{}\n'.format(k,v)) for k, v in {dict(v['ncbi_ids']).get('GCSetAcc'):(v['tax_id'], taxontree.print_full_taxonomy(v['tax_id'])) for k, v in proteomes.items() if 'ncbi_ids' in v}.items()]
+
 def decompress(config, verbose):
     ls = glob.glob(config['download_base_dir']+config['relpath_reference_proteomes']+'/*')
     r = re.compile(".*Reference_Proteomes_.*\.tar\.gz")
@@ -435,10 +438,10 @@ if __name__ == '__main__':
 
     args = utils.read_params()
     utils.check_params(args, verbose=args.verbose)
-    
+
     config = utils.read_configs(args.config_file, verbose=args.verbose)
     config = utils.check_configs(config)
-    
+
     download(config['download'], verbose=config['download']['verbose'])
     decompress(config['download'], verbose=config['download']['verbose'])
 
