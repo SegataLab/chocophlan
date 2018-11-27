@@ -8,7 +8,7 @@ Entamoeba genus
 Aspergillus	genus
 Cryptococcus	genus
 Cyclospora genus
-Cystoisospora suis	species
+Cystoisospora_suis	species
 Giardia	genus
 Leishmania	genus
 Malassezia	genus
@@ -17,5 +17,5 @@ Pneumocystis	genus
 Toxoplasma	genus
 Trachipleistophora	genus
 Trichinella	genus
-Trichomonas vaginalis	species
+Trichomonas_vaginalis	species
 Trypanosoma	genus
