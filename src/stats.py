@@ -67,7 +67,7 @@ class Stats:
                 raise
 
             return { tax_id: ( self.taxontree.print_full_taxonomy(tax_id), 
-                               islowquality
+                               islowquality,
                                number_proteomes, 
                                reference_proteomes, 
                                redundant_proteomes, 
