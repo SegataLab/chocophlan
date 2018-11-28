@@ -401,8 +401,8 @@ def download_ncbi_from_txt(input_file, config):
     with open('failed_GCA.txt','w') as f:
         f.write('\n'.join(failed))
 
-def test(v, taxontree=export.taxontree):
-    return (dict(v['ncbi_ids']).get('GCSetAcc'), v['tax_id'], taxontree.print_full_taxonomy(v['tax_id']))
+def extract_gca2taxon(v, taxontree=taxontree):
+    return (dict(v['ncbi_ids']).get('GCSetAcc').split('.')[0], v['tax_id'], taxontree.print_full_taxonomy(v['tax_id']))
 
 def download_ncbi_from_proteome_pickle(config):
     # download the assembly data once
@@ -419,12 +419,11 @@ def download_ncbi_from_proteome_pickle(config):
     with open('failed_GCA.txt','w') as f:
         f.write('\n'.join(list(filter(None, failed))))
 
-    x = [v for k, v in export.proteomes.items() if 'ncbi_ids' in v]
     with mp.Pool(12) as pool:
-        d = [x for x in pool.imap_unordered(test, x)]
+        d = [x for x in pool.imap_unordered(extract_gca2taxon, [v for k, v in proteomes.items() if 'ncbi_ids' in v])]
 
     with open('{}{}'.format(config['export_dir'],config['relpath_gca2taxa']), 'w') as f:
-        [f.write('{}\t{}\n'.format(k,v)) for k, v in {dict(v['ncbi_ids']).get('GCSetAcc'):(v['tax_id'], taxontree.print_full_taxonomy(v['tax_id'])) for k, v in proteomes.items() if 'ncbi_ids' in v}.items()]
+        [f.write('{}\t{}\t{}\n'.format(gca, taxid, taxstr)) for gca, taxid, taxstr in d]
 
 def decompress(config, verbose):
     ls = glob.glob(config['download_base_dir']+config['relpath_reference_proteomes']+'/*')
