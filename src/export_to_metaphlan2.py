@@ -180,7 +180,10 @@ class export_to_metaphlan2:
             else:
                 markers = self.rank_markers(markers)
                 markers = markers[:100]
-                markers = markers.assign(tier = ['U']*len(markers))
+                if not self.taxontree.taxid_n[panproteome['tax_id']].is_low_quality:
+                    markers = markers.assign(tier = ['A']*len(markers))
+                else:
+                    markers = markers.assign(tier = ['U']*len(markers))
 
         return markers
 
