@@ -185,7 +185,7 @@ def create_uniref_dataset(xml, config):
 
                 upids.extend([(m[0],c[0]) for c in d.values() for m in c[2] if 'UPI' in m[0]])
                 idmap.update(dict.fromkeys(d.keys(), file_chunk))
-                # taxon_map.update({k:(set(t[:3] for t in v[2]), v[3:6]) for k,v in d.items()})
+                taxon_map.update({k:(set(t[:3] for t in v[2]), v[3:6]) for k,v in d.items()})
                 pickle.dump(d, open("{}/{}/{}/{}_{}.pkl".format(config['download_base_dir'], config['pickled_dir'], cluster, cluster, file_chunk),'wb'), -1)
         except Exception as e:
             utils.error(str(e))
@@ -197,8 +197,8 @@ def create_uniref_dataset(xml, config):
     with open("{}/{}/{}_idmap.pkl".format(config['download_base_dir'],config['pickled_dir'], cluster),'wb') as pickle_uniref_idmap:
         pickle.dump(idmap, pickle_uniref_idmap, -1)
 
-    # with open("{}/pickled/{}_taxid_idmap.pkl".format(config['download_base_dir'],cluster),'wb') as pickle_taxid_map:
-    #     pickle.dump(taxon_map, pickle_taxid_map, -1)
+    with open("{}/pickled/{}_taxid_idmap.pkl".format(config['download_base_dir'],cluster),'wb') as pickle_taxid_map:
+        pickle.dump(taxon_map, pickle_taxid_map, -1)
     if config['verbose']:
         utils.info('UniRef {} database processed successfully.\n'.format(cluster))
 

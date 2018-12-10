@@ -53,7 +53,7 @@ class chocophlan2phylophlan:
                                                         tax_id)
             if os.path.exists(fp):
                 panproteome = pickle.load(open(fp,'rb'))
-                taxa_str = self.taxontree.print_full_taxonomy(tax_id)
+                taxa_str = self.taxontree.print_full_taxonomy(tax_id)[0]
                 core_genes = Panproteome.find_core_genes(panproteome)
                 
                 d_out_core = (tax_id, taxa_str, core_genes)

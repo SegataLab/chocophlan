@@ -401,8 +401,8 @@ def download_ncbi_from_txt(input_file, config):
     with open('failed_GCA.txt','w') as f:
         f.write('\n'.join(failed))
 
-def extract_gca2taxon(v, taxontree=taxontree):
-    return (dict(v['ncbi_ids']).get('GCSetAcc').split('.')[0], v['tax_id'], taxontree.print_full_taxonomy(v['tax_id']))
+def extract_gca2taxon(v, taxontree):
+    return (dict(v['ncbi_ids']).get('GCSetAcc').split('.')[0], v['tax_id'], taxontree.print_full_taxonomy(v['tax_id'])[0])
 
 def download_ncbi_from_proteome_pickle(config):
     # download the assembly data once
@@ -419,6 +419,7 @@ def download_ncbi_from_proteome_pickle(config):
     with open('failed_GCA.txt','w') as f:
         f.write('\n'.join(list(filter(None, failed))))
 
+    partial_extract_gca2taxon = partial(extract_gca2taxon, taxontree=taxontree)
     with mp.Pool(12) as pool:
         d = [x for x in pool.imap_unordered(extract_gca2taxon, [v for k, v in proteomes.items() if 'ncbi_ids' in v])]
 

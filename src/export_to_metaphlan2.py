@@ -25,6 +25,7 @@ import pandas as pd
 import numpy as np
 import gffutils
 import resource
+import datetime
 import bz2
 from Bio import SeqIO
 from Bio.Alphabet import DNAAlphabet
@@ -102,7 +103,7 @@ class export_to_metaphlan2:
         if config['verbose']:
             utils.info('Finished.\n')
 
-    def extract_markers(self, panproteome, core_coreness_threshold=80, core_uniqueness_90_threshold=1, core_uniqueness_50_threshold=10):
+    def extract_markers(self, panproteome, core_coreness_threshold, core_uniqueness_90_threshold, core_uniqueness_50_threshold):
         pc_coreness_threshold = (core_coreness_threshold * panproteome['number_proteomes'])/100
         cores_to_use = {k:v['coreness'] for k,v in panproteome['members'].items() if v['coreness'] >= pc_coreness_threshold}
 
@@ -144,10 +145,10 @@ class export_to_metaphlan2:
         if panproteome['number_proteomes'] > 1 and not self.taxontree.taxid_n[panproteome['tax_id']].is_low_quality:
             markers = self.extract_markers(panproteome)
             if len(markers) >= 200:
-                markers = self.rank_markers(markers)
+                markers = self.rank_markers(markers, 80, 1, 5)
                 markers = markers[:150]
             else:
-                markers = self.extract_markers(panproteome, 70, 5, 30)
+                markers = self.extract_markers(panproteome, 70, 5, 10)
                 if len(markers) >= 150:
                     markers = self.rank_markers(markers)
                     markers = markers[:150]
@@ -230,7 +231,7 @@ class export_to_metaphlan2:
 
             nucls = []
             failed = []
-            taxonomy_db = '{}|t__{}'.format(taxonomy, gca)
+            taxonomy_db = '{}|t__{}'.format(taxonomy[0], gca)
             for core, gene_names, ext_species in t:
                 if type(gene_names) == tuple:
                     gene_names = [x[1] for x in gene_names]
@@ -262,7 +263,7 @@ class export_to_metaphlan2:
                     record = SeqIO.SeqRecord(seq=Seq(nuc_seq, alphabet=DNAAlphabet()), id=mpa_marker, description='UniRef90_{};{};{}'.format(core, taxonomy, gca))
                     nucls.append(record)
                     if taxonomy_db not in db['taxonomy']:
-                        db['taxonomy'][taxonomy_db] = sum(record.rlen for record in fna.faidx.index.values())
+                        db['taxonomy'][taxonomy_db] = (taxonomy[1], sum(record.rlen for record in fna.faidx.index.values()),)
                     ext_genomes = []
                     for x in ext_species:
                         cp = self.taxontree.get_child_proteomes(self.taxontree.taxid_n[x])
@@ -273,7 +274,7 @@ class export_to_metaphlan2:
                                               'ext': list(set(ext_genomes)),
                                               'len': len(record),
                                               'score': 0,
-                                              'taxon': taxonomy }
+                                              'taxon': taxonomy[0] }
                 else:
                     failed.append(str(core))
         if not len(failed): failed = None
@@ -377,6 +378,7 @@ class export_to_metaphlan2:
             else:
                 self.log.warning('No markers identified for species {}'.format(panproteome['tax_id']))
                 return panproteome['tax_id']
+
             if len(res):
                 markers_nucls, db, failed = zip(*res)
                 for x in db:
@@ -429,5 +431,7 @@ def run_all():
     with bz2.BZ2File('{}/{}/{}.pkl'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix), 'w') as outfile:
         pickle.dump(export.db, outfile, pickle.HIGHEST_PROTOCOL)
 
+
+        #######
     os.system('cat {}/{}/markers_fasta/*.fna > {}/{}/{}.fna'.format(config['export_dir'], config['exportpath_metaphlan2'],config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix))
     os.system('bowtie2-build {}/{}/{}.fna {}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix, config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix))

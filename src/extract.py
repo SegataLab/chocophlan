@@ -258,10 +258,22 @@ class Nodes:
         ranks2code = {'superkingdom': 'k', 'phylum': 'p', 'class': 'c',
                       'order': 'o', 'family': 'f', 'genus': 'g', 'species': 's', 'taxon': 't'}
         order = ('k', 'p', 'c', 'o', 'f', 'g', 's', 't')
-        path = [p for p in self.tree.root.get_path(self.taxid_n[tax_id]) if p.rank in ranks2code or (p.rank=='norank')]
+
+        # path = [p for p in self.tree.root.get_path(self.taxid_n[tax_id]) if p.rank in ranks2code or (p.rank=='norank')]
+        parent_tax_id = tax_id
+        path = []
+
+        while(parent_tax_id != 1):
+            curr_tax = self.taxid_n[parent_tax_id]
+            if curr_tax.rank in ranks2code or (curr_tax.rank=='norank'):
+                path.append(curr_tax)
+            parent_tax_id = curr_tax.parent_tax_id
+
+        path.reverse()
         if path[0].name == 'cellular_organisms':
             _ = path.pop(0)
-        taxa_str = []
+        taxa_str, taxa_ids = [], []
+
         hasSpecies = any([True if p.rank == 'species' else False for p in path])
         hasTaxon = any([True if (p.rank == 'norank' or p.rank == 'taxon') and p.initially_terminal else False for p in path])
 
@@ -277,36 +289,19 @@ class Nodes:
                 i-=1
         path = [p for p in path if p.rank != 'norank']
         taxa_str = ['{}__{}'.format(ranks2code[path[x].rank], path[x].name) for x in range(len(path)) if path[x].rank != 'norank']
+        taxa_ids = ['{}__{}'.format(ranks2code[path[x].rank], path[x].tax_id) for x in range(len(path)) if path[x].rank != 'norank']
 
         for x in range(len(order)-1) if not hasTaxon else range(len(order)):
             if x < len(taxa_str):
                 if not taxa_str[x].startswith(order[x]):
                     end_lvl = order.index(taxa_str[x][0])
-                    missing_levels = ['{}__{}_unclassified'.format(order[i], taxa_str[x-1][3:]) for i in range(x, end_lvl)]
-                    for i in range(len(missing_levels)):
-                        taxa_str.insert(x+i, missing_levels[i])
-
-        return '|'.join(taxa_str)
-        # for i in range(0, len(path)):
-        #     if path[i].rank in ranks2code and order.index(ranks2code[path[i].rank]) == order.index(ranks2code[path[i-1 if i > 0 else 0].rank])+ (1 if i > 0 else 0):
-        #         taxa_str.append('{}__{}'.format(ranks2code[path[i].rank], path[i].name))
-
-        #     elif order.index(ranks2code[path[i].rank])!=order.index(ranks2code[path[i-1].rank])+1:
-        #         for k in range(order.index(ranks2code[path[i-1].rank])+1, order.index(ranks2code[path[i].rank])+1):
-        #             taxa_str.append('{}__{}_unclassified'.format(order[k], path[i-1].name))
-        #     elif path[i].rank == 'norank':
-        #         if not path[i].initially_terminal:
-        #             if path[i+1].rank in ranks2code and order.index(ranks2code[path[i+1].rank])==order.index(ranks2code[path[i-1].rank])+1:
-        #                 continue
-        #             elif path[i+1].rank == 'norank':
-        #                 if path[i+1].tax_id != tax_id:
-        #                     continue 
-        #             else:
-        #                 taxa_str.append('{}__unclassified_{}'.format(order[order.index(ranks2code[path[i-1].rank])+1], path[i-1].name))
-        #         else:
-        #             if hasSpecies:
-        #                 taxa_str.append('{}__{}'.format(ranks2code['taxon'], path[i].name))
-        # return '|'.join(taxa_str)
+                    missing_levels_str = ['{}__{}_unclassified'.format(order[i], taxa_str[x-1][3:]) for i in range(x, end_lvl)]
+                    missing_levels_ids = ['{}__'.format(order[i]) for i in range(x, end_lvl)]
+                    for i in range(len(missing_levels_str)):
+                        taxa_str.insert(x+i, missing_levels_str[i])
+                        taxa_ids.insert(x+i, missing_levels_ids[i])
+        
+        return ('|'.join(taxa_str), '|'.join([t.split('__')[1] for t in taxa_ids]), )
         
     def print_tree(self, out_file_name, reduced=False):
 

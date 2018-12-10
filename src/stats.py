@@ -66,7 +66,7 @@ class Stats:
                 terminating.set()
                 raise
 
-            return { tax_id: ( self.taxontree.print_full_taxonomy(tax_id), 
+            return { tax_id: ( self.taxontree.print_full_taxonomy(tax_id)[0], 
                                islowquality,
                                number_proteomes, 
                                reference_proteomes, 
