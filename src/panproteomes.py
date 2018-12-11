@@ -151,7 +151,7 @@ class Panproteome:
         if cluster == 100:
             ranks_to_process = self.ranks[-1::]
         elif cluster == 90:
-            ranks_to_process = self.ranks[:3:-1]
+            ranks_to_process = self.ranks[-1::]
         else:
             ranks_to_process = self.ranks
         
@@ -164,7 +164,11 @@ class Panproteome:
         try:
             terminating_p = dummy.Event()
             with dummy.Pool(initializer=init_parse, initargs=(terminating_p, ), processes=100) as pool:
-                d = [_ for _ in pool.imap_unordered(self.process_panproteome, ((item, rank, cluster) for rank in ranks_to_process for item in self.d_ranks[rank] if self.taxontree.get_child_proteomes(item)), chunksize=50)]
+                d = [ _ for _ in pool.imap_unordered(self.process_panproteome, 
+                    ((item, rank, cluster) for rank in ranks_to_process 
+                                           for item in self.d_ranks[rank] 
+                                           if self.taxontree.get_child_proteomes(item)),
+                    chunksize=50)]
         except Exception as e:
             utils.error(str(e))
             raise

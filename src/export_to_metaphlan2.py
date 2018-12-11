@@ -143,9 +143,9 @@ class export_to_metaphlan2:
 
     def get_p_markers(self, panproteome):
         if panproteome['number_proteomes'] > 1 and not self.taxontree.taxid_n[panproteome['tax_id']].is_low_quality:
-            markers = self.extract_markers(panproteome)
+            markers = self.extract_markers(panproteome, 80, 1, 5)
             if len(markers) >= 200:
-                markers = self.rank_markers(markers, 80, 1, 5)
+                markers = self.rank_markers(markers)
                 markers = markers[:150]
             else:
                 markers = self.extract_markers(panproteome, 70, 5, 10)
