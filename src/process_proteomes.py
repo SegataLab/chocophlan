@@ -182,7 +182,6 @@ def create_uniref_dataset(xml, config):
         try:
             for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(uniref_xml), GROUP_CHUNK),1):
                 d={x[0]:x for x in pool.imap_unordered(parse_uniref_xml_elem_partial, group, chunksize=chunksize) if x is not None}
-
                 upids.extend([(m[0],c[0]) for c in d.values() for m in c[2] if 'UPI' in m[0]])
                 idmap.update(dict.fromkeys(d.keys(), file_chunk))
                 taxon_map.update({k:(set(t[:3] for t in v[2]), v[3:6]) for k,v in d.items()})

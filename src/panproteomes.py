@@ -116,29 +116,25 @@ class Panproteome:
                     else:
                         cluster_index = 0 if cluster == 100 else (1 if cluster == 90 else 2)
                         starting_clusters = self.__getattribute__('uniref{}_tax_id_map'.format(panproteome_cluster))
-                        files_to_load = [(pangene, starting_clusters.get('UniRef{}_{}'.format(panproteome_cluster, pangene), ['',['','','']])[1][cluster_index]) 
-                                            for pangene in uniref_panproteome['members'] if len(pangene)]
+                        files_to_load = [(pangene, starting_clusters.get( 'UniRef{}_{}'.format(panproteome_cluster, pangene),
+                                                                          ['',['','','']])[1][cluster_index]
+                                                                        )
+                                         for pangene in uniref_panproteome['members'] if len(pangene)]
 
                     destination_clusters = self.__getattribute__('uniref{}_tax_id_map'.format(cluster))
-                    try:
-                        for pangene, uniref_id in files_to_load:
-                            uniref_id = 'UniRef{}_{}'.format(cluster, uniref_id) if 'UniRef' not in uniref_id else uniref_id
-                            taxa_is_present = set(destination_clusters.get('{}'.format(uniref_id),[''])[0])
+                    for pangene, uniref_id in files_to_load:
+                        uniref_id = 'UniRef{}_{}'.format(cluster, uniref_id) if 'UniRef' not in uniref_id else uniref_id
+                        taxa_is_present = set(destination_clusters.get('{}'.format(uniref_id),[''])[0])
+                        external_hits = [x for x in taxa_is_present if x[1] not in item_descendant]
+                        external_species = set(self.taxontree.go_up_to_species(taxid) for upkb, taxid, isRef in external_hits)
+                        if None in external_species: external_species.remove(None)
+                        external_species_nosp = set(taxid for taxid in external_species if not self.taxontree.taxid_n[taxid].is_low_quality)
 
-                            external_hits = [x for x in taxa_is_present if x[1] not in item_descendant]
-                            external_species = set(self.taxontree.go_up_to_species(taxid) for upkb, taxid in external_hits)
-                            if None in external_species: external_species.remove(None)
-                            external_species_nosp = set(taxid for taxid in external_species if not self.taxontree.taxid_n[taxid].is_low_quality)
-
-                            uniref_panproteome['members'][pangene]['uniqueness']['{}_{}'.format(panproteome_cluster,cluster)] = len(external_species)
-                            uniref_panproteome['members'][pangene]['uniqueness_nosp']['{}_{}'.format(panproteome_cluster,cluster)] = len(external_species_nosp)
-                            uniref_panproteome['members'][pangene]['external_species']['{}_{}'.format(panproteome_cluster,cluster)] = external_species
-                            uniref_panproteome['members'][pangene]['external_species_nosp']['{}_{}'.format(panproteome_cluster,cluster)] = external_species_nosp
-                            uniref_panproteome['members'][pangene]['external_hits']['{}_{}'.format(panproteome_cluster,cluster)] = external_hits
-                    except Exception as e:
-                        print(e)
-                        print(item.tax_id)
-                        terminating.set()
+                        uniref_panproteome['members'][pangene]['uniqueness']['{}_{}'.format(panproteome_cluster,cluster)] = len(external_species)
+                        uniref_panproteome['members'][pangene]['uniqueness_nosp']['{}_{}'.format(panproteome_cluster,cluster)] = len(external_species_nosp)
+                        uniref_panproteome['members'][pangene]['external_species']['{}_{}'.format(panproteome_cluster,cluster)] = external_species
+                        uniref_panproteome['members'][pangene]['external_species_nosp']['{}_{}'.format(panproteome_cluster,cluster)] = external_species_nosp
+                        uniref_panproteome['members'][pangene]['external_hits']['{}_{}'.format(panproteome_cluster,cluster)] = external_hits
 
 
                 if len(uniref_panproteome):
