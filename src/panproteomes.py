@@ -142,7 +142,7 @@ class Panproteome:
 
 
                 if len(uniref_panproteome):
-                    stats.Stats.pangenes_stats(uniref_panproteome, config)
+                    stats.Stats.pangenes_stats(uniref_panproteome, self.config)
                     pickle.dump(uniref_panproteome, open('{}{}/{}/{}/{}.pkl'.format(self.config['download_base_dir'], self.config['relpath_panproteomes_dir'], rank, panproteome_cluster, item.tax_id),'wb'))
         else:
             terminating.set()
