@@ -153,7 +153,7 @@ class Stats:
                    'uniqueness_nosp_90' : panproteome['members'][pangene]['uniqueness_nosp']['90_90'],
                    'uniqueness_nosp_50' : panproteome['members'][pangene]['uniqueness_nosp']['90_50']
                   } for pangene, v in panproteome['members'].items() if len(pangene)}
-        res_df = pd.DataFrame(res).T.sort_values('coreness', ascending=False)
+        res_df = pd.DataFrame(res).T
         res_df.to_csv('{}/{}/{}.txt'.format(config['export_dir'], config['panproteomes_stats'], species), sep='\t')
 
 
