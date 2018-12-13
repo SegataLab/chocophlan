@@ -138,7 +138,7 @@ class Panproteome:
 
 
                 if len(uniref_panproteome):
-                    os.makedirs('{}/{}/'.format(config['export_dir'], config['panproteomes_stats']), exist_ok=True)
+                    os.makedirs('{}/{}/'.format(self.config['export_dir'], self.config['panproteomes_stats']), exist_ok=True)
                     stats.Stats.pangenes_stats(uniref_panproteome, self.config)
                     pickle.dump(uniref_panproteome, open('{}{}/{}/{}/{}.pkl'.format(self.config['download_base_dir'], self.config['relpath_panproteomes_dir'], rank, panproteome_cluster, item.tax_id),'wb'))
         else:
