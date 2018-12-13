@@ -102,6 +102,7 @@ class Panproteome:
                                                                    'copy_number': Counter(),
                                                                    'proteomes_present': set(),
                                                                    'external_hits' : {},
+                                                                   'external_genomes' : {},
                                                                    'external_species' : {},
                                                                    'external_species_nosp' : {}
                                                                  }
@@ -124,21 +125,22 @@ class Panproteome:
                     destination_clusters = self.__getattribute__('uniref{}_tax_id_map'.format(cluster))
                     for pangene, uniref_id in files_to_load:
                         uniref_id = 'UniRef{}_{}'.format(cluster, uniref_id) if 'UniRef' not in uniref_id else uniref_id
-                        taxa_is_present = set(destination_clusters.get('{}'.format(uniref_id),[''])[0])
+                        taxa_is_present = destination_clusters.get('{}'.format(uniref_id),[''])[0]
                         external_hits = [x for x in taxa_is_present if x[1] not in item_descendant]
-                        external_species = set(self.taxontree.go_up_to_species(taxid) for upkb, taxid, isRef in external_hits)
-                        if None in external_species: external_species.remove(None)
+                        external_genomes = Counter(self.taxontree.go_up_to_species(taxid) for _, taxid, _ in external_hits)
+                        if None in external_genomes: external_genomes.pop(None)
+                        external_species = list(external_genomes.keys())
                         external_species_nosp = set(taxid for taxid in external_species if not self.taxontree.taxid_n[taxid].is_low_quality)
 
                         uniref_panproteome['members'][pangene]['uniqueness']['{}_{}'.format(panproteome_cluster,cluster)] = len(external_species)
                         uniref_panproteome['members'][pangene]['uniqueness_nosp']['{}_{}'.format(panproteome_cluster,cluster)] = len(external_species_nosp)
                         uniref_panproteome['members'][pangene]['external_species']['{}_{}'.format(panproteome_cluster,cluster)] = external_species
                         uniref_panproteome['members'][pangene]['external_species_nosp']['{}_{}'.format(panproteome_cluster,cluster)] = external_species_nosp
+                        uniref_panproteome['members'][pangene]['external_genomes']['{}_{}'.format(panproteome_cluster,cluster)] = external_genomes
                         uniref_panproteome['members'][pangene]['external_hits']['{}_{}'.format(panproteome_cluster,cluster)] = external_hits
 
 
                 if len(uniref_panproteome):
-                    os.makedirs('{}/{}/'.format(self.config['export_dir'], self.config['panproteomes_stats']), exist_ok=True)
                     stats.Stats.pangenes_stats(uniref_panproteome, self.config)
                     pickle.dump(uniref_panproteome, open('{}{}/{}/{}/{}.pkl'.format(self.config['download_base_dir'], self.config['relpath_panproteomes_dir'], rank, panproteome_cluster, item.tax_id),'wb'))
         else:
@@ -157,7 +159,7 @@ class Panproteome:
 
         for k in ranks_to_process:
             os.makedirs('{}/{}/{}/{}'.format(self.config['download_base_dir'], self.config['relpath_panproteomes_dir'], k, cluster), exist_ok=True)
-    
+        
         try:
             terminating_p = dummy.Event()
             with dummy.Pool(initializer=init_parse, initargs=(terminating_p, ), processes=100) as pool:
@@ -165,7 +167,7 @@ class Panproteome:
                     ((item, rank, cluster) for rank in ranks_to_process 
                                            for item in self.d_ranks[rank] 
                                            if self.taxontree.get_child_proteomes(item)),
-                    chunksize=50)]
+                    chunksize=5000000)]
         except Exception as e:
             utils.error(str(e))
             raise
@@ -214,9 +216,10 @@ def generate_panproteomes(config):
     #LOAD ONLY taxid_cluster map of wanted clustering    
     for c in p.get_upper_clusters(max(clusters)):
         p.__setattr__('uniref{}_tax_id_map'.format(c), pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_uniref{}_taxid_idmap'.format(c)]),'rb')))
-
+    
+    os.makedirs('{}/{}/'.format(self.config['export_dir'], self.config['panproteomes_stats']), exist_ok=True)
     for cluster in clusters:
-        p.create_panproteomes(cluster)     
+        p.create_panproteomes(cluster)
 
 if __name__ == '__main__':
     t0 = time.time()

@@ -113,7 +113,10 @@ class export_to_metaphlan2:
                         'coreness_perc': (panproteome['members'][core]['coreness'] / panproteome['number_proteomes']),
                         'coreness': panproteome['members'][core]['coreness'],
                         'uniqueness_90' : panproteome['members'][core]['uniqueness_nosp']['90_90'],
-                        'uniqueness_50' : panproteome['members'][core]['uniqueness_nosp']['90_50']} for core in cores_to_use if len(core)
+                        'uniqueness_50' : panproteome['members'][core]['uniqueness_nosp']['90_50'],
+                        'external_genomes_90' : len([self.taxontree.go_up_to_species(taxid) for _, taxid, _ in panproteome['members'][core]['external_hits']['90_90']]),
+                        'external_genomes_50' : len([self.taxontree.go_up_to_species(taxid) for _, taxid, _ in panproteome['members'][core]['external_hits']['90_50']])}
+                        for core in cores_to_use if len(core)
                             if panproteome['members'][core]['uniqueness_nosp']['90_90'] <= core_uniqueness_90_threshold 
                             and panproteome['members'][core]['uniqueness_nosp']['90_50'] <= core_uniqueness_50_threshold]
 
@@ -123,7 +126,10 @@ class export_to_metaphlan2:
                         'coreness_perc': (panproteome['members'][core]['coreness'] / panproteome['number_proteomes']),
                         'coreness': panproteome['members'][core]['coreness'],
                         'uniqueness_90' : panproteome['members'][core]['uniqueness']['90_90'],
-                        'uniqueness_50' : panproteome['members'][core]['uniqueness']['90_50']} for core in cores_to_use if len(core)
+                        'uniqueness_50' : panproteome['members'][core]['uniqueness']['90_50'],
+                        'external_genomes_90' : len([self.taxontree.go_up_to_species(taxid) for _, taxid, _ in panproteome['members'][core]['external_hits']['90_90']]),
+                        'external_genomes_50' : len([self.taxontree.go_up_to_species(taxid) for _, taxid, _ in panproteome['members'][core]['external_hits']['90_50']])}
+                        for core in cores_to_use if len(core)
                             if panproteome['members'][core]['uniqueness']['90_90'] <= core_uniqueness_90_threshold 
                             and panproteome['members'][core]['uniqueness']['90_50'] <= core_uniqueness_50_threshold]
 

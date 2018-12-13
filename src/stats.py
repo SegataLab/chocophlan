@@ -150,11 +150,13 @@ class Stats:
                    'external_hits_90' : ';'.join(str(x) for x in panproteome['members'][pangene]['external_hits']['90_90']),
                    'uniqueness_90' : panproteome['members'][pangene]['uniqueness']['90_90'],
                    'uniqueness_50' : panproteome['members'][pangene]['uniqueness']['90_50'],
+                   'external_genomes_90' : ';'.join('{}:{}'.format(k,v) for k,v in panproteome['members'][pangene]['external_genomes']['90_90'].items()),
+                   'external_genomes_50' : ';'.join('{}:{}'.format(k,v) for k,v in panproteome['members'][pangene]['external_genomes']['90_50'].items()),
                    'uniqueness_nosp_90' : panproteome['members'][pangene]['uniqueness_nosp']['90_90'],
                    'uniqueness_nosp_50' : panproteome['members'][pangene]['uniqueness_nosp']['90_50']
                   } for pangene, v in panproteome['members'].items() if len(pangene)}
         res_df = pd.DataFrame(res).T
-        res_df.to_csv('{}/{}/{}.txt'.format(config['export_dir'], config['panproteomes_stats'], species), sep='\t')
+        res_df.to_csv('{}/{}/{}.txt.bz2'.format(config['export_dir'], config['panproteomes_stats'], species), sep='\t', compression='bz2')
 
 
     def stats(self):
