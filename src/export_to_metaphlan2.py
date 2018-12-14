@@ -94,7 +94,7 @@ class export_to_metaphlan2:
 
         for i in all_uniref_chunks:
             uniref90_chunk = pickle.load(open('{}/{}/uniref90/{}'.format(config['download_base_dir'], config['pickled_dir'], i),'rb'))
-            self.uniref90_taxid_map.update({k:(set(t[:3] for t in v[2]), v[3:6], len(v[6])) for k,v in uniref90_chunk.items()})
+            self.uniref90_taxid_map.update({k:(v[2],v[3:6],len(v[6])) for k,v in uniref90_chunk.items()})
 
         ## Check if export folder exists, if not, it creates it
         if not os.path.exists(self.exportpath):
@@ -136,6 +136,19 @@ class export_to_metaphlan2:
         markers = pd.DataFrame.from_dict(markers)
         if len(markers):
             markers = markers[((markers.len > 100) & (markers.len < 1500))]
+            markers = self.rank_markers(markers)
+            tiers = []
+            for row in markers.itertuples():
+                if ((row.coreness_perc >= 0.8) & (row.uniqueness_90 <= 1) & (row.uniqueness_50 <= 5)):
+                    tiers.append('A')
+                elif ((row.coreness_perc >= 0.7) & (row.uniqueness_90 <= 5) & (row.uniqueness_50 <= 10)):
+                    tiers.append('B')
+                elif (row.coreness_perc >= 0.5):    
+                    tiers.append('C')
+                else:
+                    print('aaaa')
+                    break
+            markers = markers.assign(tier = tiers)
         return markers
 
     def rank_markers(self, markers):
@@ -420,7 +433,7 @@ def run_all():
 
     config['exportpath_metaphlan2'] = config['exportpath_metaphlan2'] + '/' + outfile_prefix
 
-    species = glob.glob('{}/{}/species/90/*'.format(config['download_base_dir'], config['relpath_panproteomes_dir']))
+    species = glob.glob('{}/{}/species/90/*'.format(self.config['download_base_dir'], self.config['relpath_panproteomes_dir']))
     export = export_to_metaphlan2(config)
 
     with dummy.Pool(processes=30) as pool:

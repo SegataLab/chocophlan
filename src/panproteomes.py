@@ -55,10 +55,10 @@ class Panproteome:
         self.d_ranks = self.taxontree.lookup_by_rank()
 
         #LOAD ONLY taxid_cluster map of wanted clustering
-	    self.clusters = [int(x) for x in self.config['uniref_cluster_panproteomes'].split(',')]
-	
-	    for c in self.get_upper_clusters(max(self.clusters)):
-	        self.__setattr__('uniref{}_tax_id_map'.format(c), pickle.load(open('{}/{}'.format(self.config['download_base_dir'], self.config['relpath_pickle_uniref{}_taxid_idmap'.format(c)]),'rb')))
+        self.clusters = [int(x) for x in self.config['uniref_cluster_panproteomes'].split(',')]
+    
+        for c in self.get_upper_clusters(max(self.clusters)):
+            self.__setattr__('uniref{}_tax_id_map'.format(c), pickle.load(open('{}/{}'.format(self.config['download_base_dir'], self.config['relpath_pickle_uniref{}_taxid_idmap'.format(c)]),'rb')))
 
         os.makedirs('{}/{}/'.format(self.config['export_dir'], self.config['panproteomes_stats']), exist_ok=True)
 
@@ -177,44 +177,13 @@ class Panproteome:
         #     raise
 
         for rank in ranks_to_process:
-			for item in self.d_ranks[rank]:
-				if self.taxontree.get_child_proteomes(item)):
-					self.process_panproteome((item, rank, cluster))
+            for item in self.d_ranks[rank]:
+                if self.taxontree.get_child_proteomes(item):
+                    self.process_panproteome((item, rank, cluster))
 
     @staticmethod
     def find_core_genes(panproteome):
         return Counter({gene:panproteome['members'][gene]['coreness'] for gene, _ in filter(lambda gene:gene[1]['coreness'] >= panproteome['coreness_threshold'], panproteome['members'].items())})
-
-    def extract_protein_sequence(self, items):
-        if not terminating.is_set():
-            chunk, ids = items
-            cluster = ids[0].split('_')[0]
-            with open('{}/{}/{}_{}'.format(self.config['download_base_dir'], config['pickled_dir'], cluster, chunk), 'rb') as pickled_chunk:
-                uniprot_chunk = pickle.load(pickled_chunk)
-            entries = itemgetter(*ids)(uniprot_chunk)
-            seqs = [itemgetter(0,2)(i) for i in entries]
-            with open(outputdir,'w') as w_out:
-                wout.writelines(['>{}\n{}\n'.format(s[0],s[1]) for s in seqs])
-        else:
-            terminating.set()
-
-
-    @staticmethod
-    def export_panproteome_fasta(panproteome):
-        # with open('export/{}_uniref{}_panproteome.txt'.format(panproteome['tax_id'], panproteome['cluster'])) as export:
-        pass
-        files_to_load = itemgetter(*filter(None,panproteome['members'].keys()))(self.uniref90)
-        cluster = panproteome['cluster']
-        d_files_to_load = {}
-        for up_id, chunk in zip(panproteome['members'].keys(), files_to_load):
-            if chunk not in d_files_to_load:
-                d_files_to_load[chunk] = []
-            d_files_to_load[chunk].append('UniRef{}_{}'.format(cluster, up_id))
-
-        terminating = dummy.Event()
-        with dummy.Pool(initializer = init_parse, initargs = (terminating, ), processes = len(d_files_to_load.keys())) as pool:
-            result = [pangene for pangene in pool.imap_unordered(extract_protein_sequence, d_files_to_load.items())]
-
 
 def generate_panproteomes(config):
     p = Panproteome(config)
