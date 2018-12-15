@@ -22,13 +22,10 @@ import multiprocessing.dummy as mpdummy
 import glob
 import time
 import sys
-import requests
-import asyncio
 import concurrent.futures
 from itertools import zip_longest
 from lxml import etree
 from functools import partial
-# from blist import sorteddict
 import traceback
 
 kingdom_to_process = ['Bacteria','Archaea', 'Eukaryota']
