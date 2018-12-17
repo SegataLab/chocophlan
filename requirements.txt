@@ -1,0 +1,6 @@
+numpy
+pandas
+lxml
+pyfaidx
+biopython
+gffutils
