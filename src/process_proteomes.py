@@ -28,12 +28,8 @@ from lxml import etree
 from functools import partial
 import traceback
 
-kingdom_to_process = ['Bacteria','Archaea', 'Eukaryota']
-genus_to_process = ['Candida', 'Blastocystis', 'Saccharomyces']
-dbReference = ['EMBL','EnsemblBacteria','GeneID','GO','KEGG','KO','Pfam','Proteomes', 'EC', 'eggNOG']
-ns = {'upkb' : 'http://uniprot.org/uniprot', 'nr' : 'http://uniprot.org/uniref'}
+ns = {'upkb' : 'http://uniprot.org/uniprot', 'nr' : 'http://uniprot.org/uniref', 'up' : 'http://uniprot.org/uniparc'}
 GROUP_CHUNK = 1000000
-API_SIZE = 10
 
 taxid_to_process = set()
 uniprotkb_uniref_idmap = {}
@@ -103,9 +99,9 @@ def parse_uniref_xml_elem(elem, config):
             nr_id = ''.join(elem.xpath("/nr:entry/@id", namespaces=ns))
             common_taxid = ''.join(elem.xpath("/nr:entry/nr:property[@type='common taxon ID']/@value", namespaces=ns))
             common_taxid = int(common_taxid) if len(common_taxid) else common_taxid
-            UniRef100 = ''.join(set(elem.xpath("(/nr:entry/nr:member|nr:representativeMember)/nr:dbReference/nr:property[@type='UniRef100 ID']/@value", namespaces = ns)))
-            UniRef90 = ''.join(set(elem.xpath("(/nr:entry/nr:member|nr:representativeMember)/nr:dbReference/nr:property[@type='UniRef90 ID']/@value", namespaces = ns)))
-            UniRef50 = ''.join(set(elem.xpath("(/nr:entry/nr:member|nr:representativeMember)/nr:dbReference/nr:property[@type='UniRef50 ID']/@value", namespaces = ns)))
+            UniRef100 = ''.join(set(elem.xpath("(/nr:entry/nr:member|nr:representativeMember)/nr:dbReference/nr:property[@type='UniRef100 ID']/@value", namespaces = ns)))[10:]
+            UniRef90 = ''.join(set(elem.xpath("(/nr:entry/nr:member|nr:representativeMember)/nr:dbReference/nr:property[@type='UniRef90 ID']/@value", namespaces = ns)))[9:]
+            UniRef50 = ''.join(set(elem.xpath("(/nr:entry/nr:member|nr:representativeMember)/nr:dbReference/nr:property[@type='UniRef50 ID']/@value", namespaces = ns)))[9:]
             xml_all_members = elem.xpath("/nr:entry/nr:member|nr:representativeMember",namespaces=ns)
 
             for member in xml_all_members:
@@ -199,10 +195,10 @@ def parse_uniprotkb_xml_elem(elem, config):
             tax_id = ''.join(elem.xpath("/upkb:entry/upkb:organism/upkb:dbReference[@type='NCBI Taxonomy']/@id", namespaces=ns))
             tax_id = int(tax_id) if len(tax_id) else tax_id
             if is_taxon_processable(tax_id):
-                accession = elem.xpath("/upkb:entry/upkb:accession[1]/text()", namespaces=ns)[0]
+                accession = ''.join(elem.xpath("/upkb:entry/upkb:accession[1]/text()", namespaces=ns))
                 gene = elem.xpath("/upkb:entry/upkb:gene/upkb:name/@type|/upkb:entry/upkb:gene/upkb:name/text()", namespaces=ns)
                 gene = tuple(zip(gene[0::2], gene[1::2]))
-                
+                nr_ids = uniprotkb_uniref_idmap.get(accession,['','',''])
                 t_prot = (accession,  #0
                           tax_id,      #1
                           elem.xpath("/upkb:entry/upkb:sequence/text()", namespaces=ns)[0],   #2
@@ -217,9 +213,9 @@ def parse_uniprotkb_xml_elem(elem, config):
                           tuple(int(x[2:]) for x in elem.xpath("/upkb:entry/upkb:dbReference[@type='Pfam']/@id", namespaces=ns)),        #11
                           tuple(elem.xpath("/upkb:entry/upkb:dbReference[@type='EC']/@id", namespaces=ns)),
                           tuple(elem.xpath("/upkb:entry/upkb:dbReference[@type='eggNOG']/@id", namespaces=ns)),
-                          uniprotkb_uniref_idmap.get(accession,['','',''])[0],
-                          uniprotkb_uniref_idmap.get(accession,['','',''])[1],
-                          uniprotkb_uniref_idmap.get(accession,['','',''])[2]
+                          nr_ids[0],
+                          nr_ids[1],
+                          nr_ids[2]
                         )
                 elem.clear()
                 for ancestor in elem.xpath('ancestor-or-self::*'):
@@ -227,7 +223,7 @@ def parse_uniprotkb_xml_elem(elem, config):
                         del ancestor.getparent()[0]
                 return(t_prot)
         except Exception as e:
-            utils.error('Failed to elaborate item: '+ elem.find('.//{}accession'.format(nsprefix)).text)
+            utils.error('Failed to elaborate item: ' + ''.join(elem.xpath("/upkb:entry/upkb:accession[1]/text()", namespaces=ns)))
             terminating.set()
     
 def parse_uniprotkb_xml(xml_input, config):
@@ -274,33 +270,25 @@ def parse_uniparc_xml_elem(elem, config):
     if elem is not None:
         elem = etree.fromstring(elem)
         try:
-            d_prot = {}
-            d_prot['accession'] = elem.find('.//{}accession'.format(nsprefix)).text
-            d_prot['sequence'] = elem.find('.//{}sequence'.format(nsprefix)).text.replace('\n','')
-            active_entries = elem.findall('.//{}dbReference[@active="Y"]'.format(nsprefix))
-            d_prot['uniprotkb_ids'] = list(set(x.get('id') for x in active_entries if 'UniProtKB' in x.get('type')))
-            entry_with_protid = [x for x in active_entries for y in x.iterchildren('{http://uniprot.org/uniparc}property') if y.get('type') == 'proteome_id']
-            d_prot['Proteomes'] = set()
+            accession = ''.join(elem.xpath("/up:entry/up:accession/text()", namespaces=ns))
+            uniprotkb_ids = list(set(elem.xpath("/up:entry/up:dbReference[@active='Y' and starts-with(@type, 'UniProtKB')]/@id", namespaces=ns)))
+            entry_with_protid = [x for x in elem.xpath("/up:entry/up:dbReference[@active='Y']", namespaces=ns) for y in x.iterchildren('{http://uniprot.org/uniparc}property') if y.get('type') == 'proteome_id']
+            proteomes = set()
             for entry in entry_with_protid:
-                gene_name, proteome_id = '', ''
-                tax_id = None
-                for p in entry:
-                    if p.get('type') == 'proteome_id':
-                        proteome_id = int(p.get('value')[2:])
-                    elif p.get('type') == 'NCBI_taxonomy_id':
-                        tax_id = int(p.get('value'))
-                    elif p.get('type') == 'gene_name':
-                        gene_name = p.get('value')
-                if tax_id is not None and is_taxon_processable(tax_id):
-                    d_prot['Proteomes'].add((proteome_id, tax_id, gene_name))
+                proteome_id = int(''.join(entry.xpath("./up:property[@type = 'proteome_id']/@value", namespaces=ns))[2:])
+                tax_id = ''.join(entry.xpath("./up:property[@type = 'NCBI_taxonomy_id']/@value", namespaces=ns))
+                gene_name = ''.join(entry.xpath("./up:property[@type = 'gene_name']/@value", namespaces=ns))
+                if len(tax_id) and is_taxon_processable(int(tax_id)):
+                    proteomes.add((proteome_id, int(tax_id), gene_name))
 
-            t_prot = (d_prot.get('accession'),  
-                      tuple(d_prot.get('Proteomes',[])),
-                      d_prot.get('sequence'),
-                      uniprotkb_uniref_idmap.get(d_prot.get('accession'),['','',''])[0],
-                      uniprotkb_uniref_idmap.get(d_prot.get('accession'),['','',''])[1],
-                      uniprotkb_uniref_idmap.get(d_prot.get('accession'),['','',''])[2],
-                      d_prot.get('uniprotkb_ids',[])
+            nr_ids = uniprotkb_uniref_idmap.get(accession,['','',''])
+            t_prot = ( accession, 
+                       tuple(proteomes),
+                       ''.join(elem.xpath("/up:entry/up:sequence/text()", namespaces=ns)).replace('\n',''),
+                       nr_ids[0],
+                       nr_ids[1],
+                       nr_ids[2],
+                       uniprotkb_ids
                      )
             elem.clear()
             for ancestor in elem.xpath('ancestor-or-self::*'):
@@ -427,7 +415,7 @@ def parse_proteomes_xml_elem(elem, config):
         elem = etree.fromstring(elem)
         try:
             d_prot = {}
-            taxid = int(elem.attrib['taxonomy'])
+            taxid = int(''.join(elem.xpath('@taxonomy')))
             upi = True if len(list(elem.iterchildren(tag='redundantTo'))) else False
             if is_taxon_processable(taxid):
                 accession = elem.attrib['upid']
