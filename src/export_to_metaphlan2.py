@@ -33,6 +33,7 @@ from Bio.Seq import Seq
 from pyfaidx import  Fasta
 from tempfile import NamedTemporaryFile
 from operator import itemgetter
+import subprocess as sb
 
 if __name__ == '__main__':
     import utils
@@ -44,6 +45,10 @@ else:
 def init_parse(terminating_):
     global terminating
     terminating = terminating_
+
+def log_result(retval):
+    # This is called whenever foo_pool(i) returns a result.
+    failed.append(retval)
 
 class CodeTimer:
     def __init__(self, logger, name=None, debug=False):
@@ -282,11 +287,9 @@ class export_to_metaphlan2:
     Use centroid of UniRef90 as plausible marker
     """
     def get_uniref_uniprotkb_from_panproteome(self, panproteome):
-        # with CodeTimer(name='Panproteome loading', debug=self.debug, logger=self.log):
         panproteome = pickle.load(open(panproteome, 'rb')) 
         pp_tax_id = panproteome['tax_id']
 
-        # with CodeTimer(name='Panproteome taxonomy extraction', debug=self.debug, logger=self.log):
         try:
             taxonomy = self.taxontree.print_full_taxonomy(pp_tax_id)
             # print(taxonomy)
@@ -297,7 +300,6 @@ class export_to_metaphlan2:
                 self.log.error('CRITICAL ERROR: {}'.format(pp_tax_id))
                 self.log.error(traceback.format_exc())
                 raise ex
-        # with CodeTimer(name='Marker extraction', debug=self.debug, logger=self.log):
         if pp_tax_id == 562:
             possible_markers = self.get_ecoli_markers(panproteome)
         else:
@@ -305,7 +307,6 @@ class export_to_metaphlan2:
         gc = {}
         upid = ""
         res = []
-        # with CodeTimer(name='Marker to gene extraction', debug=self.debug, logger=self.log):
         for np90_marker in possible_markers.gene:
             np90_members = self.uniref90_taxid_map['UniRef90_{}'.format(np90_marker)][0]
             for m in np90_members:
@@ -370,34 +371,35 @@ class export_to_metaphlan2:
 
             markers_nucls, db, failed, res = [], {}, [], []
             if len(gc):
-                # with CodeTimer(name='Sequence extraction', debug=self.debug, logger=self.log):
-                with dummy.Pool(processes=3) as pool:
-                    res = [_ for _ in pool.imap_unordered(self.get_uniref90_nucl_seq, gc.items(), chunksize=10) if _ is not None]
+                for item in gc.items():
+                    res = self.get_uniref90_nucl_seq(item)
+                    if res is not None:
+                        res_markers_nucls, res_db, res_failed = res
+                        failed.extend(res_failed)
+                        for x in res_db:
+                            if x is not None:
+                                self.db['taxonomy'].update(x['taxonomy'])
+                                self.db['markers'].update(x['markers'])
+                        markers_nucls.extend([marker.format('fasta') for marker in filter(None,res_markers_nucls)])
+                    # res.append(self.get_uniref90_nucl_seq(item))
+                # with dummy.Pool(processes=3) as pool:
+                #     for res in pool.imap_unordered(self.get_uniref90_nucl_seq, gc.items(), chunksize=10):
+
             else:
                 self.log.warning('No markers identified for species {}'.format(panproteome['tax_id']))
                 return panproteome['tax_id']
-
-            if len(res):
-                markers_nucls, db, failed = zip(*res)
-                for x in db:
-                    if x is not None:
-                        self.db['taxonomy'].update(x['taxonomy'])
-                        self.db['markers'].update(x['markers'])
-                markers_nucls = [marker.format('fasta') for marker in itertools.chain.from_iterable(filter(None,markers_nucls))]
             
             #create export/markers_fasta
             if failed is not None and not all(x is None for x in failed):
                 failed = list(filter(None, failed))[0]
                 self.log.warning("{}: Failed to find features of markers {}".format(pp_tax_id, (','.join(failed))))
             if len(markers_nucls):
-                # with CodeTimer(name='FNA export', debug=self.debug, logger=self.log):
                 with open('{}/{}/markers_fasta/{}.fna'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']), 'wt') as fasta_markers:
                     fasta_markers.write(''.join(markers_nucls))
         if len(gc):
-            # with CodeTimer(name='Pickling markers info', debug=self.debug, logger=self.log):
             pickle.dump(gc, open('{}/{}/markers_info/{}.txt'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']), 'wb'))
-        # with CodeTimer(name='Save marker stats', debug=self.debug, logger=self.log):
         possible_markers.to_csv('{}/{}/markers_stats/{}.txt'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']))
+
 
 def run_all(): 
     config = utils.read_configs('settings.cfg')
@@ -415,12 +417,12 @@ def run_all():
     species = glob.glob('{}/{}/species/90/*'.format(config['download_base_dir'], config['relpath_panproteomes_dir']))
     export = export_to_metaphlan2(config)
 
-    # failed = map(export.get_uniref_uniprotkb_from_panproteome, species)
-    # for s in species:
-    #     failed.append(export.get_uniref_uniprotkb_from_panproteome(s))
-    with dummy.Pool(processes=30) as pool:
-        failed = [x for x in pool.imap(export.get_uniref_uniprotkb_from_panproteome, species, chunksize=200000)]
-   
+    failed = []
+    pool = dummy.Pool(processes=30)
+    res = [ pool.apply_async(export.get_uniref_uniprotkb_from_panproteome, args = (s,), callback=log_result) for s in species ]
+    pool.close()
+    pool.join()
+
     with open('{}/{}/failed_markers.txt'.format(config['export_dir'], config['exportpath_metaphlan2']), 'wt') as ofn_failed:
         ofn_failed.writelines('\n'.join(str(x) for x in filter(None, failed)))
 
@@ -434,5 +436,7 @@ def run_all():
 
 
     #######
-    os.system('cat {}/{}/markers_fasta/*.fna > {}/{}/{}.fna'.format(config['export_dir'], config['exportpath_metaphlan2'],config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix))
-    os.system('bowtie2-build {}/{}/{}.fna {}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix, config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix))
+    merge_comm = 'cat {}/{}/markers_fasta/*.fna > {}/{}/{}.fna'.format(config['export_dir'], config['exportpath_metaphlan2'],config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix)
+    bwt2b_comm = 'bowtie2-build {}/{}/{}.fna {}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix, config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix)
+    sb.run(merge_comm.split())
+    sb.run(bwt2b_comm.split(), stderr = sb.DEVNULL, stdout = sb.DEVNULL, check = True)

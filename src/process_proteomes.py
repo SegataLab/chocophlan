@@ -186,7 +186,7 @@ def create_uniref_dataset(xml, config):
 #  9 KO
 # 10 KEGG
 # 11 Pfam
-def parse_uniprotkb_xml_elem(elem, config):
+def parse_uniprotkb_xml_elem(elem):
     if not terminating.is_set() and elem is not None:
         global uniprotkb_uniref_idmap, taxid_to_process
         elem = etree.fromstring(elem)
@@ -230,7 +230,7 @@ def parse_uniprotkb_xml(xml_input, config):
     terminating = mp.Event()
     chunksize = int(config['nproc'])
 
-    db= -1 if 'uniprot_sprot' in xml_input else +1
+    db = -1 if 'uniprot_sprot' in xml_input else +1
     db_name = 'sprot' if db == -1 else 'trembl'
 
     if not os.path.exists("{}/{}/{}".format(config['download_base_dir'], config['pickled_dir'], 'uniprotkb')):
@@ -241,26 +241,24 @@ def parse_uniprotkb_xml(xml_input, config):
     
     tree = etree.iterparse(gzip.GzipFile(xml_input), events = ('end',), tag = '{http://uniprot.org/uniprot}entry', huge_tree = True)
 
-    idmap = {}
-    d = {}
-    parse_uniprotkb_xml_elem_partial = partial(parse_uniprotkb_xml_elem, config=config)
-    
-    with mpdummy.Pool(initializer=initt, initargs=(terminating, ), processes=chunksize) as pool:
-        for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(tree), GROUP_CHUNK),1):
-            d = {x[0]:x for x in pool.imap_unordered(parse_uniprotkb_xml_elem_partial, group, chunksize=chunksize) if x is not None}
-            try:
-                if len(d):
-                    idmap.update(dict.fromkeys(d.keys(), db*file_chunk))
-                    with open("{}/{}/uniprotkb/{}_{}.pkl".format(config['download_base_dir'], config['pickled_dir'], db_name, file_chunk),'wb') as pickle_chunk:
-                        pickle.dump(d, pickle_chunk, -1)
-            except Exception as e:
-                utils.error(str(e))
-                print(traceback.format_exc())
-                utils.error('Processing of {} failed.'.format(xml_input),  exit=True)
-                raise
-    if len(idmap):
-        with open("{}/{}/uniprotkb_{}_idmap.pkl".format(config['download_base_dir'], config['pickled_dir'], db_name),'wb') as pickle_idmap:
-            pickle.dump(idmap, pickle_idmap, -1)
+    with mpdummy.Pool(initializer=initt, initargs=(terminating, ), processes=chunksize) as pool, \
+         open("{}/{}/uniprotkb_{}_idmap.pkl".format(config['download_base_dir'], config['pickled_dir'], db_name),'ab') as pickle_idmap:
+        try:
+            file_chunk = 1
+            pickle_chunk = open("{}/{}/uniprotkb/{}_{}.pkl".format(config['download_base_dir'], config['pickled_dir'], db_name, file_chunk),'ab')
+            for index, elem in enumerate(pool.imap_unordered(parse_uniprotkb_xml_elem, yield_filtered_xml_string(tree)),1):
+                if not index % GROUP_CHUNK:
+                    pickle_chunk.close()
+                    file_chunk = index//GROUP_CHUNK 
+                    pickle_chunk = open("{}/{}/uniprotkb/{}_{}.pkl".format(config['download_base_dir'], config['pickled_dir'], db_name, file_chunk,'ab'))
+                pickle.dump(elem, pickle_chunk, -1)
+                pickle.dump((elem[0], file_chunk,), pickle_idmap, -1)
+        except Exception as e:
+            utils.error(str(e))
+            utils.error('Processing of {} failed.'.format(xml_input),  exit=True)
+            raise
+        finally:
+            pickle_chunk.close()
     if config['verbose']:
         utils.info('Done processing {} file!\n'.format(xml_input))
 
