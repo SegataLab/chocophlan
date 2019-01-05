@@ -11,6 +11,8 @@ __date__ = '03 Oct 2017'
 
 import os
 import sys
+import pickle
+import pickletools
 import argparse as ap
 import configparser as cp
 
@@ -143,3 +145,6 @@ def trim_trailing_slashes(input_string):
         error('Supplied object not a string\n    {}'.format(input_string),
               init_new_line=True, exit=True)
         raise
+
+def optimized_dump(fout, elem):
+    fout.write(pickletools.optimize(pickle.dumps(elem, pickle.HIGHEST_PROTOCOL)))

@@ -371,19 +371,35 @@ class export_to_metaphlan2:
 
             markers_nucls, db, failed, res = [], {}, [], []
             if len(gc):
-                for item in gc.items():
-                    res = self.get_uniref90_nucl_seq(item)
-                    if res is not None:
-                        res_markers_nucls, res_db, res_failed = res
-                        failed.extend(res_failed)
-                        for x in res_db:
-                            if x is not None:
-                                self.db['taxonomy'].update(x['taxonomy'])
-                                self.db['markers'].update(x['markers'])
-                        markers_nucls.extend([marker.format('fasta') for marker in filter(None,res_markers_nucls)])
+                # for item in gc.items():
+                #     res = self.get_uniref90_nucl_seq(item)
+                #     if res is not None:
+                #         res_markers_nucls, res_db, res_failed = res
+                #         failed.extend(res_failed)
+                #         for x in res_db:
+                #             if x is not None:
+                #                 self.db['taxonomy'].update(x['taxonomy'])
+                #                 self.db['markers'].update(x['markers'])
+                #         markers_nucls.extend([marker.format('fasta') for marker in filter(None,res_markers_nucls)])
                     # res.append(self.get_uniref90_nucl_seq(item))
                 # with dummy.Pool(processes=3) as pool:
-                #     for res in pool.imap_unordered(self.get_uniref90_nucl_seq, gc.items(), chunksize=10):
+                #     for res in pool.imap_unordered(self.get_uniref90_nucl_seq, gc.items()):
+                #         if res is not None:
+                #             res_markers_nucls, res_db, res_failed = res
+                #             failed.extend(res_failed)
+                #             for x in res_db:
+                #                 if x is not None:
+                #                     self.db['taxonomy'].update(x['taxonomy'])
+                #                     self.db['markers'].update(x['markers'])
+                #             markers_nucls.extend([marker.format('fasta') for marker in filter(None,res_markers_nucls)])
+                with dummy.Pool(processes=3) as pool:
+                    res = [_ for _ in pool.imap_unordered(self.get_uniref90_nucl_seq, gc.items(), chunksize=10) if _ is not None]
+                if len(res):
+                    markers_nucls, db, failed = zip(*res)
+                    for x in db:
+                        self.db['taxonomy'].update(x['taxonomy'])
+                        self.db['markers'].update(x['markers'])
+                    markers_nucls = [marker.format('fasta') for marker in itertools.chain.from_iterable(markers_nucls)]
 
             else:
                 self.log.warning('No markers identified for species {}'.format(panproteome['tax_id']))
@@ -418,10 +434,15 @@ def run_all():
     export = export_to_metaphlan2(config)
 
     failed = []
-    pool = dummy.Pool(processes=30)
-    res = [ pool.apply_async(export.get_uniref_uniprotkb_from_panproteome, args = (s,), callback=log_result) for s in species ]
-    pool.close()
-    pool.join()
+    # for s in species:
+    #     failed.append(export.get_uniref_uniprotkb_from_panproteome(s))
+    with dummy.Pool(processes=30) as pool:
+        failed = [x for x in pool.imap(export.get_uniref_uniprotkb_from_panproteome, species, chunksize=200000)]
+
+    # pool = dummy.Pool(processes=150)
+    # res = [ pool.apply_async(export.get_uniref_uniprotkb_from_panproteome, args = (s,), callback=log_result) for s in species ]
+    # pool.close()
+    # pool.join()
 
     with open('{}/{}/failed_markers.txt'.format(config['export_dir'], config['exportpath_metaphlan2']), 'wt') as ofn_failed:
         ofn_failed.writelines('\n'.join(str(x) for x in filter(None, failed)))
