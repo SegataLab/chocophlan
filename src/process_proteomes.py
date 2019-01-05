@@ -27,6 +27,7 @@ from itertools import zip_longest
 from lxml import etree
 from functools import partial
 import traceback
+import xxhash as hash
 
 ns = {'upkb' : 'http://uniprot.org/uniprot', 'nr' : 'http://uniprot.org/uniref', 'up' : 'http://uniprot.org/uniparc'}
 GROUP_CHUNK = 1000000
@@ -89,7 +90,7 @@ def uniprot_tuple_to_dict(v):
              'UniRef50' : v[16]
             }
 
-def parse_uniref_xml_elem(elem, config):
+def parse_uniref_xml_elem(elem):
     if not terminating.is_set() and elem is not None:
         elem = etree.fromstring(elem)
         members = []
@@ -149,11 +150,10 @@ def create_uniref_dataset(xml, config):
     taxon_map = {}
     upids = []
 
-    parse_uniref_xml_elem_partial = partial(parse_uniref_xml_elem, config=config)
     with mp.Pool(initializer=initt, initargs=(terminating, ), processes=chunksize) as pool:
         try:
             for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(uniref_xml), GROUP_CHUNK),1):
-                d={x[0]:x for x in pool.imap_unordered(parse_uniref_xml_elem_partial, group, chunksize=chunksize) if x is not None}
+                d={x[0]:x for x in pool.imap_unordered(parse_uniref_xml_elem, group, chunksize=chunksize) if x is not None}
                 upids.extend([(m[0],c[0]) for c in d.values() for m in c[2] if 'UPI' in m[0]])
                 idmap.update(dict.fromkeys(d.keys(), file_chunk))
                 taxon_map.update({k:(set(t[:3] for t in v[2]), v[3:6]) for k,v in d.items()})
@@ -186,7 +186,7 @@ def create_uniref_dataset(xml, config):
 #  9 KO
 # 10 KEGG
 # 11 Pfam
-def parse_uniprotkb_xml_elem(elem, config):
+def parse_uniprotkb_xml_elem(elem):
     if not terminating.is_set() and elem is not None:
         global uniprotkb_uniref_idmap, taxid_to_process
         elem = etree.fromstring(elem)
@@ -242,12 +242,14 @@ def parse_uniprotkb_xml(xml_input, config):
     tree = etree.iterparse(gzip.GzipFile(xml_input), events = ('end',), tag = '{http://uniprot.org/uniprot}entry', huge_tree = True)
 
     idmap = {}
-    d = {}
-    parse_uniprotkb_xml_elem_partial = partial(parse_uniprotkb_xml_elem, config=config)
-    
+    d = [None] * GROUP_CHUNK
+
     with mpdummy.Pool(initializer=initt, initargs=(terminating, ), processes=chunksize) as pool:
         for file_chunk, group in enumerate(grouper(yield_filtered_xml_string(tree), GROUP_CHUNK),1):
-            d = {x[0]:x for x in pool.imap_unordered(parse_uniprotkb_xml_elem_partial, group, chunksize=chunksize) if x is not None}
+            for x in pool.imap_unordered(parse_uniprotkb_xml_elem, group, chunksize=chunksize):
+                element_unique_id = x[0]
+                element_index = int(hash.xxh64(element_unique_id).intdigest()) % GROUP_CHUNK
+                d[ element_index ] = x
             try:
                 if len(d):
                     idmap.update(dict.fromkeys(d.keys(), db*file_chunk))
@@ -416,21 +418,22 @@ def parse_proteomes_xml_elem(elem, config):
         try:
             d_prot = {}
             taxid = int(''.join(elem.xpath('@taxonomy')))
-            upi = True if len(list(elem.iterchildren(tag='redundantTo'))) else False
+            upi = True if len(elem.xpath('./redundantTo')) else False
             if is_taxon_processable(taxid):
-                accession = elem.attrib['upid']
+                accession = ''.join(elem.xpath('@upid'))
                 d_prot[accession] = {}
-                d_prot[accession]['members'] = []
                 d_prot[accession]['upi'] = upi
                 d_prot[accession]['tax_id'] = taxid
-                d_prot[accession]['isReference'] = True if elem.getchildren()[2].text == 'true' else False
-                d_prot[accession]['ncbi_ids'] = [(c.get('type'),c.get('id')) for c in elem.iterchildren(tag='dbReference')]
-                if not upi:
-                    d_prot[accession]['members'] = [x.get('accession') for k in elem.iterchildren(tag='component') for x in k.iterchildren(tag='protein')]
+                d_prot[accession]['isReference'] = True if elem.xpath('./isReferenceProteome/text()') == ['true'] else False
+                d_prot[accession]['ncbi_ids'] = elem.xpath('./dbReference/@type|./dbReference/@id')
+                d_prot[accession]['ncbi_ids'] = list(zip(d_prot[accession]['ncbi_ids'][0::2],d_prot[accession]['ncbi_ids'][1::2]))
+                d_prot[accession]['members'] = elem.xpath('./component/protein/@accession')
+
                 elem.clear()
                 for ancestor in elem.xpath('ancestor-or-self::*'):
                     while ancestor.getprevious() is not None:
                         del ancestor.getparent()[0]
+
                 return(d_prot)
         except Exception as e:
             utils.error('Failed to elaborate item: '+str(e))
