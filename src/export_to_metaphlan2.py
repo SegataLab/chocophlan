@@ -7,8 +7,6 @@ author__ = ('Nicola Segata (nicola.segata@unitn.it), '
 __date__ = '11 Apr 2018'
 
 import os
-import argparse as ap
-import configparser as cp
 import pickle
 import multiprocessing.dummy as dummy
 import _version as version
@@ -27,6 +25,7 @@ import gffutils
 import resource
 import datetime
 import bz2
+from collections import Counter
 from Bio import SeqIO
 from Bio.Alphabet import DNAAlphabet
 from Bio.Seq import Seq
@@ -57,21 +56,19 @@ class CodeTimer:
         self.logger = logger
 
     def __enter__(self):
-        if self.debug:
-            self.start = time.clock()
+        self.start = time.clock()
 
     def __exit__(self, exc_type, exc_value, traceback):
-        if self.debug:
-            self.took = (time.clock() - self.start) * 1000.0
-            self.logger.info('Code block' + self.name + ': ' + str(self.took) + ' ms')
+        self.took = (time.clock() - self.start) * 1000.0
+        self.logger.error('Code block' + self.name + ': ' + str(self.took) + ' ms')
 
 class export_to_metaphlan2:
     def __init__(self, config):
         self.debug = config['verbose']
         resource.setrlimit(resource.RLIMIT_NOFILE, (131072, 131072))
-        ch = logging.FileHandler('CHOCOPhlAn_export_to_metaphlan.log')
+        self.log = logging.getLogger(__name__)
+        ch = logging.FileHandler('CHOCOPhlAn_export_to_metaphlan.log','w')
         ch.setLevel(logging.INFO)
-        self.log = logging.getLogger('export_to_metaphlan2')
         self.log.addHandler(ch)
 
         if config['verbose']:
@@ -110,7 +107,7 @@ class export_to_metaphlan2:
 
     def extract_markers(self, panproteome, core_coreness_threshold, core_uniqueness_90_threshold, core_uniqueness_50_threshold, external_genomes_90_threshold, external_genomes_50_threshold):
         pc_coreness_threshold = (core_coreness_threshold * panproteome['number_proteomes'])/100
-        cores_to_use = {k:v['coreness'] for k,v in panproteome['members'].items() if v['coreness'] >= pc_coreness_threshold}
+        cores_to_use = {k:v['coreness'] for k,v in panproteome['members'].items() if v['coreness'] >= pc_coreness_threshold and (k, True) not in self.fragments}
 
         if panproteome['number_proteomes'] > 1:
             markers = pd.DataFrame.from_dict({'gene' : core,
@@ -143,7 +140,7 @@ class export_to_metaphlan2:
                             and sum(panproteome['members'][core]['external_genomes']['90_50'].values()) <= external_genomes_50_threshold)
         
         if not markers.empty:
-            markers = markers[((markers.len > 100) & (markers.len < 1500))]
+            markers = markers[((markers.len > 150) & (markers.len < 1500))]
             if not markers.empty:
                 markers = markers.assign(coreness_score = pd.Series(np.power(markers['coreness_perc'], 1/2)),
                                          uniqueness_50_score = pd.Series(-np.log(1-((10000-np.minimum(10000,markers['uniqueness_50']))/10000-0.00001))/5),
@@ -154,11 +151,11 @@ class export_to_metaphlan2:
                 if panproteome['number_proteomes'] > 1 and not self.taxontree.taxid_n[panproteome['tax_id']].is_low_quality:
                     tiers = []
                     for row in markers.itertuples():
-                        if ((row.coreness_perc >= 0.8) & (row.uniqueness_90 <= 1) & (row.uniqueness_50 <= 5) & (row.external_genomes_90 <= 10 ) & (row.external_genomes_50) <= 10 ):
+                        if ((row.coreness_perc >= 0.8) and (row.uniqueness_90 <= 1) and (row.uniqueness_50 <= 5) and (row.external_genomes_90 <= 10 ) and (row.external_genomes_50) <= 10 ):
                             tiers.append('A')
-                        elif ((row.coreness_perc >= 0.7) & (row.uniqueness_90 <= 5) & (row.uniqueness_50 <= 10) & (row.external_genomes_90 <= 10 ) & (row.external_genomes_50) <= 10 ):
+                        elif ((row.coreness_perc >= 0.7) and (row.uniqueness_90 <= 5) and (row.uniqueness_50 <= 10) and (row.external_genomes_90 <= 10 ) and (row.external_genomes_50) <= 10 ):
                             tiers.append('B')
-                        elif (row.coreness_perc >= 0.5):    
+                        elif (row.coreness_perc >= 0.5):
                             tiers.append('C')
                     markers = markers.assign(tier = tiers)
                 else:
@@ -178,7 +175,7 @@ class export_to_metaphlan2:
                 if not markers.empty and markers.tier.value_counts().sum() > 50 :
                     markers = markers[:150]
                 else:
-                    markers = self.extract_markers(panproteome, 50, float('Inf'), float('Inf'), 10, 10)
+                    markers = self.extract_markers(panproteome, 50, float('Inf'), float('Inf'), float('Inf'), float('Inf'))
                     markers = markers[:150]
 
             if markers.empty:
@@ -200,8 +197,13 @@ class export_to_metaphlan2:
             if len(pangene):
                 for cluster in panproteome['members'][pangene]['external_hits']:
                     external_species_nosp = set(taxid for taxid in panproteome['members'][pangene]['external_species_nosp'][cluster] if taxid not in shigella_ids)
+                    external_genomes = [taxid for taxid, count in panproteome['members'][pangene]['external_genomes'][cluster].items() if taxid not in shigella_ids for _ in range(count)]
+
                     panproteome['members'][pangene]['uniqueness_nosp'][cluster] = len(external_species_nosp)
-        return self.get_p_markers(panproteome)
+                    panproteome['members'][pangene]['external_genomes'][cluster] = Counter(external_genomes)
+
+        markers = self.extract_markers(panproteome, 50, 5, float('Inf'), 15, 15)
+        return markers
 
     '''
         Create marker starting from UniRef90 associated gene DNA sequence
@@ -255,10 +257,11 @@ class export_to_metaphlan2:
                         found = True
                         break
 
-                if found:  
+                if found:
                     fna = Fasta(fna_decompressed.name)
+
                     try:
-                        nuc_seq = feature.sequence(fna)
+                        nuc_seq = feature.sequence(fna).upper()
                     except Exception as e:
                         print(taxid)
                         raise e
@@ -287,162 +290,142 @@ class export_to_metaphlan2:
     Use centroid of UniRef90 as plausible marker
     """
     def get_uniref_uniprotkb_from_panproteome(self, panproteome):
-        panproteome = pickle.load(open(panproteome, 'rb')) 
+        with CodeTimer(name='Panproteome loading', debug=self.debug, logger=self.log):
+            panproteome = pickle.load(open(panproteome, 'rb'))
         pp_tax_id = panproteome['tax_id']
 
-        try:
-            taxonomy = self.taxontree.print_full_taxonomy(pp_tax_id)
-            # print(taxonomy)
-        except Exception as ex:
+        with CodeTimer(name='Panproteome taxonomy extraction', debug=self.debug, logger=self.log):
             try:
                 taxonomy = self.taxontree.print_full_taxonomy(pp_tax_id)
-            except Exception as e:
-                self.log.error('CRITICAL ERROR: {}'.format(pp_tax_id))
-                self.log.error(traceback.format_exc())
-                raise ex
-        if pp_tax_id == 562:
-            possible_markers = self.get_ecoli_markers(panproteome)
-        else:
-            possible_markers = self.get_p_markers(panproteome)
+                # print(taxonomy)
+            except Exception as ex:
+                try:
+                    taxonomy = self.taxontree.print_full_taxonomy(pp_tax_id)
+                except Exception as e:
+                    self.log.error('CRITICAL ERROR: {}'.format(pp_tax_id))
+                    self.log.error(traceback.format_exc())
+                    raise ex
+        with CodeTimer(name='Marker extraction', debug=self.debug, logger=self.log):
+            if pp_tax_id == 562:
+                possible_markers = self.get_ecoli_markers(panproteome)
+            else:
+                possible_markers = self.get_p_markers(panproteome)
         gc = {}
         upid = ""
         res = []
-        for np90_marker in possible_markers.gene:
-            np90_members = self.uniref90_taxid_map['UniRef90_{}'.format(np90_marker)][0]
-            for m in np90_members:
-                # If UniRef90 has member from species or below, use it
-                if m[2] == True and (m[1] == pp_tax_id or m[1] in self.taxontree.taxid_n[pp_tax_id].find_clades(tax_id=pp_tax_id)):
-                    marker = m[0]
-                    if marker in panproteome['members']:
-                        break
-                # Otherwise, take the repr one
-                elif m[2] == True:
-                    marker = m[0]
-                    if marker in panproteome['members']:
-                        break
-            if 'UPI' not in marker:
-                '''
-                If entry is from UniProtKB take the gene names from the proteomes in which is present
-                '''
-                if marker in self.uniprot:
-                    upids = ["UP{}{}".format("0"*(9-len(str(upid))),upid) for upid in self.uniprot[marker][1]]
+        with CodeTimer(name='Marker to gene extraction', debug=self.debug, logger=self.log):
+            for np90_marker in possible_markers.gene:
+                np90_members = self.uniref90_taxid_map['UniRef90_{}'.format(np90_marker)][0]
+                for m in np90_members:
+                    # If UniRef90 has member from species or below, use it
+                    if m[2] == True and (m[1] == pp_tax_id or m[1] in self.taxontree.taxid_n[pp_tax_id].find_clades(tax_id=pp_tax_id)):
+                        marker = m[0]
+                        if marker in panproteome['members']:
+                            break
+                    # Otherwise, take the repr one
+                    elif m[2] == True:
+                        marker = m[0]
+                        if marker in panproteome['members']:
+                            break
+                if 'UPI' not in marker:
                     '''
-                        Some UniProtKB entries (like P00644) do not have any proteome associteda.
+                    If entry is from UniProtKB take the gene names from the proteomes in which is present
+                    '''
+                    if marker in self.uniprot:
+                        upids = ["UP{}{}".format("0"*(9-len(str(upid))),upid) for upid in self.uniprot[marker][1]]
+                        '''
+                            Some UniProtKB entries (like P00644) do not have any proteome associteda.
 
-                    '''
-                    if not len(upids):
-                        tax_id = self.uniprot[marker][2]
-                        if hasattr(self.taxontree.taxid_n[tax_id], 'proteomes'):
-                            upids = self.taxontree.taxid_n[tax_id].proteomes
-                            upids = [up for up in upids if marker in self.proteomes[up]['members']]
-                    # Use, if available a reference genome, otherwise, a non-reference and finally a redundant one
-                    upid = [x for x in upids if x in self.proteomes and self.proteomes[x]['isReference']]
-                    if not len(upid):
-                        upid = [x for x in upids if x in self.proteomes and not self.proteomes[x]['upi']]
+                        '''
+                        if not len(upids):
+                            tax_id = self.uniprot[marker][2]
+                            if hasattr(self.taxontree.taxid_n[tax_id], 'proteomes'):
+                                upids = self.taxontree.taxid_n[tax_id].proteomes
+                                upids = [up for up in upids if marker in self.proteomes[up]['members']]
+                        # Use, if available a reference genome, otherwise, a non-reference and finally a redundant one
+                        upid = [x for x in upids if x in self.proteomes and self.proteomes[x]['isReference']]
                         if not len(upid):
-                            upid = [x for x in upids if x in self.proteomes and self.proteomes[x]['upi']]
-                    if len(upid):
-                        upid = upid[0]
+                            upid = [x for x in upids if x in self.proteomes and not self.proteomes[x]['upi']]
+                            if not len(upid):
+                                upid = [x for x in upids if x in self.proteomes and self.proteomes[x]['upi']]
+                        if len(upid):
+                            upid = upid[0]
+                        else:
+                            continue
+                        gene_names = self.uniprot[marker][0]
                     else:
                         continue
-                    gene_names = self.uniprot[marker][0]
                 else:
-                    continue
-            else:
-                if marker in self.uniparc:
-                    all_genes = [(x[0],x[2]) for x in self.uniparc[marker] if self.proteomes["UP{}{}".format("0"*(9-len(str(x[0]))),x[0])]['isReference']]
-                    if not len(all_genes):
-                        all_genes = [(x[0],x[2]) for x in self.uniparc[marker] if not self.proteomes["UP{}{}".format("0"*(9-len(str(x[0]))),x[0])]['upi']]
+                    if marker in self.uniparc:
+                        all_genes = [(x[0],x[2]) for x in self.uniparc[marker] if self.proteomes["UP{}{}".format("0"*(9-len(str(x[0]))),x[0])]['isReference']]
                         if not len(all_genes):
-                            all_genes = [(x[0],x[2]) for x in self.uniparc[marker] if self.proteomes["UP{}{}".format("0"*(9-len(str(x[0]))),x[0])]['upi']]
-                    if len(all_genes):
-                        upid = all_genes[0][0]
-                        upid = "UP{}{}".format("0"*(9-len(str(upid))),upid)
-                        gene_names = all_genes[0][1]
+                            all_genes = [(x[0],x[2]) for x in self.uniparc[marker] if not self.proteomes["UP{}{}".format("0"*(9-len(str(x[0]))),x[0])]['upi']]
+                            if not len(all_genes):
+                                all_genes = [(x[0],x[2]) for x in self.uniparc[marker] if self.proteomes["UP{}{}".format("0"*(9-len(str(x[0]))),x[0])]['upi']]
+                        if len(all_genes):
+                            upid = all_genes[0][0]
+                            upid = "UP{}".format(str(upid).zfill(9))
+                            gene_names = all_genes[0][1]
+                        else:
+                            continue
                     else:
                         continue
-                else:
-                    continue
 
-            if len(upid) and len(gene_names):
-                if (upid, panproteome['tax_id'], taxonomy) not in gc:
-                    gc[(upid, panproteome['tax_id'], taxonomy)] = set()
-                gc[(upid, panproteome['tax_id'], taxonomy)].add((marker, gene_names, tuple(panproteome['members'][marker]['external_species_nosp']['90_90'])))
+                if len(upid) and len(gene_names):
+                    if (upid, panproteome['tax_id'], taxonomy) not in gc:
+                        gc[(upid, panproteome['tax_id'], taxonomy)] = set()
+                    gc[(upid, panproteome['tax_id'], taxonomy)].add((marker, gene_names, tuple(panproteome['members'][marker]['external_species_nosp']['90_90'])))
 
             markers_nucls, db, failed, res = [], {}, [], []
             if len(gc):
-                # for item in gc.items():
-                #     res = self.get_uniref90_nucl_seq(item)
-                #     if res is not None:
-                #         res_markers_nucls, res_db, res_failed = res
-                #         failed.extend(res_failed)
-                #         for x in res_db:
-                #             if x is not None:
-                #                 self.db['taxonomy'].update(x['taxonomy'])
-                #                 self.db['markers'].update(x['markers'])
-                #         markers_nucls.extend([marker.format('fasta') for marker in filter(None,res_markers_nucls)])
-                    # res.append(self.get_uniref90_nucl_seq(item))
-                # with dummy.Pool(processes=3) as pool:
-                #     for res in pool.imap_unordered(self.get_uniref90_nucl_seq, gc.items()):
-                #         if res is not None:
-                #             res_markers_nucls, res_db, res_failed = res
-                #             failed.extend(res_failed)
-                #             for x in res_db:
-                #                 if x is not None:
-                #                     self.db['taxonomy'].update(x['taxonomy'])
-                #                     self.db['markers'].update(x['markers'])
-                #             markers_nucls.extend([marker.format('fasta') for marker in filter(None,res_markers_nucls)])
-                with dummy.Pool(processes=3) as pool:
-                    res = [_ for _ in pool.imap_unordered(self.get_uniref90_nucl_seq, gc.items(), chunksize=10) if _ is not None]
-                if len(res):
-                    markers_nucls, db, failed = zip(*res)
-                    for x in db:
-                        self.db['taxonomy'].update(x['taxonomy'])
-                        self.db['markers'].update(x['markers'])
-                    markers_nucls = [marker.format('fasta') for marker in itertools.chain.from_iterable(markers_nucls)]
-
+                with CodeTimer(name='Sequence extraction', debug=self.debug, logger=self.log):
+                    with dummy.Pool(processes=3) as pool:
+                        res = [_ for _ in pool.imap_unordered(self.get_uniref90_nucl_seq, gc.items(), chunksize=10) if _ is not None]
             else:
                 self.log.warning('No markers identified for species {}'.format(panproteome['tax_id']))
                 return panproteome['tax_id']
+            if len(res):
+                markers_nucls, db, failed = zip(*res)
+                for x in db:
+                    if x is not None:
+                        self.db['taxonomy'].update(x['taxonomy'])
+                        self.db['markers'].update(x['markers'])
+                markers_nucls = list(itertools.chain.from_iterable(filter(None,markers_nucls)))
             
             #create export/markers_fasta
             if failed is not None and not all(x is None for x in failed):
                 failed = list(filter(None, failed))[0]
                 self.log.warning("{}: Failed to find features of markers {}".format(pp_tax_id, (','.join(failed))))
             if len(markers_nucls):
-                with open('{}/{}/markers_fasta/{}.fna'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']), 'wt') as fasta_markers:
-                    fasta_markers.write(''.join(markers_nucls))
+                with CodeTimer(name='FNA export', debug=self.debug, logger=self.log):
+                    with open('{}/{}/markers_fasta/{}.fna'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']), 'wt') as fasta_markers:
+                        [fasta_markers.write(marker.format('fasta')) for marker in markers_nucls]
         if len(gc):
-            pickle.dump(gc, open('{}/{}/markers_info/{}.txt'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']), 'wb'))
-        possible_markers.to_csv('{}/{}/markers_stats/{}.txt'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']))
-
+            with CodeTimer(name='Pickling markers info', debug=self.debug, logger=self.log):
+                pickle.dump(gc, open('{}/{}/markers_info/{}.txt'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']), 'wb'))
+        with CodeTimer(name='Save marker stats', debug=self.debug, logger=self.log):
+            possible_markers.to_csv('{}/{}/markers_stats/{}.txt'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']))
 
 def run_all(): 
     config = utils.read_configs('settings.cfg')
     config = utils.check_configs(config)['export']
     outfile_prefix = 'mpa_v{}_CHOCOPhlAn_{}'.format(version.__MetaPhlAn2_db_version__, version.__CHOCOPhlAn_version__)
 
-    if os.path.exists('{}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix)):
-        os.rename('{}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix), 
-            '{}/{}/{}_bak_{}'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix, datetime.datetime.today().strftime('%Y%m%d_%H%M')))
-    for i in ['markers_stats','markers_fasta','markers_info']:
-        os.makedirs('{}/{}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix, i))
+    # if os.path.exists('{}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix)):
+    #     os.rename('{}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix), 
+    #         '{}/{}/{}_bak_{}'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix, datetime.datetime.today().strftime('%Y%m%d_%H%M')))
+    # for i in ['markers_stats','markers_fasta','markers_info']:
+    #     os.makedirs('{}/{}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix, i))
 
     config['exportpath_metaphlan2'] = config['exportpath_metaphlan2'] + '/' + outfile_prefix
 
     species = glob.glob('{}/{}/species/90/*'.format(config['download_base_dir'], config['relpath_panproteomes_dir']))
     export = export_to_metaphlan2(config)
+    export.fragments = set(pickle.load(open('data/frag_sprot.pkl','rb')))
+    export.fragments.update(pickle.load(open('data/frag_trembl.pkl','rb')))
 
-    failed = []
-    # for s in species:
-    #     failed.append(export.get_uniref_uniprotkb_from_panproteome(s))
     with dummy.Pool(processes=30) as pool:
-        failed = [x for x in pool.imap(export.get_uniref_uniprotkb_from_panproteome, species, chunksize=200000)]
-
-    # pool = dummy.Pool(processes=150)
-    # res = [ pool.apply_async(export.get_uniref_uniprotkb_from_panproteome, args = (s,), callback=log_result) for s in species ]
-    # pool.close()
-    # pool.join()
+        failed = [x for x in pool.imap(export.get_uniref_uniprotkb_from_panproteome, species, chunksize=200)]
 
     with open('{}/{}/failed_markers.txt'.format(config['export_dir'], config['exportpath_metaphlan2']), 'wt') as ofn_failed:
         ofn_failed.writelines('\n'.join(str(x) for x in filter(None, failed)))
@@ -455,9 +438,11 @@ def run_all():
     with bz2.BZ2File('{}/{}/{}.pkl'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix), 'w') as outfile:
         pickle.dump(export.db, outfile, pickle.HIGHEST_PROTOCOL)
 
+    with open('{}/{}/{}.fna'.format(config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix), 'wb') as mpa2_markers_fna:
+        for f in glob.glob('{}/{}/markers_fasta/*.fna'.format(config['export_dir'], config['exportpath_metaphlan2'])):
+            with open(f, 'rb') as fm:
+                shutil.copyfileobj(fm, mpa2_markers_fna, 1024*1024*10)
 
-    #######
-    merge_comm = 'cat {}/{}/markers_fasta/*.fna > {}/{}/{}.fna'.format(config['export_dir'], config['exportpath_metaphlan2'],config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix)
-    bwt2b_comm = 'bowtie2-build {}/{}/{}.fna {}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix, config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix)
-    sb.run(merge_comm.split())
+    
+    bwt2b_comm = 'bowtie2-build --threads 20 {}/{}/{}.fna {}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix, config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix)
     sb.run(bwt2b_comm.split(), stderr = sb.DEVNULL, stdout = sb.DEVNULL, check = True)

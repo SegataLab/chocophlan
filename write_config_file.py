@@ -170,6 +170,10 @@ def read_params():
     group.add_argument('--exportpath_metaphlan2',
                        default='metaphlan2/',
                        help='')
+
+    group.add_argument('--exportpath_humann2',
+                       default='humann2/',
+                       help='')
     
     group.add_argument('--exportpath_core_proteins',
                        default='core_proteins/',
