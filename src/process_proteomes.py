@@ -27,6 +27,7 @@ from itertools import zip_longest
 from lxml import etree
 from functools import partial
 import traceback
+import xxhash as hash
 
 ns = {'upkb' : 'http://uniprot.org/uniprot', 'nr' : 'http://uniprot.org/uniref', 'up' : 'http://uniprot.org/uniparc'}
 GROUP_CHUNK = 1000000
