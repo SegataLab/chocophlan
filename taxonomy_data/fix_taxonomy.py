@@ -100,11 +100,11 @@ if __name__ == '__main__':
     try:
         opts, args = getopt.getopt( argv, 'hs:c:o:', [ 'sgbs=', 'associations=', 'out=' ] )
     except getopt.GetoptError:
-        print( 'sgb.py -s <sgbsfile> -c <associationsfile> -o <outputfile>' )
+        print( 'fix_taxonomy.py -s <sgbsfile> -c <associationsfile> -o <outputfile>' )
 
     for opt, arg, in opts:
         if opt == '-h':
-            print( 'sgb.py -s <sgbsfile> -c <associationsfile>' )
+            print( 'fix_taxonomy.py -s <sgbsfile> -c <associationsfile>' )
             sys.exit()
         elif opt in ( '-s', '--sgbs' ):
             sgbs_description_filepath = arg
