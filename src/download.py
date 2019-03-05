@@ -401,30 +401,42 @@ def download_ncbi_from_txt(input_file, config):
     with open('failed_GCA.txt','w') as f:
         f.write('\n'.join(failed))
 
-def extract_gca2taxon(v, taxontree):
-    return (dict(v['ncbi_ids']).get('GCSetAcc').split('.')[0], v['tax_id'], taxontree.print_full_taxonomy(v['tax_id'])[0])
-
-def download_ncbi_from_proteome_pickle(config):
+def download_ncbi_from_proteome_pickle(config, proteomes=None, taxontree=None):
     # download the assembly data once
     data = get_ncbi_assembly_info()
     terminating = dummy.Event()
-    utils.info("Loading proteomes data...\n")
-    proteomes = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_proteomes']), 'rb'))
-    taxontree = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_taxontree']), 'rb'))
-    config['relpath_genomes'] = "{}_{}".format(config['relpath_genomes'], datetime.date.today().strftime ("%Y%m%d"))
+    if not proteomes:
+        utils.info("Loading proteomes data...\n")
+        proteomes = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_proteomes']), 'rb'))
+    if not taxontree:
+        utils.info("Loading NCBI taxontree...\n")
+        taxontree = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_taxontree']), 'rb'))
+
     partial_process = partial(process, data=data, config=config)
     with dummy.Pool(initializer=initt, initargs=(terminating,), processes=config['nproc']) as pool:
         failed = [f for f in pool.imap_unordered(partial_process, ((k,v) for k, v in proteomes.items() if 'ncbi_ids' in v), chunksize=config['nproc'])]
 
-    with open('failed_GCA.txt','w') as f:
-        f.write('\n'.join(list(filter(None, failed))))
+    proteomes_to_update = filter(lambda x:type(x) == tuple, failed)
+    failed = filter(lambda x:type(x) == str, failed)
 
-    partial_extract_gca2taxon = partial(extract_gca2taxon, taxontree=taxontree)
-    with mp.Pool(12) as pool:
-        d = [x for x in pool.imap_unordered(extract_gca2taxon, [v for k, v in proteomes.items() if 'ncbi_ids' in v])]
+    to_update = False
+    for proteome, gca in proteomes_to_update:
+        to_update = True
+        temp_acc = list(proteomes['UP000264900']['ncbi_ids'])
+        temp_acc.append(('GCSetAcc',gca))
+        proteomes[proteome]['ncbi_ids'] = tuple(temp_acc)
+
+    if to_update:
+        pickle.dump(proteomes, open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_proteomes']), 'wb'))
+
+    with open('failed_GCA.txt','w') as f:
+        f.write('\n'.join(list(failed)))
 
     with open('{}{}'.format(config['export_dir'],config['relpath_gca2taxa']), 'w') as f:
-        [f.write('{}\t{}\t{}\n'.format(gca, taxid, taxstr)) for gca, taxid, taxstr in d]
+        f.write('GCA_accession\tUProteome\tNCBI_taxid\ttaxstr\ttaxidstr\n')
+        for upid, gca, taxid in ((p, dict(proteomes[p]['ncbi_ids']).get('GCSetAcc',''), proteomes[p]['tax_id']) for p in proteomes if 'ncbi_ids' in proteomes[p]):
+            taxstr = taxontree.print_full_taxonomy(taxid)
+            f.write('{}\t{}\t{}\t{}\n'.format(gca.split('.')[0], upid, taxid, '\t'.join(taxstr)))
 
 def decompress(config, verbose):
     ls = glob.glob(config['download_base_dir']+config['relpath_reference_proteomes']+'/*')

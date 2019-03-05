@@ -35,14 +35,16 @@ class Stats:
     def __init__(self, config):
         if config['verbose']:
             utils.info('Loading pickled databases...')
-        self.proteomes = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_proteomes']), 'rb'))
-        self.uniprotkb = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_uniprotkb_idmap']), 'rb'))
-        self.uniref100 = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_uniref100_idmap']), 'rb'))
-        self.uniref90 = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_uniref90_idmap']), 'rb'))
-        self.uniref50 = pickle.load(open('{}/{}'.format(config['download_base_dir'], config['relpath_pickle_uniref50_idmap']), 'rb'))
-        self.taxontree = pickle.load(open('{}{}'.format(config['download_base_dir'],config['relpath_pickle_taxontree']), 'rb'))
-        self.d_ranks = self.taxontree.lookup_by_rank()
         self.config = config
+        self.proteomes = pickle.load(open('{}/{}'.format(self.config['download_base_dir'], self.config['relpath_pickle_proteomes']), 'rb'))
+        self.taxontree = pickle.load(open('{}{}'.format(self.config['download_base_dir'],self.config['relpath_pickle_taxontree']), 'rb'))
+        self.d_ranks = self.taxontree.lookup_by_rank()
+
+        self.uniprotkb = {k:v for k,v in utils.load_pickle('{}/{}'.format(self.config['download_base_dir'], self.config['relpath_pickle_uniprotkb_idmap']))}
+        self.uniref100 = {k:v for k,v in utils.load_pickle('{}/{}'.format(self.config['download_base_dir'], self.config['relpath_pickle_uniref100_idmap']))}
+        self.uniref90 = {k:v for k,v in utils.load_pickle('{}/{}'.format(self.config['download_base_dir'], self.config['relpath_pickle_uniref90_idmap']))}
+        self.uniref50 = {k:v for k,v in utils.load_pickle('{}/{}'.format(self.config['download_base_dir'], self.config['relpath_pickle_uniref50_idmap']))}
+        
 
     #species_proteomes = set(x['tax_id'] if taxontree.taxid_n[x['tax_id']].rank =='species' else taxontree.go_up_to_species(x['tax_id']) for x in proteomes.values() )
     def species_stats(self, tax_id):
@@ -96,14 +98,14 @@ class Stats:
         mean_core_coreness = statistics.mean(core_coreness) if len(core_coreness) else 0
         mean_coreness = statistics.mean(iter_coreness) if len(iter_coreness) else None
         median_coreness = statistics.median(iter_coreness) if len(iter_coreness) else None
-        stdev_coreness = statistics.stdev(iter_coreness) if len(iter_coreness) else None
+        stdev_coreness = statistics.stdev(iter_coreness) if len(iter_coreness) > 1 else 0
 
         #uniqueness
         d = {}
         [d.setdefault(k,[]).append(v) for k,v in ((k,v) for p in panproteome['members'].values() for k, v in p['uniqueness'].items())]
         mean_uniqueness = {k:statistics.mean(v) if len(v) else None for k,v in d.items()}
         median_uniqueness = {k:statistics.median(v) if len(v) else None  for k,v in d.items()}
-        stdev_uniqueness = {k:statistics.stdev(v) if len(v) else None  for k,v in d.items()}
+        stdev_uniqueness = {k:statistics.stdev(v) if len(v) > 1 else 0  for k,v in d.items()}
 
         #copy_number
         iter_copy_number = [p['copy_number'].values() for p in panproteome['members'].values()]
@@ -116,7 +118,7 @@ class Stats:
         iter_proteomes_present = [len(p['proteomes_present']) for p in panproteome['members'].values()]
         mean_proteomes_present = statistics.mean(iter_proteomes_present) if len(iter_proteomes_present) else None
         median_proteomes_present = statistics.median(iter_proteomes_present) if len(iter_proteomes_present) else None
-        stdev_proteomes_present = statistics.stdev(iter_proteomes_present) if len(iter_proteomes_present) else None
+        stdev_proteomes_present = statistics.stdev(iter_proteomes_present) if len(iter_proteomes_present) > 1 else 0
 
         ret_d = { 'panproteome_{}_number_members'.format(cluster) : number_members,
                'panproteome_{}_number_core_proteins'.format(cluster) : number_core_proteins,
