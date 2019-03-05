@@ -17,6 +17,6 @@ with open(ofn, "w") as output_handle:
         tlen = len(record.seq)//readsize
         for i in range(1,tlen+1):
             subseq = record.seq[start:readsize*i]
-            new_record = SeqIO.SeqRecord(seq=subseq, id='{}.{}/{}'.format(record.id,i, tlen), description  = '')
+            new_record = SeqIO.SeqRecord(seq=subseq, id='{}:::{}/{}'.format(record.id,i, tlen), description  = '')
             start=readsize*i
             SeqIO.write(new_record, output_handle, "fasta")

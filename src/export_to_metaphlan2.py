@@ -4,11 +4,13 @@ author__ = ('Nicola Segata (nicola.segata@unitn.it), '
             'Nicolai Karcher (karchern@gmail.com),'
             'Francesco Asnicar (f.asnicar@unitn.it)')
 
-__date__ = '11 Apr 2018'
+__date__ = '04 Mar 2019'
 
 import os
 import pickle
 import multiprocessing.dummy as dummy
+import multiprocessing as mp
+import tempfile as tp
 import _version as version
 import glob
 import time
@@ -26,13 +28,12 @@ import resource
 import datetime
 import bz2
 from collections import Counter
-from Bio import SeqIO
-from Bio.Alphabet import DNAAlphabet
-from Bio.Seq import Seq
 from pyfaidx import  Fasta
 from tempfile import NamedTemporaryFile
 from operator import itemgetter
+from itertools import zip_longest
 import subprocess as sb
+import random
 
 if __name__ == '__main__':
     import utils
@@ -44,6 +45,12 @@ else:
 def init_parse(terminating_):
     global terminating
     terminating = terminating_
+
+def grouper(iterable, n, fillvalue=None):
+    #"Collect data into fixed-length chunks or blocks"
+    # grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx"
+    args = [iter(iterable)] * n
+    return zip_longest(*args, fillvalue=fillvalue)
 
 def log_result(retval):
     # This is called whenever foo_pool(i) returns a result.
@@ -73,30 +80,29 @@ class export_to_metaphlan2:
 
         if config['verbose']:
             utils.info('Loading pickled databases...')
-        self.taxontree = pickle.load(open("{}/{}".format(config['download_base_dir'],config['relpath_pickle_taxontree']), 'rb'))
-        self.proteomes = pickle.load(open("{}{}".format(config['download_base_dir'],config['relpath_pickle_proteomes']), 'rb'))
-        # self.uniref90_taxid_map = pickle.load(open("{}{}".format(config['download_base_dir'],config['relpath_pickle_uniref90_taxid_idmap']), 'rb'))
         self.db = {'taxonomy' : {}, 'markers': {}}
         self.config = config
         self.uniprot = {}
         self.uniparc = {}
         self.uniref90_taxid_map = {}
+        self.taxontree = pickle.load(open("{}/{}".format(config['download_base_dir'],config['relpath_pickle_taxontree']), 'rb'))
+        self.proteomes = pickle.load(open("{}{}".format(config['download_base_dir'],config['relpath_pickle_proteomes']), 'rb'))
         self.exportpath = '{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'])
         all_uprot_chunks = filter(re.compile('(trembl|sprot)_[0-9]{1,}.pkl').match, os.listdir('{}/{}/uniprotkb/'.format(config['download_base_dir'], config['pickled_dir'])))
         all_uparc_chunks = filter(re.compile('uniparc_[0-9]{4}.pkl').match, os.listdir('{}/{}/uniparc/'.format(config['download_base_dir'], config['pickled_dir'])))
         all_uniref_chunks = filter(re.compile('uniref90_[0-9]{1,}.pkl').match, os.listdir('{}/{}/uniref90/'.format(config['download_base_dir'], config['pickled_dir'])))
 
         for i in all_uprot_chunks:
-            uniprot_chunk = pickle.load(open('{}/{}/uniprotkb/{}'.format(config['download_base_dir'], config['pickled_dir'], i),'rb'))
-            self.uniprot.update({k : [v[3],v[4],v[1]] for k,v in uniprot_chunk.items()})
+            uniprot_chunk = '{}/{}/uniprotkb/{}'.format(config['download_base_dir'], config['pickled_dir'], i)
+            self.uniprot.update({ entry[0] : [entry[3],entry[4],entry[1]] for entry in utils.load_pickle(uniprot_chunk)})
 
         for i in all_uparc_chunks:
-            uniparc_chunk = pickle.load(open('{}/{}/uniparc/{}'.format(config['download_base_dir'], config['pickled_dir'], i),'rb'))
-            self.uniparc.update({k : v[1] for k,v in uniparc_chunk.items()})
+            uniparc_chunk = '{}/{}/uniparc/{}'.format(config['download_base_dir'], config['pickled_dir'], i)
+            self.uniparc.update({ entry[0] : entry[1] for entry in utils.load_pickle(uniparc_chunk)})
 
         for i in all_uniref_chunks:
-            uniref90_chunk = pickle.load(open('{}/{}/uniref90/{}'.format(config['download_base_dir'], config['pickled_dir'], i),'rb'))
-            self.uniref90_taxid_map.update({k:(v[2],v[3:6],len(v[6])) for k,v in uniref90_chunk.items()})
+            uniref90_chunk = '{}/{}/uniref90/{}'.format(config['download_base_dir'], config['pickled_dir'], i)
+            self.uniref90_taxid_map.update({ entry[0] :(entry[2],entry[3:6],len(entry[6])) for entry in utils.load_pickle(uniref90_chunk)})
 
         ## Check if export folder exists, if not, it creates it
         if not os.path.exists(self.exportpath):
@@ -107,7 +113,8 @@ class export_to_metaphlan2:
 
     def extract_markers(self, panproteome, core_coreness_threshold, core_uniqueness_90_threshold, core_uniqueness_50_threshold, external_genomes_90_threshold, external_genomes_50_threshold):
         pc_coreness_threshold = (core_coreness_threshold * panproteome['number_proteomes'])/100
-        cores_to_use = {k:v['coreness'] for k,v in panproteome['members'].items() if v['coreness'] >= pc_coreness_threshold and (k, True) not in self.fragments}
+
+        cores_to_use = {k:v['coreness'] for k,v in panproteome['members'].items() if v['coreness'] > pc_coreness_threshold and not self.uniprot[k][17]}     #exclude if it is fragment of a gene
 
         if panproteome['number_proteomes'] > 1:
             markers = pd.DataFrame.from_dict({'gene' : core,
@@ -151,11 +158,11 @@ class export_to_metaphlan2:
                 if panproteome['number_proteomes'] > 1 and not self.taxontree.taxid_n[panproteome['tax_id']].is_low_quality:
                     tiers = []
                     for row in markers.itertuples():
-                        if ((row.coreness_perc >= 0.8) and (row.uniqueness_90 <= 1) and (row.uniqueness_50 <= 5) and (row.external_genomes_90 <= 10 ) and (row.external_genomes_50) <= 10 ):
+                        if ((row.coreness_perc >= 0.8) and (row.uniqueness_90 <= 1) and (row.uniqueness_50 <= 2) and (row.external_genomes_90 <= 10 ) and (row.external_genomes_50 <= 5)):
                             tiers.append('A')
-                        elif ((row.coreness_perc >= 0.7) and (row.uniqueness_90 <= 5) and (row.uniqueness_50 <= 10) and (row.external_genomes_90 <= 10 ) and (row.external_genomes_50) <= 10 ):
+                        elif ((row.coreness_perc >= 0.7) and (row.uniqueness_90 <= 5) and (row.uniqueness_50 <= 5) and (row.external_genomes_90 <= 10 ) and (row.external_genomes_50 <= 10) ):
                             tiers.append('B')
-                        elif (row.coreness_perc >= 0.5):
+                        elif ((row.coreness_perc >= 0.5) and (row.uniqueness_90 <= 10) and (row.uniqueness_50 <= 15) and (row.external_genomes_90 <= 25 ) and (row.external_genomes_50 <= 20) ):
                             tiers.append('C')
                     markers = markers.assign(tier = tiers)
                 else:
@@ -167,15 +174,15 @@ class export_to_metaphlan2:
 
     def get_p_markers(self, panproteome):
         if panproteome['number_proteomes'] > 1 and not self.taxontree.taxid_n[panproteome['tax_id']].is_low_quality:
-            markers = self.extract_markers(panproteome, 80, 1, 5, 10, 10)
+            markers = self.extract_markers(panproteome, 80, 1, 2, 10, 5)
             if not markers.empty and markers.tier.value_counts().sum() > 50:
                 markers = markers[:150]
             else:
-                markers = self.extract_markers(panproteome, 70, 5, 10, 10, 10)
+                markers = self.extract_markers(panproteome, 70, 5, 5, 15, 10)
                 if not markers.empty and markers.tier.value_counts().sum() > 50 :
                     markers = markers[:150]
                 else:
-                    markers = self.extract_markers(panproteome, 50, float('Inf'), float('Inf'), float('Inf'), float('Inf'))
+                    markers = self.extract_markers(panproteome, 50, 10, 15, 25, 20)
                     markers = markers[:150]
 
             if markers.empty:
@@ -266,10 +273,10 @@ class export_to_metaphlan2:
                         print(taxid)
                         raise e
                     mpa_marker = '{}__{}__{}'.format(taxid, core, feature['Name'][0])
-                    record = SeqIO.SeqRecord(seq=Seq(nuc_seq, alphabet=DNAAlphabet()), id=mpa_marker, description='UniRef90_{};{};{}'.format(core, taxonomy[0], gca))
+                    record = '>{} {}\n{}\n'.format(mpa_marker, 'UniRef90_{};{};{}'.format(core, taxonomy[0], gca), nuc_seq)
                     nucls.append(record)
                     if taxonomy_db not in db['taxonomy']:
-                        db['taxonomy'][taxonomy_db] = (taxonomy[1], sum(record.rlen for record in fna.faidx.index.values()),)
+                        db['taxonomy'][taxonomy_db] = (taxonomy[1], sum(contig.rlen for contig in fna.faidx.index.values()),)
                     ext_genomes = []
                     for x in ext_species:
                         cp = self.taxontree.get_child_proteomes(self.taxontree.taxid_n[x])
@@ -277,10 +284,11 @@ class export_to_metaphlan2:
                             ext_genomes.append(dict(self.proteomes[next(iter(cp))].get('ncbi_ids',{})).get('GCSetAcc','').split('.')[0])
 
                     db['markers'][mpa_marker] = { 'clade': '{}__{}'.format(clade.rank[0], clade.name),
-                                              'ext': list(set(ext_genomes)),
-                                              'len': len(record),
-                                              'score': 0,
-                                              'taxon': taxonomy[0] }
+                                                  'ext': list(set(ext_genomes)),
+                                                  'len': len(nuc_seq),
+                                                  'score': 0,
+                                                  'taxon': taxonomy[0]
+                                                }
                 else:
                     failed.append(str(core))
         if not len(failed): failed = None
@@ -293,18 +301,7 @@ class export_to_metaphlan2:
         with CodeTimer(name='Panproteome loading', debug=self.debug, logger=self.log):
             panproteome = pickle.load(open(panproteome, 'rb'))
         pp_tax_id = panproteome['tax_id']
-
-        with CodeTimer(name='Panproteome taxonomy extraction', debug=self.debug, logger=self.log):
-            try:
-                taxonomy = self.taxontree.print_full_taxonomy(pp_tax_id)
-                # print(taxonomy)
-            except Exception as ex:
-                try:
-                    taxonomy = self.taxontree.print_full_taxonomy(pp_tax_id)
-                except Exception as e:
-                    self.log.error('CRITICAL ERROR: {}'.format(pp_tax_id))
-                    self.log.error(traceback.format_exc())
-                    raise ex
+        taxonomy = self.taxontree.print_full_taxonomy(pp_tax_id)
         with CodeTimer(name='Marker extraction', debug=self.debug, logger=self.log):
             if pp_tax_id == 562:
                 possible_markers = self.get_ecoli_markers(panproteome)
@@ -374,7 +371,11 @@ class export_to_metaphlan2:
                 if len(upid) and len(gene_names):
                     if (upid, panproteome['tax_id'], taxonomy) not in gc:
                         gc[(upid, panproteome['tax_id'], taxonomy)] = set()
-                    gc[(upid, panproteome['tax_id'], taxonomy)].add((marker, gene_names, tuple(panproteome['members'][marker]['external_species_nosp']['90_90'])))
+                    gc[(upid, panproteome['tax_id'], taxonomy)].add((marker, 
+                                                                    gene_names, 
+                                                                    tuple(set(x for x in itertools.chain.from_iterable(panproteome['members'][marker]['external_species'].values())))
+                                                                    )
+                    )
 
             markers_nucls, db, failed, res = [], {}, [], []
             if len(gc):
@@ -406,23 +407,82 @@ class export_to_metaphlan2:
         with CodeTimer(name='Save marker stats', debug=self.debug, logger=self.log):
             possible_markers.to_csv('{}/{}/markers_stats/{}.txt'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']))
 
-def run_all(): 
-    config = utils.read_configs('settings.cfg')
-    config = utils.check_configs(config)['export']
+def map_markers_to_genomes(config):
+    bowtie2 = 'bowtie2'
+
+    os.makedirs('{}/mpa2_eval'.format(config['export_dir']))
+    os.makedirs('{}/mpa2_eval/bt2_idx'.format(config['export_dir']))
+
+    try:
+        subp.check_call([bowtie2, "--version"], stdout=DEVNULL)
+        subp.check_call(['bowtie2-build', "--version"], stdout=DEVNULL)
+    except Exception as e:
+        try:
+            sys.stderr.write("OSError: fatal error running '{}'. Is it in the system path?\n".format(bowtie2))
+            sys.exit(1)
+
+    all_genomes = glob.iglob('{}/{}/*/*/*.fna.gz'.format(config['download_base_dir'], config['relpath_genomes']))
+    
+    with dummy.Pool(processes=100) as pool:
+        contig2ass = [x for x in pool.imap_unordered(contig2assembly, all_genomes, chunksize=1000)]
+
+    # if contig2ass:
+    #     with open('{}/mpa2_eval/contig2genome.tsv'.format(config['export_dir']), 'wt') as fout:
+    #         fout.write(['{}\t{}\n'.format(contig, genome) for contigs,genome in contig2ass for contig in contigs])
+    terminating = dummy.Event()
+    try:
+        with mp.Pool(initializer = init_parse, initargs = (terminating, ), processes=30) as pool:
+            contig2ass = [_ for _ in pool.imap_unordered(build_bt2_idx, grouper(all_genomes, 1000), chunksize=10)]
+    except Exception as e:
+        utils.error('Failed to create a BowTie2 indexing...Exiting.')
+        exit(1)
+
+
+    bowtie2_cmd = ['bowtie2', "--quiet", "--no-unal", "--{}".format(preset),
+                       "-S", "-", "-x", bowtie2_db]
+    return 
+
+def contig2assembly(fn):
+    accids = []
+    with gzip.open(fn, 'rt', encoding='utf-8') as genome_handle:
+        for line in genome_handle:
+            if line.startswith('>'):
+                accids.append(line[1:].split()[0])
+
+    fn = fn.split('/')[-1]
+    return (accids, fn)
+
+def build_bt2_idx(bin_list):
+    if not terminating.is_set():
+        with tf.NamedTemporaryFile(dir='{}/mpa2_eval/bt2_idx'.format(config['export_dir']), suffix='.fna') as tmp_bin, \
+            open(tmp_bin.name, 'wt') as tmp_bin_handle:
+            for f in filter(None, bin_list):
+                with gzip.open(f, 'rt', encoding='utf-8') as fm:
+                    shutil.copyfileobj(fm, tmp_bin_handle, 1024*1024*10)
+            idx_name = tmp_bin.name.replace('.fna','_idx')
+            bt2_build_comm = ['bowtie2-build', '--threads', '20', tmp_bin.name, idx_name]
+            p = sb.Popen(bt2_build_comm, stdout=sb.DEVNULL, stdin=sb.DEVNULL, stderr=sb.PIPE)
+            p.communicate()
+
+        if not p.returncode:
+            terminating.set()
+            [ utils.remove_file('{}.{}'.format(idx_name,p)) for p in ["1.bt2", "2.bt2", "3.bt2", "4.bt2", "rev.1.bt2", "rev.2.bt2"] ]
+            raise
+
+def run_all(config): 
     outfile_prefix = 'mpa_v{}_CHOCOPhlAn_{}'.format(version.__MetaPhlAn2_db_version__, version.__CHOCOPhlAn_version__)
 
-    # if os.path.exists('{}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix)):
-    #     os.rename('{}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix), 
-    #         '{}/{}/{}_bak_{}'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix, datetime.datetime.today().strftime('%Y%m%d_%H%M')))
-    # for i in ['markers_stats','markers_fasta','markers_info']:
-    #     os.makedirs('{}/{}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix, i))
+    if os.path.exists('{}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix)):
+        os.rename('{}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix), 
+            '{}/{}/{}_bak_{}'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix, datetime.datetime.today().strftime('%Y%m%d_%H%M')))
+    for i in ['markers_stats','markers_fasta','markers_info']:
+        os.makedirs('{}/{}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix, i))
 
     config['exportpath_metaphlan2'] = config['exportpath_metaphlan2'] + '/' + outfile_prefix
 
-    species = glob.glob('{}/{}/species/90/*'.format(config['download_base_dir'], config['relpath_panproteomes_dir']))
     export = export_to_metaphlan2(config)
-    export.fragments = set(pickle.load(open('data/frag_sprot.pkl','rb')))
-    export.fragments.update(pickle.load(open('data/frag_trembl.pkl','rb')))
+    
+    species = glob.glob('{}/{}/species/90/*'.format(config['download_base_dir'], config['relpath_panproteomes_dir']))
 
     with dummy.Pool(processes=30) as pool:
         failed = [x for x in pool.imap(export.get_uniref_uniprotkb_from_panproteome, species, chunksize=200)]
@@ -434,7 +494,6 @@ def run_all():
     for x in export.db['markers']:
         export.db['markers'][x]['ext'] = [y for y in set(export.db['markers'][x]['ext']) if y in all_gca]
                 
-
     with bz2.BZ2File('{}/{}/{}.pkl'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix), 'w') as outfile:
         pickle.dump(export.db, outfile, pickle.HIGHEST_PROTOCOL)
 

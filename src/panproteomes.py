@@ -46,9 +46,8 @@ class Panproteome:
         self.config = config
         self.uniparc = {}
         for i in filter(re.compile('uniparc_[0-9]{4}.pkl').match, os.listdir('{}/{}/uniparc'.format(self.config['download_base_dir'], self.config['pickled_dir']))):
-            if self.config['verbose']:
-                utils.info('{}\n'.format(i))
-            self.uniparc.update({k:v[6] for k,v in pickle.load(open('{}/{}/uniparc/{}'.format(self.config['download_base_dir'], self.config['pickled_dir'], i),'rb')).items() })
+            #Extract uniprotkb members
+            self.uniparc.update({entry[0]:entry[6] for entry in utils.load_pickle('{}/{}/uniparc/{}'.format(self.config['download_base_dir'], self.config['pickled_dir'], i)) })
         self.idmapping = pickle.load(open('{}/{}'.format(self.config['download_base_dir'], self.config['relpath_pickle_uniprotkb_uniref_idmap']), 'rb'))
         self.taxontree = pickle.load(open('{}/{}'.format(self.config['download_base_dir'], self.config['relpath_pickle_taxontree']), 'rb'))
         self.proteomes = pickle.load(open('{}/{}'.format(self.config['download_base_dir'], self.config['relpath_pickle_proteomes']), 'rb'))
@@ -58,7 +57,8 @@ class Panproteome:
         self.clusters = [int(x) for x in self.config['uniref_cluster_panproteomes'].split(',')]
     
         for c in self.get_upper_clusters(max(self.clusters)):
-            self.__setattr__('uniref{}_tax_id_map'.format(c), pickle.load(open('{}/{}'.format(self.config['download_base_dir'], self.config['relpath_pickle_uniref{}_taxid_idmap'.format(c)]),'rb')))
+            self.__setattr__('uniref{}_tax_id_map'.format(c), 
+                {k:v for d in utils.load_pickle('{}/{}'.format(self.config['download_base_dir'], self.config['relpath_pickle_uniref{}_taxid_idmap'.format(c)])) for k, v in d.items()})
 
         os.makedirs('{}/{}/'.format(self.config['export_dir'], self.config['panproteomes_stats']), exist_ok=True)
 
@@ -76,7 +76,7 @@ class Panproteome:
         item, rank, panproteome_cluster = item_rank
         cluster_index = 0 if panproteome_cluster == 100 else (1 if panproteome_cluster == 90 else 2)
 
-        item_descendant = (x.tax_id for x in itertools.chain.from_iterable((item.get_terminals(), item.get_nonterminals())))
+        item_descendant = list(x.tax_id for x in itertools.chain.from_iterable((item.get_terminals(), item.get_nonterminals())))
         proteomes_to_process = self.taxontree.get_child_proteomes(item)
         if self.config['discard_low_quality_genomes'] and rank == 'genus':
             proteomes_to_process = [p for p in proteomes_to_process if not self.taxontree.taxid_n[self.proteomes[p]['tax_id']].is_low_quality]
@@ -134,7 +134,7 @@ class Panproteome:
                     uniref_id = 'UniRef{}_{}'.format(cluster, uniref_id) if 'UniRef' not in uniref_id else uniref_id
                     taxa_is_present = destination_clusters.get('{}'.format(uniref_id),[''])[0]
                     external_hits = [x for x in taxa_is_present if x[1] not in item_descendant]
-                    external_genomes = Counter(self.taxontree.go_up_to_species(taxid) for _, taxid, _ in external_hits)
+                    external_genomes = Counter(self.taxontree.go_up_to_species(int(taxid)) for _, taxid, _ in external_hits if taxid)
                     if None in external_genomes: external_genomes.pop(None)
                     external_species = list(external_genomes.keys())
                     external_species_nosp = set(taxid for taxid in external_species if not self.taxontree.taxid_n[taxid].is_low_quality)
@@ -164,22 +164,15 @@ class Panproteome:
         for k in ranks_to_process:
             os.makedirs('{}/{}/{}/{}'.format(self.config['download_base_dir'], self.config['relpath_panproteomes_dir'], k, cluster), exist_ok=True)
         
-        # try:
-        #     terminating_p = dummy.Event()
-        #     with dummy.Pool(initializer=init_parse, initargs=(terminating_p, ), processes=100) as pool:
-        #         d = [ _ for _ in pool.imap_unordered(self.process_panproteome, 
-        #             ((item, rank, cluster) for rank in ranks_to_process 
-        #                                    for item in self.d_ranks[rank] 
-        #                                    if self.taxontree.get_child_proteomes(item)),
-        #             chunksize=5000000)]
-        # except Exception as e:
-        #     utils.error(str(e))
-        #     raise
-
-        for rank in ranks_to_process:
-            for item in self.d_ranks[rank]:
-                if self.taxontree.get_child_proteomes(item):
-                    self.process_panproteome((item, rank, cluster))
+        try:
+            with dummy.Pool(processes=100) as pool:
+                d = [ _ for _ in pool.imap_unordered(self.process_panproteome, 
+                    ((item, rank, cluster) for rank in ranks_to_process 
+                                           for item in self.d_ranks[rank] 
+                                           if self.taxontree.get_child_proteomes(item)))]
+        except Exception as e:
+            utils.error(str(e))
+            raise
 
     @staticmethod
     def find_core_genes(panproteome):

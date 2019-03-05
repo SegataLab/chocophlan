@@ -27,7 +27,6 @@ from itertools import zip_longest
 from lxml import etree
 from functools import partial
 import traceback
-import xxhash as hash
 
 ns = {'upkb' : 'http://uniprot.org/uniprot', 'nr' : 'http://uniprot.org/uniref', 'up' : 'http://uniprot.org/uniparc'}
 GROUP_CHUNK = 1000000
@@ -99,6 +98,7 @@ def parse_uniref_xml_elem(elem):
             nr_id = ''.join(elem.xpath("/nr:entry/@id", namespaces=ns, smart_strings=False))
             common_taxid = ''.join(elem.xpath("/nr:entry/nr:property[@type='common taxon ID']/@value", namespaces=ns, smart_strings=False))
             common_taxid = int(common_taxid) if common_taxid else common_taxid
+            #TODO Fix extraction of upper UniRef level, now returns a collapsed list
             UniRef100 = ''.join(set(elem.xpath("(/nr:entry/nr:member|nr:representativeMember)/nr:dbReference/nr:property[@type='UniRef100 ID']/@value", namespaces = ns, smart_strings=False)))[10:]
             UniRef90 = ''.join(set(elem.xpath("(/nr:entry/nr:member|nr:representativeMember)/nr:dbReference/nr:property[@type='UniRef90 ID']/@value", namespaces = ns, smart_strings=False)))[9:]
             UniRef50 = ''.join(set(elem.xpath("(/nr:entry/nr:member|nr:representativeMember)/nr:dbReference/nr:property[@type='UniRef50 ID']/@value", namespaces = ns, smart_strings=False)))[9:]
@@ -111,7 +111,7 @@ def parse_uniref_xml_elem(elem):
                 isRepr = True if member.xpath('name()', namespaces=ns, smart_strings=False) == 'representativeMember' else False
                 members.append((accession,tax_id, isRepr))
                 if uniparc_cluster:
-                    members.append((uniparc_cluster,tax_id, isRepr))
+                    members.append((uniparc_cluster,int(tax_id), isRepr))
 
             t_uniref = (nr_id,
                         common_taxid,
@@ -247,7 +247,7 @@ def parse_uniprotkb_xml(xml_input, config):
                 if not index % GROUP_CHUNK:
                     pickle_chunk.close()
                     file_chunk = 1 + (index//GROUP_CHUNK )
-                    pickle_chunk = open("{}/{}/uniprotkb/{}_{}.pkl".format(config['download_base_dir'], config['pickled_dir'], db_name, file_chunk,'ab'))
+                    pickle_chunk = open("{}/{}/uniprotkb/{}_{}.pkl".format(config['download_base_dir'], config['pickled_dir'], db_name, file_chunk),'ab')
                 if elem:
                     utils.optimized_dump(pickle_chunk, elem)
                     utils.optimized_dump(pickle_idmap, (elem[0], file_chunk*db,))
@@ -310,18 +310,17 @@ def parse_uniparc_xml(xml_input, config):
         utils.info('Starting processing {} file...\n'.format(xml_input))
 
     tree = etree.iterparse(gzip.open(xml_input), events = ('end',), tag = '{http://uniprot.org/uniparc}entry', huge_tree = True)
-    idmap = {}
-
+    
     with mpdummy.Pool(initializer=initt, initargs=(terminating,), processes=chunksize) as pool,\
          open("{}/{}/uniparc_idmap.pkl".format(config['download_base_dir'], config['pickled_dir']),'ab') as pickle_idmap:
         try:
             file_chunk = 1000
-            pickle_chunk = open("{}/{}/uniparc/uniparc_{}.pkl".format(config['download_base_dir'], config['pickled_dir'], file_chunk),'ab')
-            for index, elem in enumerate(pool.imap_unordered(parse_uniprotkb_xml_elem, yield_filtered_xml_string(tree)),1):
+            pickle_chunk = open("{}/{}/uniparc/uniparc_{}.pkl".format(config['download_base_dir'], config['pickled_dir'], file_chunk),'wb')
+            for index, elem in enumerate(pool.imap_unordered(parse_uniparc_xml_elem, yield_filtered_xml_string(tree)),1):
                 if not index % GROUP_CHUNK:
                     pickle_chunk.close()
                     file_chunk = 1000 + (index//GROUP_CHUNK)
-                    pickle_chunk = open("{}/{}/uniparc/uniparc_{}.pkl".format(config['download_base_dir'], config['pickled_dir'], file_chunk),'ab')
+                    pickle_chunk = open("{}/{}/uniparc/uniparc_{}.pkl".format(config['download_base_dir'], config['pickled_dir'], file_chunk),'wb')
                 if elem :
                     utils.optimized_dump(pickle_chunk, elem)
                     utils.optimized_dump(pickle_idmap, (elem[0], file_chunk,))
@@ -445,12 +444,13 @@ def create_proteomes_pkl(xml_input, config):
     try:
         with mpdummy.Pool(processes=chunksize) as pool:
             for prot in pool.imap_unordered(parse_proteomes_xml_elem, yield_filtered_xml_string(tree), chunksize=chunksize):
-                d_proteomes[prot[0]] = {'tax_id' : prot[1],
-                                        'upi' : prot[2],
-                                        'isReference' : prot[3],
-                                        'ncbi_ids' : prot[4],
-                                        'members' : prot[5]
-                                    }
+                if prot is not None:
+                    d_proteomes[prot[0]] = {'tax_id' : prot[1],
+                                            'upi' : prot[2],
+                                            'isReference' : prot[3],
+                                            'ncbi_ids' : prot[4],
+                                            'members' : prot[5]
+                                        }
     except Exception as e:
         utils.error(str(e))
         utils.error('Processing failed')
@@ -523,7 +523,7 @@ def merge_uniparc_idmapping(config):
         for c in ur_clusters:
             cluster_idmapping = "{}/{}/{}_uniparc_idmap.pkl".format(config['download_base_dir'],config['pickled_dir'], c)
             
-            for upi, cluster in itertools.chain.from_iterable(utils.load_pickle(cluster_idmapping, yielder=True)):
+            for upi, cluster in itertools.chain.from_iterable(utils.load_pickle(cluster_idmapping)):
                 if upi not in uniparc_idmapping:
                     uniparc_idmapping[upi] = set()
                 uniparc_idmapping[upi].add(cluster)
@@ -538,7 +538,7 @@ def merge_uniparc_idmapping(config):
         
         idmapping = '{}{}'.format(config['download_base_dir'],config['relpath_pickle_uniprotkb_uniref_idmap'])
 
-        for upkb, cluster in utils.load_pickle(idmapping, yielder=True):
+        for upkb, cluster in utils.load_pickle(idmapping):
             uniparc_idmapping[upkb] = cluster
 
         #update to global
@@ -556,24 +556,23 @@ def merge_idmap(config):
          "{}/{}/{}_idmap.pkl".format(config['download_base_dir'], config['pickled_dir'], 'uniparc')]
     utils.info('Merging UniProtKB and UniParc ids...\n')
 
-    idmap = {}
-    for fin in x:
-        with open(fin, 'rb') as pickled:
-            idmap.update(pickle.load(pickled))
-        os.unlink(fin)
+    with open("{}/{}".format(config['download_base_dir'],config['relpath_pickle_uniprotkb_idmap']), 'wb') as idmap_pkl:
+        [utils.optimized_dump(idmap_pkl, elem) for fin in x for elem in utils.load_pickle(fin)]
 
-    pickle.dump(idmap,open("{}/{}".format(config['download_base_dir'],config['relpath_pickle_uniprotkb_idmap']), 'wb'), -1)
-    
     utils.info('Done merging UniProtKB ids.\n')
+
+def annotate_with_sgb(config):
+    taxontree = pickle.load(open("{}/{}".format(config['download_base_dir'],config['relpath_pickle_taxontree']),'rb'))
+    proteomes 
 
 def process_proteomes(config):
     os.makedirs('{}/{}'.format(config['download_base_dir'],config['pickled_dir']), exist_ok=True)
     if not os.path.exists("{}/{}/{}".format(config['download_base_dir'], config['pickled_dir'], 'uniprotkb')):
         os.makedirs("{}/{}/{}".format(config['download_base_dir'], config['pickled_dir'], 'uniprotkb'))
 
-    # parse_uniref_xml(config['download_base_dir']+config['relpath_uniref100'],config)
-    # parse_uniref_xml(config['download_base_dir']+config['relpath_uniref90'],config)
-    # parse_uniref_xml(config['download_base_dir']+config['relpath_uniref50'],config)
+    parse_uniref_xml(config['download_base_dir']+config['relpath_uniref100'],config)
+    parse_uniref_xml(config['download_base_dir']+config['relpath_uniref90'],config)
+    parse_uniref_xml(config['download_base_dir']+config['relpath_uniref50'],config)
 
     global uniprotkb_uniref_idmap
 
@@ -586,7 +585,7 @@ def process_proteomes(config):
     else:
         utils.error('NCBI taxonomic tree not found. Exiting...', exit = True)
         
-    # parse_uniprotkb_uniref_idmapping(config)
+    parse_uniprotkb_uniref_idmapping(config)
     uniprotkb_uniref_idmap = merge_uniparc_idmapping(config)
     
     if not uniprotkb_uniref_idmap:
@@ -598,9 +597,10 @@ def process_proteomes(config):
     parse_uniprotkb_xml(config['download_base_dir']+config['relpath_uniprot_trembl'], config)
     parse_uniparc_xml(config['download_base_dir']+config['relpath_uniparc'],config)
 
-    # merge_idmap(config)
-    # create_proteomes_pkl(config['download_base_dir']+config['relpath_proteomes_xml'], config)
-    # annotate_taxon_tree(config)
+    merge_idmap(config)
+    create_proteomes_pkl(config['download_base_dir']+config['relpath_proteomes_xml'], config)
+    annotate_taxon_tree(config)
+    annotate_with_sgb(config)
 
 if __name__ == '__main__':
     t0=time.time()

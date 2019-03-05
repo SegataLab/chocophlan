@@ -149,18 +149,12 @@ def trim_trailing_slashes(input_string):
 def optimized_dump(fout, elem):
     fout.write(pickletools.optimize(pickle.dumps(elem, pickle.HIGHEST_PROTOCOL)))
 
-def load_pickle(pkl_path, yielder=False):
+def load_pickle(pkl_path):
     end = False
     fin = open(pkl_path, 'rb')
-    xl = []
     while not end:
         try:
-            if not yielder:
-                xl.append(pickle.load(fin))
-            else:
-                yield pickle.load(fin)
+            yield pickle.load(fin)
         except EOFError:
             end=True
             fin.close()
-    if not yielder:
-        return xl

@@ -66,9 +66,9 @@ class Nodes:
         pass
 
     def __init__(self, nodes_dmp, tax_ids_to_names=None):
+        tmp_nodes = {}
         # Go through every line of Nodes file to construct tree. tmp_nodes will
         # be a dictionary pointing from the taxid to its clade
-        tmp_nodes = {}
         # with open( nodes_dmp_file ) as inpf:
         for line in nodes_dmp:
             (tax_id, parent_tax_id, rank, embl_code, division_id, inherited_div_flag,
@@ -86,16 +86,10 @@ class Nodes:
             clade.tax_id = int(tax_id)
             clade.initially_terminal = False
             #clade.accession = accessions[clade.tax_id] if clade.tax_id in accessions else []
-
-    # Set clade status values to "True" for sequence data and "final" or "draft" if it appears in accessions (taxid -> name, status, accessions)
-            # if clade.tax_id in accessions:
-            #    clade.sequence_data = True
-            #    clade.status = clade.accession['status']
-
             tmp_nodes[clade.tax_id] = clade
 
             # can add any other info in node.dmp
-            
+
     # Build the tree using all the clades (iterate through clades using
     # tmp_nodes)
         self.tree = BTree()
@@ -106,10 +100,12 @@ class Nodes:
                 continue
             parent = tmp_nodes[node.parent_tax_id]
             parent.clades.append(node)
-
+           
         self.taxid_n = tmp_nodes
         self.leaves_taxids = []
         self.num_nodes = 0
+
+
         # Determine initial leaves of the tree. This function is called once after loading of the tree and should NOT be called at any time later, as
         # many logical concepts of functions here are based on this assumption.
         self.determine_initial_leaves()
@@ -223,7 +219,6 @@ class Nodes:
             itera += 1
             print("Removing stub subtrees. Iteration ", str(itera))
 
-
     def get_leave_ids(self, clade=None, recur=False):
         if not recur:
             self.leaves_taxids = []
@@ -256,7 +251,7 @@ class Nodes:
      
     def print_full_taxonomy(self, tax_id):
         ranks2code = {'superkingdom': 'k', 'phylum': 'p', 'class': 'c',
-                      'order': 'o', 'family': 'f', 'genus': 'g', 'species': 's', 'taxon': 't'}
+                      'order': 'o', 'family': 'f', 'genus': 'g', 'species': 's', 'taxon': 't', 'sgb' : 't'}
         order = ('k', 'p', 'c', 'o', 'f', 'g', 's', 't')
 
         # path = [p for p in self.tree.root.get_path(self.taxid_n[tax_id]) if p.rank in ranks2code or (p.rank=='norank')]
@@ -516,7 +511,7 @@ def do_extraction(config, verbose=False):
     # tax_tree.get_tree_with_reduced_taxonomy()
 
     candidatus_taxid = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search(u'(C|c)andidat(e|us)_',tax_tree.taxid_n[x].name)]
-    cags_taxid = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search(u'_CAG_',tax_tree.taxid_n[x].name)]
+    # cags_taxid = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search(u'_CAG_',tax_tree.taxid_n[x].name)]
     sps_taxid = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search(u'_sp(_|$)',tax_tree.taxid_n[x].name)]
     bacterium_taxis = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if '(_|^)(b|B)acterium(_|$)' in tax_tree.taxid_n[x].name]
     archaeon_taxis = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search('(eury|)archaeo(n_|te)',tax_tree.taxid_n[x].name)]
@@ -562,7 +557,6 @@ def read_taxdump(taxdump_dir, verbose=False):
     utils.info('names.dmp and nodes.dmp successfully read\n')
 
     return (names_buf, nodes_buf)
-
 
 if __name__ == '__main__':
     t0 = time.time()
