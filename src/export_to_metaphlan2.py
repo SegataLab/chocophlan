@@ -6,34 +6,37 @@ author__ = ('Nicola Segata (nicola.segata@unitn.it), '
 
 __date__ = '04 Mar 2019'
 
-import os
-import pickle
-import multiprocessing.dummy as dummy
-import multiprocessing as mp
-import tempfile as tp
-import _version as version
-import glob
-import time
-import re
-import gzip
-import itertools
-import shutil
-import logging
-import importlib
-import traceback
-import pandas as pd
-import numpy as np
-import gffutils
-import resource
-import datetime
-import bz2
+from Bio import SeqIO
+from Bio.Alphabet import DNAAlphabet
+from Bio.Seq import Seq
+from Bio.SeqIO.FastaIO import SimpleFastaParser
 from collections import Counter
+from operator import itemgetter
 from pyfaidx import  Fasta
 from tempfile import NamedTemporaryFile
-from operator import itemgetter
-from itertools import zip_longest
-import subprocess as sb
+import _version as version
+import bz2
+import datetime
+import gffutils
+import glob
+import gzip
+import importlib
+import itertools
+import logging
+import multiprocessing as mp
+import multiprocessing.dummy as dummy
+import numpy as np
+import os
+import pandas as pd
+import pickle
 import random
+import re
+import resource
+import shutil
+import subprocess as sb
+import tarfile
+import tempfile as tp
+import time
 
 if __name__ == '__main__':
     import utils
@@ -41,6 +44,8 @@ if __name__ == '__main__':
 else:
     utils = importlib.import_module('src.utils')
     from src.panproteomes import Panproteome
+
+OUTFILE_PREFIX = 'mpa_v{}_CHOCOPhlAn_{}'.format(version.__MetaPhlAn2_db_version__, version.__CHOCOPhlAn_version__)
 
 def init_parse(terminating_):
     global terminating
@@ -50,11 +55,24 @@ def grouper(iterable, n, fillvalue=None):
     #"Collect data into fixed-length chunks or blocks"
     # grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx"
     args = [iter(iterable)] * n
-    return zip_longest(*args, fillvalue=fillvalue)
+    return itertools.zip_longest(*args, fillvalue=fillvalue)
 
 def log_result(retval):
     # This is called whenever foo_pool(i) returns a result.
     failed.append(retval)
+
+def load_file(f_path):
+    with open(f_path, 'rt') as ifn:
+        for line in ifn:
+            yield line.strip().split()
+
+def isconsecutive(l):
+    m = max(l)
+    if sum(l) == (m * (m+1))/ 2:
+        return True
+    return False
+
+def range1(x): return range(1,x)
 
 class CodeTimer:
     def __init__(self, logger, name=None, debug=False):
@@ -407,12 +425,17 @@ class export_to_metaphlan2:
         with CodeTimer(name='Save marker stats', debug=self.debug, logger=self.log):
             possible_markers.to_csv('{}/{}/markers_stats/{}.txt'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']))
 
-def map_markers_to_genomes(config):
+def map_markers_to_genomes(mpa_pkl, taxontree, outfile_prefix, config):
     bowtie2 = 'bowtie2'
+    BT2OUT_FOLDER = '{}/mpa2_eval/bt2_out'.format(os.path.abspath(config['export_dir']))
+    BT2IDX_FOLDER = '{}/mpa2_eval/bt2_idx'.format(os.path.abspath(config['export_dir']))
 
     os.makedirs('{}/mpa2_eval'.format(config['export_dir']))
-    os.makedirs('{}/mpa2_eval/bt2_idx'.format(config['export_dir']))
-
+    os.makedirs(BT2IDX_FOLDER)
+    os.makedirs(BT2OUT_FOLDER)
+    
+    READLEN = 150
+    
     try:
         subp.check_call([bowtie2, "--version"], stdout=DEVNULL)
         subp.check_call(['bowtie2-build', "--version"], stdout=DEVNULL)
@@ -426,21 +449,95 @@ def map_markers_to_genomes(config):
     with dummy.Pool(processes=100) as pool:
         contig2ass = [x for x in pool.imap_unordered(contig2assembly, all_genomes, chunksize=1000)]
 
-    # if contig2ass:
-    #     with open('{}/mpa2_eval/contig2genome.tsv'.format(config['export_dir']), 'wt') as fout:
-    #         fout.write(['{}\t{}\n'.format(contig, genome) for contigs,genome in contig2ass for contig in contigs])
+    if contig2ass:
+        contig2ass = { contig : genome for contigs,genome in contig2ass for contig in contigs }
+    
+
     terminating = dummy.Event()
     try:
         with mp.Pool(initializer = init_parse, initargs = (terminating, ), processes=30) as pool:
-            contig2ass = [_ for _ in pool.imap_unordered(build_bt2_idx, grouper(all_genomes, 1000), chunksize=10)]
+            bt2_indexes = [x for x in pool.imap_unordered(build_bt2_idx, grouper(all_genomes, 1000), chunksize=10)]
     except Exception as e:
         utils.error('Failed to create a BowTie2 indexing...Exiting.')
         exit(1)
 
+    mpa_markers_fna =  '{}/{}/{}.fna'.format(config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix) 
+    mpa_markers_splitted_fna =  '{}/{}/{}_splitted.fna'.format(config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix) 
+    split_markers(mpa_markers_fna, mpa_markers_splitted_fna)
+    
+    if os.path.isfile(mpa_markers_splitted_fna):
+        terminating = dummy.Event()
+        try:
+            bt2_map_args = [ (bt2_idx, mpa_markers_splitted_fna, os.path.join(BT2OUT_FOLDER, bt2_idx.split('/')[-1] + '.sam')) for bt2_idx in bt2_indexes ]
+            with mp.Pool(initializer = init_parse, initargs = (terminating, ), processes=20) as pool:
+                sams = [x for x in pool.imap_unordered(run_bowtie2, bt2_map_args, chunksize=1)]
+        except Exception as e:
+            utils.error('Failed to map BowTie2...Exiting.')
+            exit(1)
+    
+    markers2contig = {}
 
-    bowtie2_cmd = ['bowtie2', "--quiet", "--no-unal", "--{}".format(preset),
-                       "-S", "-", "-x", bowtie2_db]
-    return 
+    for spath in sams:
+        for line in load_file(spath):
+            marker, flag, contig, start, CIGAR = line[0], int(line[1]), line[2], line[3], line[5]
+            marker, chunk = marker.split(':::')
+            if marker not in markers:
+                markers[marker] = {}
+            if contig not in markers[marker]:
+                markers[marker][contig] = (int(chunk.split('/')[-1]),[])
+            markers[marker][contig][1].append((chunk, start, CIGAR, flag))
+
+    not_full = set()
+    marker_present = {}
+
+    for marker, contig, total_chunks, chunks in ((marker, contig, total_chunks, chunks) for marker, _ in markers.items() for contig, (total_chunks, chunks) in _.items()):
+        flag = set(x[3] for x in chunks)
+        reverse_strand = all([hex(f & 0x10) == '0x10' for f in flag])
+
+        chunks.sort(key=lambda x:(int(x[0].split('/')[0]), x[1]))
+        idx = 1
+        previous_start = 0
+        temp_chunks = []
+        for c in chunks:
+            if previous_start == 0 and c[0].startswith('1/'):
+                previous_start = int(c[1]) - (-1 if reverse_strand else +1) * READLEN
+            if c[0] == '{}/{}'.format(idx, total_chunks) and previous_start + (-1 if reverse_strand else +1) * READLEN == int(c[1]):
+                temp_chunks.append(c)
+                idx = idx +1 
+                previous_start = int(c[1])
+
+        chunks = temp_chunks
+        if [ int(c[1]) for c in chunks[1:] ] == [ int(c[1]) + (-1 if reverse_strand else +1) * READLEN for c in chunks[:-1] ]: # and all(c[2]=='150M' for c in chunks):
+            gca = contig2gca[contig]
+            taxon = []
+            if gca in gca2taxon:
+                taxon = gca2taxon[gca]
+            if marker not in marker_present:
+                 marker_present[marker] = set()
+            marker_present[marker].add('|'.join(taxon))
+
+        else:
+            not_full.add((marker, contig))
+
+    markers2externals = {}
+    for marker, hits in marker_present.items():
+        ext_species = Counter(taxontree.go_up_to_species(int(h.split('|')[0])) for h in hits if h !='')
+        marker_taxid = int(marker.split('__')[0])
+        markers2externals.setdefault(marker, {})
+        markers2externals[marker]['coreness'] = ext_species.pop(marker_taxid) if marker_taxid in ext_species else 0
+        markers2externals[marker]['external_species'] = [x for x in ext_species.keys()]
+        markers2externals[marker]['external_genomes'] = sum(x for x in ext_species.values())
+        markers2externals[marker]['ext_species'] = ';'.join('{}:{}'.format(k,v) for k,v in ext_species.items())
+
+    for marker, vals in markers2externals.items():
+        ext_genomes = [(taxon2gca[x], taxontree.print_full_taxonomy(x)[0]) for x in vals['external_species']]
+        newt = [gca for gcas, taxstr in ext_genomes for gca in gcas if taxstr+'|t__'+gca in mpa_pkl['taxonomy']]
+        if newt and marker in mpa_pkl['markers']:
+            s_exts = set(mpa_pkl['markers'][marker]['ext'])
+            s_exts.update(newt)
+            mpa_pkl['markers'][marker]['ext'] = list(s_exts)
+
+    return (mpa_pkl, markers2externals)
 
 def contig2assembly(fn):
     accids = []
@@ -469,16 +566,50 @@ def build_bt2_idx(bin_list):
             [ utils.remove_file('{}.{}'.format(idx_name,p)) for p in ["1.bt2", "2.bt2", "3.bt2", "4.bt2", "rev.1.bt2", "rev.2.bt2"] ]
             raise
 
+        return idx_name
+
+def run_bowtie2(args):
+    bin_idx, mpa_markers_splitted_fna, out_sam = args
+    if not terminating.is_set():
+        bt2_mapping_comm = ['bowtie2', '-f', mpa_markers_splitted_fna,
+                                       '-x', bin_idx,
+                                       '-a', 
+                                       '--very-sensitive',
+                                       '--no-hd',
+                                       '--no-sq',
+                                       '--no-unal',
+                                       '--threads 4',
+                                       '-S', out_sam ]
+        p = sb.Popen(bt2_mapping_comm, stdout=sb.DEVNULL, stdin=sb.DEVNULL, stderr=sb.PIPE)
+        p.communicate()
+
+        if not p.returncode:
+            terminating.set()
+            utils.remove_file(out_sam)
+            raise
+
+        return out_sam
+
+def split_markers(ifn, ofn):
+    readsize=150
+    with open(ofn, "w") as output_handle:
+        for record in SeqIO.parse(ifn, "fasta"):
+            start = 0
+            tlen = len(record.seq)//readsize
+            for i in range(1,tlen+1):
+                subseq = record.seq[start:readsize*i]
+                new_record = SeqIO.SeqRecord(seq=subseq, id='{}:::{}/{}'.format(record.id, i, tlen), description  = '')
+                start=readsize*i
+                SeqIO.write(new_record, output_handle, "fasta")
+
 def run_all(config): 
-    outfile_prefix = 'mpa_v{}_CHOCOPhlAn_{}'.format(version.__MetaPhlAn2_db_version__, version.__CHOCOPhlAn_version__)
-
-    if os.path.exists('{}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix)):
-        os.rename('{}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix), 
-            '{}/{}/{}_bak_{}'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix, datetime.datetime.today().strftime('%Y%m%d_%H%M')))
+    if os.path.exists('{}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX)):
+        os.rename('{}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX), 
+            '{}/{}/{}_bak_{}'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX, datetime.datetime.today().strftime('%Y%m%d_%H%M')))
     for i in ['markers_stats','markers_fasta','markers_info']:
-        os.makedirs('{}/{}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix, i))
+        os.makedirs('{}/{}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX, i))
 
-    config['exportpath_metaphlan2'] = config['exportpath_metaphlan2'] + '/' + outfile_prefix
+    config['exportpath_metaphlan2'] = config['exportpath_metaphlan2'] + '/' + OUTFILE_PREFIX
 
     export = export_to_metaphlan2(config)
     
@@ -490,18 +621,41 @@ def run_all(config):
     with open('{}/{}/failed_markers.txt'.format(config['export_dir'], config['exportpath_metaphlan2']), 'wt') as ofn_failed:
         ofn_failed.writelines('\n'.join(str(x) for x in filter(None, failed)))
 
-    all_gca = [x.split('|')[-1].split('__')[1] for x in export.db['taxonomy'].keys()] 
+    all_gca = [x.split('|')[-1].split('__')[1] for x in export.db['taxonomy'].keys()]
     for x in export.db['markers']:
         export.db['markers'][x]['ext'] = [y for y in set(export.db['markers'][x]['ext']) if y in all_gca]
                 
-    with bz2.BZ2File('{}/{}/{}.pkl'.format(config['export_dir'], config['exportpath_metaphlan2'], outfile_prefix), 'w') as outfile:
-        pickle.dump(export.db, outfile, pickle.HIGHEST_PROTOCOL)
-
-    with open('{}/{}/{}.fna'.format(config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix), 'wb') as mpa2_markers_fna:
+    with open('{}/{}/{}.fna'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'wb') as mpa2_markers_fna:
         for f in glob.glob('{}/{}/markers_fasta/*.fna'.format(config['export_dir'], config['exportpath_metaphlan2'])):
             with open(f, 'rb') as fm:
                 shutil.copyfileobj(fm, mpa2_markers_fna, 1024*1024*10)
 
+    mpa_pkl, markers2ext = map_markers_to_genomes(export.db, export.taxontree, OUTFILE_PREFIX, export.config)
     
-    bwt2b_comm = 'bowtie2-build --threads 20 {}/{}/{}.fna {}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix, config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix)
-    sb.run(bwt2b_comm.split(), stderr = sb.DEVNULL, stdout = sb.DEVNULL, check = True)
+    with open('{}/{}/{}_ext.tsv'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as outfile:
+        outfile.write('{}\t{}\n'.format(marker, ','.join(str(x) for marker in markers2ext)))
+
+    with bz2.BZ2File('{}/{}/{}.pkl'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as outfile:
+        pickle.dump(mpa_pkl, outfile, pickle.HIGHEST_PROTOCOL)
+  
+    # bwt2b_comm = [ 'bowtie2-build',
+    #                '--threads', '20',
+    #                '{}/{}/{}.fna'.format(config['export_dir'], config['exportpath_metaphlan2'],OUTFILE_PREFIX),
+    #                '{}/{}/{}'.format(config['export_dir'], config['exportpath_metaphlan2'],OUTFILE_PREFIX config['export_dir'], config['exportpath_metaphlan2'],OUTFILE_PREFIX)
+    #             ]
+    # sb.run(bwt2b_comm, stderr = sb.DEVNULL, stdout = sb.DEVNULL, check = True)
+
+    try:
+        with bz2.open('{}/{}/{}.fna.bz2'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'wt') as outfile, \
+             open('{}/{}/{}.fna'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'r') as infile:
+             outfile.writelines(infile.readlines())
+    except:
+        utils.remove_file('{}/{}/{}.fna.bz2'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX))
+        utils.error('Failed to compress the MetaPhlAn2 markers database. Exiting...')
+        exit(1)
+
+    utils.remove_file('{}/{}/{}.fna'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX))
+
+    with tarfile.TarFile('{}/{}/{}.tar'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as mpa_tar:
+        mpa_tar.add('{}/{}/{}.pkl'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX))
+        mpa_tar.add('{}/{}/{}.fna.bz2'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX))
