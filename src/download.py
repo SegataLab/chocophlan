@@ -34,7 +34,7 @@ import re
 from lxml import etree 
 from functools import partial
 from urllib.parse import urlparse
-
+from _version import __UniRef_version__
 
 NCBI_URL="https://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt"
 GCA_COLUMN=0
@@ -274,7 +274,7 @@ def download_file(url,file):
         status = 1
     return status
 
-def get_ncbi_assembly_info():
+def  get_ncbi_assembly_info():
     # create a tempfile for the download
     file_handle, new_file = tempfile.mkstemp(prefix="ncbi_download")
 
@@ -422,7 +422,7 @@ def download_ncbi_from_proteome_pickle(config, proteomes=None, taxontree=None):
     to_update = False
     for proteome, gca in proteomes_to_update:
         to_update = True
-        temp_acc = list(proteomes['UP000264900']['ncbi_ids'])
+        temp_acc = list(proteomes[proteome]['ncbi_ids'])
         temp_acc.append(('GCSetAcc',gca))
         proteomes[proteome]['ncbi_ids'] = tuple(temp_acc)
 
@@ -431,7 +431,7 @@ def download_ncbi_from_proteome_pickle(config, proteomes=None, taxontree=None):
 
     with open('failed_GCA.txt','w') as f:
         f.write('\n'.join(list(failed)))
-
+    config['relpath_gca2taxa'] = config['relpath_gca2taxa'].replace('DATE', __UniRef_version__)
     with open('{}{}'.format(config['export_dir'],config['relpath_gca2taxa']), 'w') as f:
         f.write('GCA_accession\tUProteome\tNCBI_taxid\ttaxstr\ttaxidstr\n')
         for upid, gca, taxid in ((p, dict(proteomes[p]['ncbi_ids']).get('GCSetAcc',''), proteomes[p]['tax_id']) for p in proteomes if 'ncbi_ids' in proteomes[p]):

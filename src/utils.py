@@ -5,16 +5,20 @@ __author__ = ('Nicola Segata (nicola.segata@unitn.it), '
               'Francesco Beghini (francesco.beghini@unitn.it)'
               'Nicolai Karcher (karchern@gmail.com),'
               'Francesco Asnicar (f.asnicar@unitn.it)')
-from _version import __CHOCOPhlAn_version__
+
 __date__ = '03 Oct 2017'
-
-
 import os
 import sys
 import pickle
 import pickletools
 import argparse as ap
 import configparser as cp
+import importlib
+
+# if __name__ == '__main__':
+#     from _version import __CHOCOPhlAn_version__
+# else:
+#     __CHOCOPhlAn_version__
 
 def info(s, init_new_line=False, exit=False, exit_value=0):
     if init_new_line:
@@ -66,9 +70,9 @@ def read_params():
 
 
 def check_params(args, verbose=False):
-    if args.version:
-        info('ChocoPhlAn version {} ({})\n'.format(__CHOCOPhlAn_version__, __date__),
-             exit=True)
+    # if args.version:
+    #     info('ChocoPhlAn version {} ({})\n'.format(__CHOCOPhlAn_version__, __date__),
+    #          exit=True)
     # checking configuration file
     if not args.config_file:
         error('-f (or --config_file) must be specified', exit=True)

@@ -151,6 +151,12 @@ def read_params():
     group.add_argument('--relpath_pickle_contigid_filename',
                        default='/pickled/contigid_filename.pkl',
                        help='')
+    group.add_argument('--relpath_gca2taxa',
+                       default='gca2taxonomy_DATE.txt',
+                       help='')
+    group.add_argument('--relpath_relnotes',
+                   default='_relnotes.txt',
+                   help='')
 
     group.add_argument('--uniref_cluster_panproteomes',
                       default='90')
@@ -250,6 +256,9 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.relpath_uniprot_trembl)
     configparser_object.set('download', 'relpath_uniparc',
                             args.relpath_uniparc)
+    configparser_object.set('download', 'relpath_relnotes',
+                            args.relpath_relnotes)
+    
     configparser_object.set('download', 'verbose', str(verbose))
     configparser_object.set('download', 'nproc', str(args.nproc))
 
@@ -399,6 +408,8 @@ def set_download_options(configparser_object, args, verbose=False):
                         args.exportpath_metaphlan2)
     configparser_object.set('export', 'relpath_panproteomes_dir',
                             args.relpath_panproteomes_dir)
+    configparser_object.set('export', 'relpath_genomes',
+                        args.relpath_genomes)
     configparser_object.set('export', 'relpath_pickle_proteomes',
                             args.relpath_pickle_proteomes)
     configparser_object.set('export', 'relpath_pickle_taxontree',
