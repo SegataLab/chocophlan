@@ -258,7 +258,9 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.relpath_uniparc)
     configparser_object.set('download', 'relpath_relnotes',
                             args.relpath_relnotes)
-    
+    configparser_object.set('download', 'relpath_gca2taxa',
+                            args.relpath_gca2taxa)
+
     configparser_object.set('download', 'verbose', str(verbose))
     configparser_object.set('download', 'nproc', str(args.nproc))
 
@@ -424,7 +426,9 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.core_uniqueness_90_threshold)
     configparser_object.set('export', 'core_uniqueness_50_threshold',
                             args.core_uniqueness_50_threshold)
-
+    configparser_object.set('export', 'relpath_gca2taxa',
+                            args.relpath_gca2taxa)
+                            
     configparser_object.set('export', 'verbose', str(verbose))
     configparser_object.set('export', 'nproc', str(args.nproc))
  

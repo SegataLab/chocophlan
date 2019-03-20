@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-author__ = ('Nicola Segata (nicola.segata@unitn.it), '
-            'Francesco Beghini (francesco.beghini@unitn.it)'
-            'Nicolai Karcher (karchern@gmail.com),'
-            'Francesco Asnicar (f.asnicar@unitn.it)')
+__author__ = ('Francesco Beghini (francesco.beghini@unitn.it)'
+            'Francesco Asnicar (f.asnicar@unitn.it)'
+            'Nicola Segata (nicola.segata@unitn.it)')
+
 
 __date__ = '11 Apr 2018'
 

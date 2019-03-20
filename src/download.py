@@ -1,11 +1,11 @@
     #!/usr/bin/env python3
 
 
-__author__ = ('Nicola Segata (nicola.segata@unitn.it), '
-              'Francesco Beghini (francesco.beghini@unitn.it)'
+__author__ = ('Francesco Beghini (francesco.beghini@unitn.it)'
               'Nicolai Karcher (karchern@gmail.com),'
-              'Francesco Asnicar (f.asnicar@unitn.it)'
-              'Lauren McIver (lauren.j.mciver@gmail.com)')
+              'Francesco Asnicar (f.asnicar@unitn.it),'
+              'Lauren McIver (lauren.j.mciver@gmail.com),'
+              'Nicola Segata (nicola.segata@unitn.it)')
 
 from _version import __CHOCOPhlAn_version__
 __date__ = '01 Oct 2017'
@@ -434,7 +434,7 @@ def download_ncbi_from_proteome_pickle(config, proteomes=None, taxontree=None):
     config['relpath_gca2taxa'] = config['relpath_gca2taxa'].replace('DATE', __UniRef_version__)
     with open('{}{}'.format(config['export_dir'],config['relpath_gca2taxa']), 'w') as f:
         f.write('GCA_accession\tUProteome\tNCBI_taxid\ttaxstr\ttaxidstr\n')
-        for upid, gca, taxid in ((p, dict(proteomes[p]['ncbi_ids']).get('GCSetAcc',''), proteomes[p]['tax_id']) for p in proteomes if 'ncbi_ids' in proteomes[p]):
+        for upid, gca, taxid in ((p, dict(proteomes[p]['ncbi_ids']).get('GCSetAcc','None'), proteomes[p]['tax_id']) for p in proteomes if 'ncbi_ids' in proteomes[p]):
             taxstr = taxontree.print_full_taxonomy(taxid)
             f.write('{}\t{}\t{}\t{}\n'.format(gca.split('.')[0], upid, taxid, '\t'.join(taxstr)))
 
