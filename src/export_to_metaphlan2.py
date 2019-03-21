@@ -4,7 +4,7 @@ __author__ = ('Francesco Beghini (francesco.beghini@unitn.it)'
             'Nicola Segata (nicola.segata@unitn.it), '
             'Nicolai Karcher (karchern@gmail.com),')
 
-__date__ = '20 Mar 2019'
+__date__ = '21 Mar 2019'
 
 from Bio import SeqIO
 from Bio.Alphabet import DNAAlphabet
@@ -20,6 +20,7 @@ import datetime
 import gffutils
 import glob
 import gzip
+import hashlib
 import importlib
 import itertools
 import logging
@@ -36,7 +37,6 @@ import shutil
 import subprocess as sb
 import sys
 import tarfile
-import tempfile as tp
 import time
 
 if __name__ == '__main__':
@@ -563,7 +563,7 @@ def contig2assembly(fn):
 
 def build_bt2_idx(bin_list):
     if not terminating.is_set():
-        with tp.NamedTemporaryFile(dir='{}/mpa2_eval/bt2_idx'.format(config['export_dir']), suffix='.fna') as tmp_bin, \
+        with NamedTemporaryFile(dir='{}/mpa2_eval/bt2_idx'.format(config['export_dir']), suffix='.fna') as tmp_bin, \
             open(tmp_bin.name, 'wt') as tmp_bin_handle:
             for f in filter(None, bin_list):
                 with gzip.open(f, 'rt', encoding='utf-8') as fm:
@@ -612,6 +612,53 @@ def split_markers(ifn, ofn):
                 start=readsize*i
                 SeqIO.write(new_record, output_handle, "fasta")
 
+def merge_bad_species(mpa_db, sgb_release, gca2taxonomy):
+    all_mpa_gca = [x.split('|')[7][3:] for x in mpa_db['taxonomy'].keys()]
+    count_marker_per_clade = Counter(v['taxon'] for v in mpa_db['markers'].values())
+
+    r = re.compile(r'(.*(C|c)andidat(e|us)_.*)|(.*_sp(_.*|$))|((.*_|^)(b|B)acterium(_.*|$))|(.*(eury|)archaeo(n_|te).*)|(.*(endo|)symbiont.*)')
+    bad_genomes = {k:v for k,v in gca2taxonomy.items() if r.match(v) and k in all_mpa_gca}
+
+    gca2taxonomy = pd.read_csv('/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/chocophlan/export/gca2taxonomy_201804.txt', sep='\t')
+    gca2taxonomy = dict(zip(gca2taxonomy.GCA_accession, gca2taxonomy.taxstr))
+
+    gca2sgb = dict((y, (x[0],x[7])) for _, x in sgb_release.iterrows() for y in x[4].split(',') if y in bad_genomes)
+    merged = {}
+    keep = {}
+    for genome, (sgb, taxonomy) in gca2sgb.items():
+        nrefgenomes = sgb_release.loc[sgb_release['SGB ID'] == sgb, '# Reference genomes'].item()
+        #If genome is unique in the SGB, keep it
+        if nrefgenomes == 1:
+            keep.setdefault(bad_genomes[genome],[]).append(genome)
+        #If there are multiple refences, keep only one and the others list in a list of merged genomes
+        else:
+            merged.setdefault(sgb,[]).append((genome,bad_genomes[genome]))
+    
+    new_species_merged = {}
+    for sgb, gca_tax in merged.items():
+        merged_into='|'.join(sgb_release.loc[sgb_release['SGB ID'] == sgb, 'Assigned taxonomy'].item().split('|')[:7])
+        if merged_into not in count_marker_per_clade:
+            species_in_sgb = set(taxstr for (gca, taxstr) in gca_tax)
+            merged_into=max([(s,count_marker_per_clade[s]) for s in species_in_sgb],key = lambda x:x[1])[0]
+        new_species_merged.setdefault(merged_into,[]).extend(gca_tax)
+
+    with open('/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/chocophlan/export/metaphlan2/merged_species_spp.tsv', 'wt') as fout:
+        fout.write('GCA\told_taxonomy\tmerged_into\n')
+        fout.write('\n'.join('{}\t{}\t{}'.format(gca, old_t, new_t) for new_t, gca_tax in new_species_merged.items() for gca, old_t in gca_tax))
+        fout.write('\n'.join('{}\t{}\t{}'.format(gca, taxa, taxa) for taxa, gca_tax in keep.items() for gca in gca_tax))    
+
+    taxa2markers = {}
+    [taxa2markers.setdefault(v['taxon'],[]).append(k) for k,v in mpa_db['markers'].items()]
+    
+    for new_t, gca_tax in new_species_merged.items():
+        for gca, old_t in gca_tax:
+            if new_t != old_t and old_t in taxa2markers:
+                [mpa_db['markers'].pop(marker) for marker in taxa2markers[old_t] if marker in mpa_db['markers']]
+                mpa_db['taxonomy'].pop('{}|t__{}'.format(old_t,gca))
+
+    return mpa_db
+
+
 def run_all(config):
     #Check if a previous export was performed for the same release
     #If exists but has failed (no DONE file in release folder), create a backup folder and export again
@@ -640,11 +687,7 @@ def run_all(config):
         with open('{}/{}/failed_species_markers.txt'.format(config['export_dir'], config['exportpath_metaphlan2']), 'wt') as ofn_failed:
             ofn_failed.writelines('\n'.join('{}\t{}'.format(taxid, '\t'.join(taxonomy)) for taxid, taxonomy in filter(None, failed)))
 
-        all_gca = [x.split('|')[-1].split('__')[1] for x in export.db['taxonomy'].keys()]
-        for x in export.db['markers']:
-            export.db['markers'][x]['ext'] = [y for y in set(export.db['markers'][x]['ext']) if y in all_gca]
-
-        with bz2.BZ2File('{}/{}/{}.pkl'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as outfile:
+        with bz2.BZ2File('{}/{}/{}.orig.pkl'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as outfile:
             pickle.dump(export.db, outfile, pickle.HIGHEST_PROTOCOL)
 
         with open('{}/{}/DONE'.format(config['export_dir'],config['exportpath_metaphlan2']), 'wt') as fcomp:
@@ -656,15 +699,15 @@ def run_all(config):
                     shutil.copyfileobj(fm, mpa2_markers_fna, 1024*1024*10)
 
     else:
-        with bz2.open('{}/{}/{}.pkl'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX)) as infn:
+        with bz2.open('{}/{}/{}.orig.pkl'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX)) as infn:
             export.db = pickle.load(infn)
 
     mpa_pkl, markers2ext = map_markers_to_genomes(export.db, export.taxontree, export.proteomes, OUTFILE_PREFIX, export.config)
     
     with open('{}/{}/{}_ext.tsv'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as outfile:
-        outfile.write('{}\t{}\n'.format(marker, ','.join(str(x) for marker in markers2ext)))
+        outfile.write('\n'.join('{}\t{}'.format(marker, ext_species['external_species']) for marker, ext_species in markers2ext.items()))
 
-    with bz2.BZ2File('{}/{}/{}.pkl'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as outfile:
+    with bz2.BZ2File('{}/{}/{}.orig.nomerged.pkl'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as outfile:
         pickle.dump(mpa_pkl, outfile, pickle.HIGHEST_PROTOCOL)
   
     try:
@@ -678,10 +721,25 @@ def run_all(config):
     finally:
         utils.remove_file('{}/{}/{}.fna'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX))
 
+    mpa_pkl_merged = merge_bad_species(mpa_pkl)
+
+    all_gca = [x.split('|')[-1].split('__')[1] for x in export.db['taxonomy'].keys()]
+    for x in export.db['markers']:
+        export.db['markers'][x]['ext'] = [y for y in set(export.db['markers'][x]['ext']) if y in all_gca]
+
     with tarfile.TarFile('{}/{}/{}.tar'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as mpa_tar:
         mpa_tar.add('{}/{}/{}.pkl'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX))
         mpa_tar.add('{}/{}/{}.fna.bz2'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX))
 
+    md5hash = hashlib.md5()
+    with open('{}/{}/{}.tar'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX),'rb') as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            md5hash.update(chunk)
+
+    calc_hash = md5hash.hexdigest()[:32]
+
+    with open('{}/{}/{}.md5'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as tar_md5:
+        tar_md5.write(calc_hash)
 
 if __name__ == '__main__':
     t0 = time.time()
