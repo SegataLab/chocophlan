@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
-__author__ = ('Nicola Segata (nicola.segata@unitn.it), '
-              'Francesco Beghini (francesco.beghini@unitn.it)'
+__author__ = ('Francesco Beghini (francesco.beghini@unitn.it)'
               'Nicolai Karcher (karchern@gmail.com),'
-              'Francesco Asnicar (f.asnicar@unitn.it)')
+              'Fabio Cumbo (fabio.cumbo@unitn.it),'
+              'Francesco Asnicar (f.asnicar@unitn.it),'
+              'Nicola Segata (nicola.segata@unitn.it)')
 from _version import __CHOCOPhlAn_version__
-__date__ = '7 Nov 2017'
+__date__ = '25 Mar 2019'
 
 if __name__ == '__main__':
     import utils
@@ -562,18 +563,25 @@ def merge_idmap(config):
     utils.info('Done merging UniProtKB ids.\n')
 
 def annotate_with_sgb(config):
-    taxontree = pickle.load(open("{}/{}".format(config['download_base_dir'],config['relpath_pickle_taxontree']),'rb'))
-    proteomes 
+    # taxontree = pickle.load(open("{}/{}".format(config['download_base_dir'],config['relpath_pickle_taxontree']),'rb'))
+    # proteomes
+    pass
 
 def process_proteomes(config):
     os.makedirs('{}/{}'.format(config['download_base_dir'],config['pickled_dir']), exist_ok=True)
     if not os.path.exists("{}/{}/{}".format(config['download_base_dir'], config['pickled_dir'], 'uniprotkb')):
         os.makedirs("{}/{}/{}".format(config['download_base_dir'], config['pickled_dir'], 'uniprotkb'))
 
-    parse_uniref_xml(config['download_base_dir']+config['relpath_uniref100'],config)
-    parse_uniref_xml(config['download_base_dir']+config['relpath_uniref90'],config)
-    parse_uniref_xml(config['download_base_dir']+config['relpath_uniref50'],config)
+    step1 = [ mp.Process(target=parse_uniref_xml, args=(config['download_base_dir']+config['relpath_uniref100'],config)),
+              mp.Process(target=parse_uniref_xml, args=(config['download_base_dir']+config['relpath_uniref90'],config)),
+              mp.Process(target=parse_uniref_xml, args=(config['download_base_dir']+config['relpath_uniref50'],config))
+            ]
+    for p in step1:
+        p.start()
 
+    for p in step1:
+        p.join()
+        
     global uniprotkb_uniref_idmap
 
     utils.info('Loading NCBI taxonomic tree...')
@@ -593,9 +601,15 @@ def process_proteomes(config):
         uniprotkb_uniref_idmap = pickle.load(open('{}{}'.format(config['download_base_dir'],config['relpath_pickle_uniprotkb_uniref_idmap']),'rb'))
         utils.info('Done.\n')
     
-    parse_uniprotkb_xml(config['download_base_dir']+config['relpath_uniprot_sprot'], config)
-    parse_uniprotkb_xml(config['download_base_dir']+config['relpath_uniprot_trembl'], config)
-    parse_uniparc_xml(config['download_base_dir']+config['relpath_uniparc'],config)
+    step2 = [ mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_sprot'], config)),
+              mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_trembl'], config)),
+              mp.Process(target=parse_uniparc_xml, args=(config['download_base_dir']+config['relpath_uniparc'],config))
+            ]
+    for p in step2:
+        p.start()
+
+    for p in step2:
+        p.join()
 
     merge_idmap(config)
     create_proteomes_pkl(config['download_base_dir']+config['relpath_proteomes_xml'], config)

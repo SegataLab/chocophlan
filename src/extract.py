@@ -8,13 +8,14 @@
 # catalogue file. We then read the bacterial genome files (data/refseq/genomes/*),
 #  use the contig_ID to tax_ID mapping to write contig sequences to tax_ID files.
 
-__author__ = ('Nicola Segata (nicola.segata@unitn.it),'
-              'Francesco Beghini (francesco.beghini@unitn.it),'
+__author__ = ('Francesco Beghini (francesco.beghini@unitn.it)'
               'Nicolai Karcher (karchern@gmail.com),'
-              'Francesco Asnicar (f.asnicar@unitn.it)')
+              'Francesco Asnicar (f.asnicar@unitn.it),'
+              'Fabio Cumbo (fabio.cumbo@unitn.it),'
+              'Nicola Segata (nicola.segata@unitn.it)')
 
 from _version import __CHOCOPhlAn_version__
-__date__ = '22 Oct 2017'
+__date__ = '25 Mar 2019'
 
 if __name__ == '__main__':
     import utils   
@@ -513,11 +514,11 @@ def do_extraction(config, verbose=False):
     candidatus_taxid = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search(u'(C|c)andidat(e|us)_',tax_tree.taxid_n[x].name)]
     # cags_taxid = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search(u'_CAG_',tax_tree.taxid_n[x].name)]
     sps_taxid = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search(u'_sp(_|$)',tax_tree.taxid_n[x].name)]
-    bacterium_taxis = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if '(_|^)(b|B)acterium(_|$)' in tax_tree.taxid_n[x].name]
+    bacterium_taxis = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search('(_|^)(b|B)acterium(_|$)',tax_tree.taxid_n[x].name)]
     archaeon_taxis = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search('(eury|)archaeo(n_|te)',tax_tree.taxid_n[x].name)]
     endosymbiont_taxis = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search(u'(endo|)symbiont',tax_tree.taxid_n[x].name)]
 
-    merged_low_quality = list(itertools.chain.from_iterable((candidatus_taxid,cags_taxid,sps_taxid,bacterium_taxis)))
+    merged_low_quality = list(itertools.chain.from_iterable((candidatus_taxid, archaeon_taxis, sps_taxid, bacterium_taxis, endosymbiont_taxis)))
     [tax_tree.taxid_n[x].__setattr__('is_low_quality', True) for x in merged_low_quality]
     [tax_tree.taxid_n[x].__setattr__('is_low_quality', False) for x in set(tax_tree.taxid_n.keys()).difference(merged_low_quality)]
     utils.info('Finished postprocessing the taxonomy\n')

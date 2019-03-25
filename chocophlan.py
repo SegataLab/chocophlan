@@ -39,11 +39,11 @@ def chocophlan():
     #                    callback=decompressed)
     # extract.do_extraction(config['extract'], verbose=config['extract']['verbose'])
     process_proteomes.process_proteomes(config['process_proteomes'])
-    download.download_ncbi_from_proteome_pickle(config['process_proteomes'])
-    panproteomes.generate_panproteomes(config['panproteomes'])
-    stats.generate_stats(config['stats'])
-    chocophlan2phylophlan.export_to_phylophlan(config['export'])
-    export_to_metaphlan2.run_all(config['export'])
+    # download.download_ncbi_from_proteome_pickle(config['process_proteomes'])
+    # panproteomes.generate_panproteomes(config['panproteomes'])
+    # stats.generate_stats(config['stats'])
+    # chocophlan2phylophlan.export_to_phylophlan(config['export'])
+    # export_to_metaphlan2.run_all(config['export'])
 
 if __name__ == '__main__':
     t0 = time.time()
