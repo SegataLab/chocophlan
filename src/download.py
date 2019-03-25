@@ -438,13 +438,6 @@ def download_ncbi_from_proteome_pickle(config, proteomes=None, taxontree=None):
             taxstr = taxontree.print_full_taxonomy(taxid)
             f.write('{}\t{}\t{}\t{}\n'.format(gca.split('.')[0], upid, taxid, '\t'.join(taxstr)))
 
-def decompress(config, verbose):
-    ls = glob.glob(config['download_base_dir']+config['relpath_reference_proteomes']+'/*')
-    r = re.compile(".*Reference_Proteomes_.*\.tar\.gz")
-    ref_prot = [x for x in filter(r.match, ls)][0]
-    with tarfile.open(ref_prot) as tar_f:
-        tar_f.extractall(path=config['download_base_dir']+config['relpath_reference_proteomes'])
-
 if __name__ == '__main__':
     t0 = time.time()
 
@@ -455,7 +448,6 @@ if __name__ == '__main__':
     config = utils.check_configs(config)
 
     download(config['download'], verbose=config['download']['verbose'])
-    decompress(config['download'], verbose=config['download']['verbose'])
 
     t1 = time.time()
 
