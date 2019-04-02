@@ -144,15 +144,18 @@ class chocophlan2humann2:
     def export_panproteome(self, species_id):
         panproteome = pd.DataFrame.from_csv('{}/{}/{}.txt.bz2'.format(self.config['export_dir'], self.config['panproteomes_stats'], species_id), sep = '\t')
         taxonomy = self.taxontree.print_full_taxonomy(species_id)
+        low_lvls = [c.tax_id for c in self.taxontree.taxid_n[species_id].find_clades()]
         gc = {}
         func_annot = {}
         for pangene in panproteome.index:
             uniprotkb_entries = []
             pangene = 'UniRef90_'+pangene.split('_')[1]
             if pangene in self.uniref90_taxid_map:
-                for upkb, ncbi_tax_id, isRef in self.uniref90_taxid_map[pangene][0]:
+                filter(lambda x: x[2], self.uniref90_taxid_map[pangene][0])
+                for upkb, ncbi_tax_id, isRef in :
                     if self.taxontree.go_up_to_species(ncbi_tax_id) == species_id and isRef:
                         uniprotkb_entries.append(upkb)
+                        break
 
                 for upkb in filter(re.compile('^(?!UPI)').match, uniprotkb_entries):
                     gene_id, upid, tax_id = self.uniprot[upkb]
@@ -160,13 +163,20 @@ class chocophlan2humann2:
                     if (upid, panproteome['tax_id'], taxonomy) not in gc:
                         gc[(upid, panproteome['tax_id'], taxonomy)] = set()
                     gc[(upid, panproteome['tax_id'], taxonomy)].add((upkb, gene_id))
-                    func_annot.setdefault(upkb,[]).append(self.uniprot[upkb][3:])
                 else:
                     upids = [("UP{}".format(upid.zfill(upid)), gene_id) for upid, tax_id, gene_id in self.uniparc[upkb] if tax_id == species_id ]
                     for upid, gene_id in upids:
                         if (upid, panproteome['tax_id'], taxonomy) not in gc:
                             gc[(upid, panproteome['tax_id'], taxonomy)] = set()
                         gc[(upid, panproteome['tax_id'], taxonomy)].add((upkb, gene_id))
+                upkb_fa = self.uniprot[upkb][3:]
+                upkb_fa = [ ','.join('GO:'+str(x).zfill(7) for x in upkb_fa[0]),
+                            ','.join('KO:'+str(x).zfill(5) for x in upkb_fa[1]),
+                            ','.join(str(x) for x in upkb_fa[2]),
+                            ','.join('PF:'+str(x).zfill(5) for x in upkb_fa[3]),
+                            ','.join(str(x) for x in upkb_fa[4]),
+                            ','.join(str(x) for x in upkb_fa[5]) ]
+                func_annot.setdefault(upkb,[]).append(upkb_fa)
 
                 with dummy.Pool(processes=3) as pool:
                     res = [_ for _ in pool.imap_unordered(self.get_uniref90_nucl_seq, gc.items(), chunksize=10) if _ is not None]
@@ -179,8 +189,11 @@ class chocophlan2humann2:
                 self.log.warning("{}: Failed to find features for pangene {}".format(pp_tax_id, (','.join(failed))))
             if len(pangenes):
                 #save tsv of annots
-                func_annot
-                with open('{}/{}/markers_fasta/{}.fna'.format(self.config['export_dir'], self.config['exportpath_humann2'], panproteome['tax_id']), 'wt') as fasta_pangenes:
+                with bz2.open('{}/{}/functional_annot/{}.tsv.bz2'.format(self.config['export_dir'], self.config['exportpath_humann2'], panproteome['tax_id']), 'wt') as functional_annot:
+                    functional_annot.write('pangene\tGO\tKO\tKEGG\tPfam\tEC\teggNOG\n')
+                    functional_annot.write('\n'.join( '{}\t{}'.format( k, '\t'.join(v)) for k, v in func_annot.items() ) )
+
+                with bz2.open('{}/{}/panproteomes_fna/{}.fna.bz2'.format(self.config['export_dir'], self.config['exportpath_humann2'], panproteome['tax_id']), 'wt') as fasta_pangenes:
                     [fasta_pangenes.write(marker.format('fasta')) for marker in pangenes]
 
 
