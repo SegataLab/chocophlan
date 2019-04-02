@@ -280,7 +280,7 @@ class export_to_metaphlan2:
         else:
             self.log.error('No genome associated to proteome {} available for species {}'.format(upid, taxid))
             return [None, None, None]
-        seqs_dir = 'data/ncbi/{}/{}/'.format(gca[4:][:6], gca[4:][6:])
+        seqs_dir = '{}/{}/{}/{}/'.format(config['download_base_dir'], config['relpath_genomes'], gca[4:][:6], gca[4:][6:])
         clade = self.taxontree.taxid_n[self.taxontree.go_up_to_species(taxid)]
         if not os.path.exists(seqs_dir):
             self.log.error('For proteome {} / species {} : No genome and GFF annotations downloaded for {}'.format(upid, taxid, gca))
@@ -785,8 +785,8 @@ def run_all(config):
         pickle.dump(mpa_pkl_merged, outfile, pickle.HIGHEST_PROTOCOL)
 
     with tarfile.TarFile('{}/{}/{}.tar'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as mpa_tar:
-        mpa_tar.add('{}/{}/{}.pkl'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX))
-        mpa_tar.add('{}/{}/{}.fna.bz2'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX))
+        mpa_tar.add('{}/{}/{}.pkl'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), recursive=False)
+        mpa_tar.add('{}/{}/{}.fna.bz2'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), recursive=False)
 
     md5hash = hashlib.md5()
     with open('{}/{}/{}.tar'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX),'rb') as f:
@@ -797,6 +797,9 @@ def run_all(config):
 
     with open('{}/{}/{}.md5'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as tar_md5:
         tar_md5.write(calc_hash)
+    
+    with open('{}/{}/mpa_latest'.format(export.config['export_dir'], export.config['exportpath_metaphlan2']), 'w') as latest:
+        latest.write(OUTFILE_PREFIX)
 
 if __name__ == '__main__':
     t0 = time.time()

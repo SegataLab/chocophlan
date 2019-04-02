@@ -8,16 +8,32 @@ author__ = ('Nicola Segata (nicola.segata@unitn.it), '
 __date__ = '14 Dec 2018'
 
 
-from _version import *
-import os
 import argparse as ap
 import configparser as cp
-import pickle
+import datetime
 import glob
-import time
+import gzip
+import itertools
+import logging
+import multiprocessing.dummy as dummy
+import os
+import pickle
 import re
-import pandas as pd
+import resource
+import shutil
+import time
+from collections import Counter
 from operator import itemgetter
+from tempfile import NamedTemporaryFile
+import gffutils
+import pandas as pd
+from Bio import SeqIO
+from Bio.Alphabet import DNAAlphabet
+from Bio.Seq import Seq
+from Bio.SeqIO.FastaIO import SimpleFastaParser
+from pyfaidx import Fasta
+
+from _version import *
 
 if __name__ == '__main__':
     import utils
@@ -30,6 +46,11 @@ class chocophlan2humann2:
     def __init__(self, config):
         if config['verbose']:
             utils.info('Loading pickled databases...')
+        resource.setrlimit(resource.RLIMIT_NOFILE, (131072, 131072))
+        self.log = logging.getLogger(__name__)
+        ch = logging.FileHandler('CHOCOPhlAn_export2humann_{}.log'.format(datetime.datetime.today().strftime('%Y%m%d_%H%M')),'w')
+        ch.setLevel(logging.INFO)
+        self.log.addHandler(ch)
 
         self.config = config
         self.uniprot = {}
@@ -43,7 +64,7 @@ class chocophlan2humann2:
         all_uprot_chunks = filter(re.compile('(trembl|sprot)_[0-9]{1,}.pkl').match, os.listdir('{}/{}/uniprotkb/'.format(config['download_base_dir'], config['pickled_dir'])))
         for i in all_uprot_chunks:
             uniprot_chunk = pickle.load(open('{}/{}/uniprotkb/{}'.format(config['download_base_dir'], config['pickled_dir'], i),'rb'))
-            self.uniprot.update({k : [v[3],v[4],v[1]] for k,v in uniprot_chunk.items()})        #geneid, proteomeid, tax_id
+            self.uniprot.update({k : [v[3],v[4],v[1]] + list(v[8:14]) for k,v in uniprot_chunk.items()})        #geneid, proteomeid, tax_id
 
         all_uparc_chunks = filter(re.compile('uniparc_[0-9]{4}.pkl').match, os.listdir('{}/{}/uniparc/'.format(config['download_base_dir'], config['pickled_dir'])))
         for i in all_uparc_chunks:
@@ -60,20 +81,19 @@ class chocophlan2humann2:
 
     def get_uniref90_nucl_seq(self, item):
         (upid, taxid, taxonomy), t = item
-        db = {'taxonomy' : {}, 'markers': {}}
-        ncbi_ids = dict(self.proteomes[upid]['ncbi_ids']).get('GCSetAcc',None)
+        ncbi_ids = dict(self.proteomes[upid].get('ncbi_ids',[(None,None)])).get('GCSetAcc',None)
         if ncbi_ids is not None:
             gca = ncbi_ids.split('.')[0]
         else:
             self.log.error('No genome associated to proteome {} available for species {}'.format(upid, taxid))
             return [None, None, None]
-        seqs_dir = 'data/ncbi/{}/{}/'.format(gca[4:][:6], gca[4:][6:])
+        seqs_dir = '{}/{}/{}/{}/'.format(config['download_base_dir'], config['relpath_genomes'], gca[4:][:6], gca[4:][6:])
         if not os.path.exists(seqs_dir):
             self.log.error('For proteome {} / species {} : No genome and GFF annotations downloaded for {}'.format(upid, taxid, gca))
             return [None, None, None]
         try:
-            in_seq_file = glob.glob(seqs_dir+'*fna*')[0]
-            in_gff_file = glob.glob(seqs_dir+'*gff*')[0]
+            in_seq_file = glob.glob(seqs_dir+'*.fna*')[0]
+            in_gff_file = glob.glob(seqs_dir+'*.gff*')[0]
         except Exception as e:
             self.log.error('For proteome {} / species {} : Missing genome or GFF annotation for {}'.format(upid, taxid, gca))
             return [None, None, None]
@@ -125,12 +145,13 @@ class chocophlan2humann2:
         panproteome = pd.DataFrame.from_csv('{}/{}/{}.txt.bz2'.format(self.config['export_dir'], self.config['panproteomes_stats'], species_id), sep = '\t')
         taxonomy = self.taxontree.print_full_taxonomy(species_id)
         gc = {}
+        func_annot = {}
         for pangene in panproteome.index:
             uniprotkb_entries = []
             pangene = 'UniRef90_'+pangene.split('_')[1]
             if pangene in self.uniref90_taxid_map:
                 for upkb, ncbi_tax_id, isRef in self.uniref90_taxid_map[pangene][0]:
-                    if self.taxontree.go_up_to_species(ncbi_tax_id) == species_id:
+                    if self.taxontree.go_up_to_species(ncbi_tax_id) == species_id and isRef:
                         uniprotkb_entries.append(upkb)
 
                 for upkb in filter(re.compile('^(?!UPI)').match, uniprotkb_entries):
@@ -139,15 +160,16 @@ class chocophlan2humann2:
                     if (upid, panproteome['tax_id'], taxonomy) not in gc:
                         gc[(upid, panproteome['tax_id'], taxonomy)] = set()
                     gc[(upid, panproteome['tax_id'], taxonomy)].add((upkb, gene_id))
+                    func_annot.setdefault(upkb,[]).append(self.uniprot[upkb][3:])
                 else:
                     upids = [("UP{}".format(upid.zfill(upid)), gene_id) for upid, tax_id, gene_id in self.uniparc[upkb] if tax_id == species_id ]
                     for upid, gene_id in upids:
                         if (upid, panproteome['tax_id'], taxonomy) not in gc:
                             gc[(upid, panproteome['tax_id'], taxonomy)] = set()
                         gc[(upid, panproteome['tax_id'], taxonomy)].add((upkb, gene_id))
+
                 with dummy.Pool(processes=3) as pool:
                     res = [_ for _ in pool.imap_unordered(self.get_uniref90_nucl_seq, gc.items(), chunksize=10) if _ is not None]
-
 
                 pangenes, failed = zip(*res)
                 pangenes = list(itertools.chain.from_iterable(filter(None,pangenes)))
@@ -156,6 +178,8 @@ class chocophlan2humann2:
                 failed = list(filter(None, failed))[0]
                 self.log.warning("{}: Failed to find features for pangene {}".format(pp_tax_id, (','.join(failed))))
             if len(pangenes):
+                #save tsv of annots
+                func_annot
                 with open('{}/{}/markers_fasta/{}.fna'.format(self.config['export_dir'], self.config['exportpath_humann2'], panproteome['tax_id']), 'wt') as fasta_pangenes:
                     [fasta_pangenes.write(marker.format('fasta')) for marker in pangenes]
 

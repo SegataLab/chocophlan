@@ -47,6 +47,18 @@ def read_params():
     group.add_argument('--uniprot_uniref50',
                        default=('/pub/databases/uniprot/current_release/uniref'
                                 '/uniref50/uniref50.xml.gz'))
+
+    group.add_argument('--uniprot_uniref100_fasta',
+                       default=('/pub/databases/uniprot/current_release/uniref'
+                                '/uniref100/uniref100.fasta.gz'))
+    group.add_argument('--uniprot_uniref90_fasta',
+                       default=('/pub/databases/uniprot/current_release/uniref'
+                                '/uniref90/uniref90.fasta.gz'))
+    group.add_argument('--uniprot_uniref50_fasta',
+                       default=('/pub/databases/uniprot/current_release/uniref'
+                                '/uniref50/uniref50.fasta.gz'))
+
+
     group.add_argument('--uniprot_reference_proteomes',
                        default=('/pub/databases/uniprot/current_release'
                                 '/knowledgebase/reference_proteomes'))
@@ -215,6 +227,12 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.uniprot_uniref90)
     configparser_object.set('download', 'uniprot_uniref50',
                             args.uniprot_uniref50)
+    configparser_object.set('download', 'uniprot_uniref100_fasta',
+                            args.uniprot_uniref100_fasta)
+    configparser_object.set('download', 'uniprot_uniref90_fasta',
+                            args.uniprot_uniref90_fasta)
+    configparser_object.set('download', 'uniprot_uniref50_fasta',
+                            args.uniprot_uniref50_fasta)
     configparser_object.set('download', 'uniprot_reference_proteomes',
                             args.uniprot_reference_proteomes)
     configparser_object.set('download', 'uniprot_idmapping',

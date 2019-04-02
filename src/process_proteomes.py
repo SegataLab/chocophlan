@@ -24,7 +24,7 @@ import time
 import sys
 import concurrent.futures
 import pickle
-from itertools import zip_longest
+import itertools
 from lxml import etree
 from functools import partial
 import traceback
@@ -40,7 +40,7 @@ def grouper(iterable, n, fillvalue=None):
     #"Collect data into fixed-length chunks or blocks"
     # grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx"
     args = [iter(iterable)] * n
-    return zip_longest(*args, fillvalue=fillvalue)
+    return itertools.zip_longest(*args, fillvalue=fillvalue)
 
 def yield_filtered_xml_string(tree):
     for _, elem in tree:
@@ -184,6 +184,12 @@ def parse_uniref_xml(xml_input, config):
 #  9 KO
 # 10 KEGG
 # 11 Pfam
+# 12 EC
+# 13 eggNOG
+# 14 NR100
+# 15 NR90
+# 16 NR50
+# isFragment
 def parse_uniprotkb_xml_elem(elem):
     if not terminating.is_set() and elem is not None:
         global uniprotkb_uniref_idmap, taxid_to_process
@@ -576,11 +582,11 @@ def process_proteomes(config):
               mp.Process(target=parse_uniref_xml, args=(config['download_base_dir']+config['relpath_uniref90'],config)),
               mp.Process(target=parse_uniref_xml, args=(config['download_base_dir']+config['relpath_uniref50'],config))
             ]
-    for p in step1:
-        p.start()
+    # for p in step1:
+    #     p.start()
 
-    for p in step1:
-        p.join()
+    # for p in step1:
+    #     p.join()
         
     global uniprotkb_uniref_idmap
 
@@ -593,7 +599,7 @@ def process_proteomes(config):
     else:
         utils.error('NCBI taxonomic tree not found. Exiting...', exit = True)
         
-    parse_uniprotkb_uniref_idmapping(config)
+    # parse_uniprotkb_uniref_idmapping(config)
     uniprotkb_uniref_idmap = merge_uniparc_idmapping(config)
     
     if not uniprotkb_uniref_idmap:
