@@ -390,7 +390,7 @@ class export_to_metaphlan2:
                 np90_members = self.uniref90_info_map['UniRef90_{}'.format(np90_cluster)][0]
                 # If UniRef90 has member from species or below, use it
                 upkb_from_species = list(filter(lambda x:x[1] in low_lvls, np90_members))
-                has_repr = all(x[2] for x in upkb_from_species)
+                has_repr = any(x[2] for x in upkb_from_species)
                 if upkb_from_species:
                     repr_uniprotkb = list(filter(lambda x: (x[2]==has_repr) and 'UPI' not in x[0], upkb_from_species))
                     repr_uniparc = list(filter(lambda x: (x[2]==has_repr) and 'UPI' in x[0], upkb_from_species))
@@ -408,7 +408,7 @@ class export_to_metaphlan2:
 
                 # If entry is from UniProtKB take the gene names from the proteomes in which is present
                 if marker in self.uniprot:
-                    upids = ["UP{}{}".format("0"*(9-len(str(upid))),upid) for upid in self.uniprot[marker][1]]
+                    upids = ["UP{}".format(str(upid).zfill(9)) for upid in self.uniprot[marker][1]]
                     #Some UniProtKB entries (like P00644) do not have any proteome associteda.
                     if not len(upids):
                         tax_id = self.uniprot[marker][2]
@@ -444,7 +444,7 @@ class export_to_metaphlan2:
                 if len(upid) and len(gene_names):
                     if (upid, panproteome['tax_id'], taxonomy) not in gc:
                         gc[(upid, panproteome['tax_id'], taxonomy)] = set()
-                    gc[(upid, panproteome['tax_id'], taxonomy)].add((marker, 
+                    gc[(upid, panproteome['tax_id'], taxonomy)].add((np90_cluster,
                                                                     gene_names, 
                                                                     tuple(set(x for x in itertools.chain.from_iterable(panproteome['members'][np90_cluster]['external_species'].values())))
                                                                     )

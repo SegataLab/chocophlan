@@ -5,7 +5,7 @@ author__ = ('Nicola Segata (nicola.segata@unitn.it), '
             'Francesco Asnicar (f.asnicar@unitn.it)'
             'Fabio Cumbo (fabio.cumbo@unitn.it')
 
-__date__ = '14 Dec 2018'
+__date__ = '3 Apr 2019'
 
 
 import argparse as ap
@@ -22,6 +22,7 @@ import re
 import resource
 import shutil
 import time
+import bz2
 from collections import Counter
 from operator import itemgetter
 from tempfile import NamedTemporaryFile
@@ -32,8 +33,7 @@ from Bio.Alphabet import DNAAlphabet
 from Bio.Seq import Seq
 from Bio.SeqIO.FastaIO import SimpleFastaParser
 from pyfaidx import Fasta
-
-from _version import *
+import _version as version
 
 if __name__ == '__main__':
     import utils
@@ -57,9 +57,8 @@ class chocophlan2humann2:
         self.uniparc = {}
         self.taxontree = pickle.load(open("{}/{}".format(config['download_base_dir'],config['relpath_pickle_taxontree']), 'rb'))
         self.proteomes = pickle.load(open("{}{}".format(config['download_base_dir'],config['relpath_pickle_proteomes']), 'rb'))
-        self.exportpath = '{}/{}'.format(self.config['export_dir'], self.config['exportpath_humann2'])
-        if not os.path.exists(self.exportpath):
-            os.makedirs(self.exportpath)
+        os.makedirs('{}/{}/functional_annot/'.format(self.config['export_dir'], self.config['exportpath_humann2']), exist_ok=True)
+        os.makedirs('{}/{}/panproteomes_fna/'.format(self.config['export_dir'], self.config['exportpath_humann2']), exist_ok=True)
         
         all_uprot_chunks = filter(re.compile('(trembl|sprot)_[0-9]{1,}.pkl').match, os.listdir('{}/{}/uniprotkb/'.format(config['download_base_dir'], config['pickled_dir'])))
         for i in all_uprot_chunks:
@@ -106,7 +105,7 @@ class chocophlan2humann2:
             nucls = []
             failed = []
             taxonomy_db = '{}|t__{}'.format(taxonomy[0], gca)
-            for core, gene_names, ext_species in t:
+            for NR90, NR50, gene_names in t:
                 if type(gene_names) == tuple:
                     gene_names = [x[1] for x in gene_names]
                 else:
@@ -133,11 +132,11 @@ class chocophlan2humann2:
                     except Exception as e:
                         print(taxid)
                         raise e
-                    mpa_marker = '{}__{}__{}'.format(taxid, core, feature['Name'][0])
-                    record = SeqIO.SeqRecord(seq=Seq(nuc_seq, alphabet=DNAAlphabet()), id=mpa_marker, description='UniRef90_{};{};{}'.format(core, taxonomy[0], gca))
+                    mpa_marker = '{}__{}__{}|{}|UniRef90_{}|UniRef50_{}|{}'.format(taxid, NR90, feature['Name'][0], taxonomy[0], NR90, NR50, len(nuc_seq))
+                    record = SeqIO.SeqRecord(seq=Seq(nuc_seq, alphabet=DNAAlphabet()), id=mpa_marker, description='')
                     nucls.append(record)
                 else:
-                    failed.append(str(core))
+                    failed.append(str(NR90))
         if not len(failed): failed = None
         return (nucls, failed, )
 
@@ -148,53 +147,75 @@ class chocophlan2humann2:
         gc = {}
         func_annot = {}
         for pangene in panproteome.index:
-            uniprotkb_entries = []
             pangene = 'UniRef90_'+pangene.split('_')[1]
+            pangene_nr50 = self.uniref90_taxid_map[pangene][1][2]
             if pangene in self.uniref90_taxid_map:
-                filter(lambda x: x[2], self.uniref90_taxid_map[pangene][0])
-                for upkb, ncbi_tax_id, isRef in :
-                    if self.taxontree.go_up_to_species(ncbi_tax_id) == species_id and isRef:
-                        uniprotkb_entries.append(upkb)
-                        break
+                upkb_from_species = list(filter(lambda x:x[1] in low_lvls, self.uniref90_taxid_map[pangene][0]))
+                has_repr = any(x[2] for x in upkb_from_species)
+                upkb_entry = list(filter(lambda x:x[0] in self.uniprot and x[2] == has_repr, self.uniref90_taxid_map[pangene][0]))
+                if upkb_entry:
+                    upkb_id = upkb_entry[0][0]
+                    upkb_entry = self.uniprot[upkb_id]
 
-                for upkb in filter(re.compile('^(?!UPI)').match, uniprotkb_entries):
-                    gene_id, upid, tax_id = self.uniprot[upkb]
-                    upid = "UP{}".format(str(upid).zfill(upid))
-                    if (upid, panproteome['tax_id'], taxonomy) not in gc:
-                        gc[(upid, panproteome['tax_id'], taxonomy)] = set()
-                    gc[(upid, panproteome['tax_id'], taxonomy)].add((upkb, gene_id))
-                else:
-                    upids = [("UP{}".format(upid.zfill(upid)), gene_id) for upid, tax_id, gene_id in self.uniparc[upkb] if tax_id == species_id ]
-                    for upid, gene_id in upids:
-                        if (upid, panproteome['tax_id'], taxonomy) not in gc:
-                            gc[(upid, panproteome['tax_id'], taxonomy)] = set()
-                        gc[(upid, panproteome['tax_id'], taxonomy)].add((upkb, gene_id))
-                upkb_fa = self.uniprot[upkb][3:]
-                upkb_fa = [ ','.join('GO:'+str(x).zfill(7) for x in upkb_fa[0]),
-                            ','.join('KO:'+str(x).zfill(5) for x in upkb_fa[1]),
-                            ','.join(str(x) for x in upkb_fa[2]),
-                            ','.join('PF:'+str(x).zfill(5) for x in upkb_fa[3]),
-                            ','.join(str(x) for x in upkb_fa[4]),
-                            ','.join(str(x) for x in upkb_fa[5]) ]
-                func_annot.setdefault(upkb,[]).append(upkb_fa)
+                    upkb_fa = self.uniprot[upkb_id][3:]
+                    upkb_fa = [ ','.join('GO:'+str(x).zfill(7) for x in upkb_fa[0]),
+                                ','.join('KO:'+str(x).zfill(5) for x in upkb_fa[1]),
+                                ','.join(str(x) for x in upkb_fa[2]),
+                                ','.join('PF:'+str(x).zfill(5) for x in upkb_fa[3]),
+                                ','.join(str(x) for x in upkb_fa[4]),
+                                ','.join(str(x) for x in upkb_fa[5]) ]
+                    func_annot[pangene] = upkb_fa
 
-                with dummy.Pool(processes=3) as pool:
-                    res = [_ for _ in pool.imap_unordered(self.get_uniref90_nucl_seq, gc.items(), chunksize=10) if _ is not None]
+                    gene_id, upid, tax_id = upkb_entry[:3]
+                    upids = ["UP{}".format(str(upid).zfill(9)) for upid in upkb_entry[1]]
+                    #Some UniProtKB entries (like P00644) do not have any proteome associteda.
+                    if not len(upids):
+                        tax_id = upkb_entry[2]
+                        if hasattr(self.taxontree.taxid_n[tax_id], 'proteomes'):
+                            upids = [up for up in self.taxontree.taxid_n[tax_id].proteomes if upkb_id in self.proteomes[up]['members']]
+                            if not len(upids):
+                                possible_entry = [entry for entry in upkb_from_species if entry[1] == tax_id and entry[0] != upkb_id]
+                                if (possible_entry):
+                                    upids = self.taxontree.taxid_n[tax_id].proteomes
+                                    upkb_id = possible_entry[0][0]
+                                    if upkb_id in self.uniprot:
+                                        upkb_entry = self.uniprot[upkb_id]
+                                    elif upkb_id in self.uniparc:
+                                        upkb_entry = [x[2] for x in self.uniparc[upkb_id]]
+                                        
+                    # Use, if available a reference genome, otherwise, a non-reference and finally a redundant one
+                    upid = [x for x in upids if x in self.proteomes and self.proteomes[x]['isReference']]
+                    if not len(upid):
+                        upid = [x for x in upids if x in self.proteomes and not self.proteomes[x]['upi']]
+                        if not len(upid):
+                            upid = [x for x in upids if x in self.proteomes and self.proteomes[x]['upi']]
+                    if len(upid):
+                        upid = upid[0]
+                    else:
+                        continue
+                    gene_names = upkb_entry[0]
+                    if len(upid) and len(gene_names):
+                        if (upid, species_id, taxonomy) not in gc:
+                            gc[(upid, species_id, taxonomy)] = set()
+                        gc[(upid, species_id, taxonomy)].add((pangene, pangene_nr50, gene_names))
 
-                pangenes, failed = zip(*res)
-                pangenes = list(itertools.chain.from_iterable(filter(None,pangenes)))
-            
-            if failed is not None and not all(x is None for x in failed):
-                failed = list(filter(None, failed))[0]
-                self.log.warning("{}: Failed to find features for pangene {}".format(pp_tax_id, (','.join(failed))))
-            if len(pangenes):
-                #save tsv of annots
-                with bz2.open('{}/{}/functional_annot/{}.tsv.bz2'.format(self.config['export_dir'], self.config['exportpath_humann2'], panproteome['tax_id']), 'wt') as functional_annot:
-                    functional_annot.write('pangene\tGO\tKO\tKEGG\tPfam\tEC\teggNOG\n')
-                    functional_annot.write('\n'.join( '{}\t{}'.format( k, '\t'.join(v)) for k, v in func_annot.items() ) )
+        with dummy.Pool(processes=100) as pool:
+            res = [_ for _ in pool.imap_unordered(self.get_uniref90_nucl_seq, gc.items(), chunksize=10) if _ is not None]
 
-                with bz2.open('{}/{}/panproteomes_fna/{}.fna.bz2'.format(self.config['export_dir'], self.config['exportpath_humann2'], panproteome['tax_id']), 'wt') as fasta_pangenes:
-                    [fasta_pangenes.write(marker.format('fasta')) for marker in pangenes]
+        pangenes, failed = zip(*res)
+        pangenes = list(itertools.chain.from_iterable(filter(None,pangenes)))
+        
+        if failed is not None and not all(x is None for x in failed):
+            failed = list(filter(None, failed))[0]
+            self.log.warning("{}: Failed to find features for pangene {}".format(species_id, (','.join(failed))))
+        if len(pangenes):
+            #save tsv of annots
+            with bz2.open('{}/{}/functional_annot/{}.tsv.bz2'.format(self.config['export_dir'], self.config['exportpath_humann2'], species_id), 'wt') as functional_annot:
+                functional_annot.write('pangene\tGO\tKO\tKEGG\tPfam\tEC\teggNOG\n')
+                functional_annot.write('\n'.join( '{}\t{}'.format( k, '\t'.join(v)) for k, v in func_annot.items() ) )
+
+            with bz2.open('{}/{}/panproteomes_fna/{}.fna.bz2'.format(self.config['export_dir'], self.config['exportpath_humann2'], species_id), 'wt') as fasta_pangenes:
+                [fasta_pangenes.write(marker.format('fasta')) for marker in pangenes]
 
 
 if __name__ == '__main__':
@@ -205,8 +226,8 @@ if __name__ == '__main__':
     config = utils.check_configs(config, verbose=args.verbose)
     config = config['export']
 
-    c = chocophlan2humann2(config)
-    c.chocophlan2humann2()
+    export_humann2 = chocophlan2humann2(config)
+    export_humann2.chocophlan2humann2()
     t1 = time.time()
 
     utils.info('Total elapsed time {}s\n'.format(int(t1 - t0)))
