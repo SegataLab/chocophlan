@@ -86,7 +86,7 @@ class chocophlan2humann2:
         else:
             self.log.error('No genome associated to proteome {} available for species {}'.format(upid, taxid))
             return [None, None, None]
-        seqs_dir = '{}/{}/{}/{}/'.format(config['download_base_dir'], config['relpath_genomes'], gca[4:][:6], gca[4:][6:])
+        seqs_dir = '{}/{}/{}/{}/'.format(self.config['download_base_dir'], self.config['relpath_genomes'], gca[4:][:6], gca[4:][6:])
         if not os.path.exists(seqs_dir):
             self.log.error('For proteome {} / species {} : No genome and GFF annotations downloaded for {}'.format(upid, taxid, gca))
             return [None, None, None]
@@ -104,13 +104,11 @@ class chocophlan2humann2:
 
             nucls = []
             failed = []
-            taxonomy_db = '{}|t__{}'.format(taxonomy[0], gca)
             for NR90, NR50, gene_names in t:
-                if type(gene_names) == tuple:
-                    gene_names = [x[1] for x in gene_names]
-                else:
-                    gene_names = (gene_names, )
-
+                # if isinstance(gene_names,tuple):
+                #     gene_names = [x[1] for x in itertools.chain.from_iterable(gene_names)]
+                # else:
+                #     gene_names = (gene_names, )
                 found = False
                 for gene_name in gene_names:
                     c = gff_db.conn.cursor()
@@ -132,7 +130,7 @@ class chocophlan2humann2:
                     except Exception as e:
                         print(taxid)
                         raise e
-                    mpa_marker = '{}__{}__{}|{}|UniRef90_{}|UniRef50_{}|{}'.format(taxid, NR90, feature['Name'][0], taxonomy[0], NR90, NR50, len(nuc_seq))
+                    mpa_marker = '{}__{}__{}|{}|{}|UniRef50_{}|{}'.format(taxid, NR90, feature['Name'][0], taxonomy[0], NR90, NR50, len(nuc_seq))
                     record = SeqIO.SeqRecord(seq=Seq(nuc_seq, alphabet=DNAAlphabet()), id=mpa_marker, description='')
                     nucls.append(record)
                 else:
@@ -150,13 +148,15 @@ class chocophlan2humann2:
             pangene = 'UniRef90_'+pangene.split('_')[1]
             pangene_nr50 = self.uniref90_taxid_map[pangene][1][2]
             if pangene in self.uniref90_taxid_map:
-                upkb_from_species = list(filter(lambda x:x[1] in low_lvls, self.uniref90_taxid_map[pangene][0]))
-                has_repr = any(x[2] for x in upkb_from_species)
-                upkb_entry = list(filter(lambda x:x[0] in self.uniprot and x[2] == has_repr, self.uniref90_taxid_map[pangene][0]))
-                if upkb_entry:
-                    upkb_id = upkb_entry[0][0]
+                nr90_members = list(filter(lambda x:x[1] in low_lvls, self.uniref90_taxid_map[pangene][0]))
+                if not nr90_members:
+                    nr90_members = list(filter(lambda x:x[2] and x[0] in self.uniprot, self.uniref90_taxid_map[pangene][0]))
+                has_repr = any(x[2] for x in nr90_members)
+                nr90_upkb_entry = list(filter(lambda x:x[0] in self.uniprot and x[2] == has_repr, nr90_members))
+                if nr90_upkb_entry:
+                    upkb_id = nr90_upkb_entry[0][0]
                     upkb_entry = self.uniprot[upkb_id]
-
+                    gene_names = tuple(x[1] for x in upkb_entry[0])
                     upkb_fa = self.uniprot[upkb_id][3:]
                     upkb_fa = [ ','.join('GO:'+str(x).zfill(7) for x in upkb_fa[0]),
                                 ','.join('KO:'+str(x).zfill(5) for x in upkb_fa[1]),
@@ -174,15 +174,14 @@ class chocophlan2humann2:
                         if hasattr(self.taxontree.taxid_n[tax_id], 'proteomes'):
                             upids = [up for up in self.taxontree.taxid_n[tax_id].proteomes if upkb_id in self.proteomes[up]['members']]
                             if not len(upids):
-                                possible_entry = [entry for entry in upkb_from_species if entry[1] == tax_id and entry[0] != upkb_id]
+                                possible_entry = [entry for entry in nr90_members if entry[1] == tax_id and entry[0] != upkb_id]
                                 if (possible_entry):
                                     upids = self.taxontree.taxid_n[tax_id].proteomes
-                                    upkb_id = possible_entry[0][0]
-                                    if upkb_id in self.uniprot:
-                                        upkb_entry = self.uniprot[upkb_id]
-                                    elif upkb_id in self.uniparc:
-                                        upkb_entry = [x[2] for x in self.uniparc[upkb_id]]
-                                        
+                                    gene_names = tuple( (x[1] for x in self.uniprot[upkb_id][0]) if upkb in self.uniprot 
+                                                  else 
+                                                  ( tuple( x[2] for x in self.uniparc[upkb]) if upkb in self.uniparc 
+                                                   else None ) 
+                                                  for upkb, taxid, isRef in possible_entry )
                     # Use, if available a reference genome, otherwise, a non-reference and finally a redundant one
                     upid = [x for x in upids if x in self.proteomes and self.proteomes[x]['isReference']]
                     if not len(upid):
@@ -193,7 +192,6 @@ class chocophlan2humann2:
                         upid = upid[0]
                     else:
                         continue
-                    gene_names = upkb_entry[0]
                     if len(upid) and len(gene_names):
                         if (upid, species_id, taxonomy) not in gc:
                             gc[(upid, species_id, taxonomy)] = set()
@@ -206,7 +204,7 @@ class chocophlan2humann2:
         pangenes = list(itertools.chain.from_iterable(filter(None,pangenes)))
         
         if failed is not None and not all(x is None for x in failed):
-            failed = list(filter(None, failed))[0]
+            failed = list(filter(None, failed))
             self.log.warning("{}: Failed to find features for pangene {}".format(species_id, (','.join(failed))))
         if len(pangenes):
             #save tsv of annots
@@ -227,7 +225,6 @@ if __name__ == '__main__':
     config = config['export']
 
     export_humann2 = chocophlan2humann2(config)
-    export_humann2.chocophlan2humann2()
     t1 = time.time()
 
     utils.info('Total elapsed time {}s\n'.format(int(t1 - t0)))

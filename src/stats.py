@@ -36,6 +36,7 @@ class Stats:
         if config['verbose']:
             utils.info('Loading pickled databases...')
         self.config = config
+        os.makedirs(self.config['export_dir'], exist_ok=True)
         self.proteomes = pickle.load(open('{}/{}'.format(self.config['download_base_dir'], self.config['relpath_pickle_proteomes']), 'rb'))
         self.taxontree = pickle.load(open('{}{}'.format(self.config['download_base_dir'],self.config['relpath_pickle_taxontree']), 'rb'))
         self.d_ranks = self.taxontree.lookup_by_rank()
@@ -161,7 +162,7 @@ class Stats:
         res_df.to_csv('{}/{}/{}.txt.bz2'.format(config['export_dir'], config['panproteomes_stats'], species), sep='\t', compression='bz2')
 
 
-    def stats(self):
+    def chocophlan_stats(self):
         all_stat = { 'Total number of species' : sum(1 for b in self.d_ranks['species'] if self.taxontree.get_child_proteomes(b)),
               'Total number of bacterial species' : sum(1 for b in self.taxontree.taxid_n[2].find_clades() if b.rank == 'species' and self.taxontree.get_child_proteomes(b)),
               'Total number of archaeal species' : sum(1 for b in self.taxontree.taxid_n[2157].find_clades() if b.rank == 'species' and self.taxontree.get_child_proteomes(b)),
@@ -202,7 +203,7 @@ class Stats:
 
 def generate_stats(config):
     s = Stats(config)
-    s.stats()
+    s.chocophlan_stats()
     
 if __name__ == '__main__':
     args = utils.read_params()
