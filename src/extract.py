@@ -510,26 +510,19 @@ def do_extraction(config, verbose=False):
 
     utils.info("Refining tree... ")
     # tax_tree.get_tree_with_reduced_taxonomy()
-    #TODO add     r = re.compile( r"(.*(C|c)andidat(e|us)_.*)|"
-                    # r"(.*_sp(_.*|$|))|"
-                    # r"((.*_|^)(b|B)acterium(_.*|))|"
-                    # r"(.*(eury|)archaeo(n_|te|n$).*)|"
-                    # r"(.*(endo|)symbiont.*)|"
-                    # r"(.*genomosp_.*)|"
-                    # r"(.*unidentified.*)|"
-                    # r"(.*_bacteria_.*)|"
-                    # r"(.*_taxon_.*)|"
-                    # r"(.*_et_al_.*)|"
-                    # r"(.*_and_.*)|"
-                    # r"(.*(cyano|proteo|actino)bacterium_.*)")
-    candidatus_taxid = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search(u'(C|c)andidat(e|us)_',tax_tree.taxid_n[x].name)]
-    # cags_taxid = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search(u'_CAG_',tax_tree.taxid_n[x].name)]
-    sps_taxid = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search(u'_sp(_|$)',tax_tree.taxid_n[x].name)]
-    bacterium_taxis = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search('(_|^)(b|B)acterium(_|$)',tax_tree.taxid_n[x].name)]
-    archaeon_taxis = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search('(eury|)archaeo(n_|te)',tax_tree.taxid_n[x].name)]
-    endosymbiont_taxis = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if re.search(u'(endo|)symbiont',tax_tree.taxid_n[x].name)]
-
-    merged_low_quality = list(itertools.chain.from_iterable((candidatus_taxid, archaeon_taxis, sps_taxid, bacterium_taxis, endosymbiont_taxis)))
+    r = re.compile( r"(.*(C|c)andidat(e|us)_.*)|"
+                    r"(.*_sp(_.*|$).*)|"
+                    r"((.*_|^)(b|B)acterium(_.*|))|"
+                    r"(.*(eury|)archaeo(n_|te|n$).*)|"
+                    r"(.*(endo|)symbiont.*)|"
+                    r"(.*genomosp_.*)|"
+                    r"(.*unidentified.*)|"
+                    r"(.*_bacteria_.*)|"
+                    r"(.*_taxon_.*)|"
+                    r"(.*_et_al_.*)|"
+                    r"(.*_and_.*)|"
+                    r"(.*(cyano|proteo|actino)bacterium_.*)")
+    merged_low_quality = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if r.match(tax_tree.taxid_n[x].name)]
     [tax_tree.taxid_n[x].__setattr__('is_low_quality', True) for x in merged_low_quality]
     [tax_tree.taxid_n[x].__setattr__('is_low_quality', False) for x in set(tax_tree.taxid_n.keys()).difference(merged_low_quality)]
     utils.info('Finished postprocessing the taxonomy\n')

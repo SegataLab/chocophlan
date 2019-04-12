@@ -1,7 +1,7 @@
-export/
 syntax: glob
 src/__pycache__
 data/
 tmp/
 eval/
+export*/
 data*/
