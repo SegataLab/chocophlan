@@ -134,7 +134,7 @@ class Panproteome:
                 for pangene, uniref_id in files_to_load:
                     uniref_id = 'UniRef{}_{}'.format(cluster, uniref_id) if 'UniRef' not in uniref_id else uniref_id
                     taxa_is_present = destination_clusters.get('{}'.format(uniref_id),[''])[0]
-                    external_hits = [x for x in taxa_is_present if x[1] not in item_descendant]
+                    external_hits = [x for x in taxa_is_present if int(x[1]) not in item_descendant]
                     external_genomes = Counter(self.taxontree.go_up_to_species(int(taxid)) for _, taxid, _ in external_hits if taxid)
                     if None in external_genomes: external_genomes.pop(None)
                     external_species = list(external_genomes.keys())

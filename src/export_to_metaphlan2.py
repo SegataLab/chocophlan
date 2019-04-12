@@ -144,13 +144,13 @@ class export_to_metaphlan2:
                         'coreness': panproteome['members'][core]['coreness'],
                         'uniqueness_90' : panproteome['members'][core]['uniqueness_nosp']['90_90'],
                         'uniqueness_50' : panproteome['members'][core]['uniqueness_nosp']['90_50'],
-                        'external_genomes_90' : sum(panproteome['members'][core]['external_genomes']['90_90'].values()),
-                        'external_genomes_50' : sum(panproteome['members'][core]['external_genomes']['90_50'].values())}
+                        'external_genomes_90' : sum((panproteome['members'][core]['external_genomes']['90_90']-self.taxa_to_remove).values()),
+                        'external_genomes_50' : sum((panproteome['members'][core]['external_genomes']['90_50']-self.taxa_to_remove).values())}
                         for core in cores_to_use if len(core)
                             if panproteome['members'][core]['uniqueness_nosp']['90_90'] <= core_uniqueness_90_threshold 
                             and panproteome['members'][core]['uniqueness_nosp']['90_50'] <= core_uniqueness_50_threshold
-                            and sum(panproteome['members'][core]['external_genomes']['90_90'].values()) <= external_genomes_90_threshold
-                            and sum(panproteome['members'][core]['external_genomes']['90_50'].values()) <= external_genomes_50_threshold)
+                            and sum((panproteome['members'][core]['external_genomes']['90_90']-self.taxa_to_remove).values()) <= external_genomes_90_threshold
+                            and sum((panproteome['members'][core]['external_genomes']['90_50']-self.taxa_to_remove).values()) <= external_genomes_50_threshold)
 
         else:
             markers = pd.DataFrame.from_dict({'gene' : core,
@@ -159,13 +159,13 @@ class export_to_metaphlan2:
                         'coreness': panproteome['members'][core]['coreness'],
                         'uniqueness_90' : panproteome['members'][core]['uniqueness']['90_90'],
                         'uniqueness_50' : panproteome['members'][core]['uniqueness']['90_50'],
-                        'external_genomes_90' : sum(panproteome['members'][core]['external_genomes']['90_90'].values()),
-                        'external_genomes_50' : sum(panproteome['members'][core]['external_genomes']['90_50'].values())}
+                        'external_genomes_90' : sum((panproteome['members'][core]['external_genomes']['90_90']-self.taxa_to_remove).values()),
+                        'external_genomes_50' : sum((panproteome['members'][core]['external_genomes']['90_50']-self.taxa_to_remove).values())}
                         for core in cores_to_use if len(core)
                             if panproteome['members'][core]['uniqueness']['90_90'] <= core_uniqueness_90_threshold 
                             and panproteome['members'][core]['uniqueness']['90_50'] <= core_uniqueness_50_threshold
-                            and sum(panproteome['members'][core]['external_genomes']['90_90'].values()) <= external_genomes_90_threshold
-                            and sum(panproteome['members'][core]['external_genomes']['90_50'].values()) <= external_genomes_50_threshold)
+                            and sum((panproteome['members'][core]['external_genomes']['90_90']-self.taxa_to_remove).values()) <= external_genomes_90_threshold
+                            and sum((panproteome['members'][core]['external_genomes']['90_50']-self.taxa_to_remove).values()) <= external_genomes_50_threshold)
         
         if not markers.empty:
             markers = markers[((markers.len > 150) & (markers.len < 1500))]
@@ -724,7 +724,7 @@ def merge_bad_species(sgb_release, gca2taxonomy, config):
         fout.write('\n'.join('{}\t{}\t{}'.format(gca, taxa, taxa) for taxa, gca_tax in keep.items() for gca in gca_tax))    
 
     gca2taxid = dict(zip(gca2taxonomy.GCA_accession,gca2taxonomy.NCBI_taxid))
-    taxa_to_remove = [gca2taxid[x[0]] for merged_into, bad_species in new_species_merged.items() if len(bad_species) > 1 for x in bad_species]
+    taxa_to_remove = [(x[0], gca2taxid[x[0]]) for merged_into, bad_species in new_species_merged.items() if len(bad_species) > 1 for x in bad_species]
     
     # taxa2markers = {}
     # [taxa2markers.setdefault(v['taxon'],[]).append(k) for k,v in mpa_db['markers'].items()]
@@ -759,11 +759,11 @@ def run_all(config):
     # gca2taxonomy = dict(zip(gca2taxonomy.GCA_accession, gca2taxonomy.NCBI_taxid))
     sgb_release = pd.read_csv('/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/sgbrepo/releases/SGB.Jan19.txt.bz2', sep='\t')
     sgb_release = sgb_release.loc[sgb_release['# Label'] == 'SGB',]
-    taxa_to_remove = merge_bad_species(sgb_release, gca2taxonomy)
+    self.genomes_to_remove, self.taxa_to_remove = zip(*merge_bad_species(sgb_release, gca2taxonomy))
     
     if not os.path.exists('{}/{}/DONE'.format(export.config['export_dir'],export.config['exportpath_metaphlan2'])):
         species = [ '{}/{}/species/90/{}.pkl'.format(export.config['download_base_dir'], export.config['relpath_panproteomes_dir'], item.tax_id) for item in self.taxontree.lookup_by_rank()['species'] 
-                    if self.taxontree.get_child_proteomes(item) and item.tax_id not in taxa_to_remove ]
+                    if self.taxontree.get_child_proteomes(item) and item.tax_id not in self.taxa_to_remove ]
         utils.info('Started extraction of MetaPhlAn2 markers.\n')
         with dummy.Pool(processes=30) as pool:
             failed = [x for x in pool.imap(export.get_uniref_uniprotkb_from_panproteome, species, chunksize=200)]

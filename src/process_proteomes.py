@@ -87,7 +87,8 @@ def uniprot_tuple_to_dict(v):
              'EggNOG': v[13],
              'UniRef100' : v[14],
              'UniRef90' : v[15],
-             'UniRef50' : v[16]
+             'UniRef50' : v[16],
+             'isFragment' : v[17]
             }
 
 def parse_uniref_xml_elem(elem):
@@ -110,7 +111,7 @@ def parse_uniref_xml_elem(elem):
                 uniparc_cluster = ''.join(member.xpath("./nr:dbReference/nr:property[@type='UniParc ID']/@value", namespaces = ns, smart_strings=False))
                 tax_id = ''.join(member.xpath("./nr:dbReference/nr:property[@type='NCBI taxonomy']/@value", namespaces = ns, smart_strings=False))
                 isRepr = True if member.xpath('name()', namespaces=ns, smart_strings=False) == 'representativeMember' else False
-                members.append((accession,tax_id, isRepr))
+                members.append((accession,int(tax_id), isRepr))
                 if uniparc_cluster:
                     members.append((uniparc_cluster,int(tax_id), isRepr))
 
