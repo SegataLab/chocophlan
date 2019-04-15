@@ -101,15 +101,16 @@ def parse_uniref_xml_elem(elem):
             common_taxid = ''.join(elem.xpath("/nr:entry/nr:property[@type='common taxon ID']/@value", namespaces=ns, smart_strings=False))
             common_taxid = int(common_taxid) if common_taxid else common_taxid
             #TODO Fix extraction of upper UniRef level, now returns a collapsed list
-            UniRef100 = ''.join(set(elem.xpath("(/nr:entry/nr:member|nr:representativeMember)/nr:dbReference/nr:property[@type='UniRef100 ID']/@value", namespaces = ns, smart_strings=False)))[10:]
-            UniRef90 = ''.join(set(elem.xpath("(/nr:entry/nr:member|nr:representativeMember)/nr:dbReference/nr:property[@type='UniRef90 ID']/@value", namespaces = ns, smart_strings=False)))[9:]
-            UniRef50 = ''.join(set(elem.xpath("(/nr:entry/nr:member|nr:representativeMember)/nr:dbReference/nr:property[@type='UniRef50 ID']/@value", namespaces = ns, smart_strings=False)))[9:]
+            UniRef100 = set(elem.xpath("(/nr:entry/nr:member|nr:representativeMember)/nr:dbReference/nr:property[@type='UniRef100 ID']/@value", namespaces = ns, smart_strings=False))
+            UniRef90 = set(elem.xpath("(/nr:entry/nr:member|nr:representativeMember)/nr:dbReference/nr:property[@type='UniRef90 ID']/@value", namespaces = ns, smart_strings=False))
+            UniRef50 = set(elem.xpath("(/nr:entry/nr:member|nr:representativeMember)/nr:dbReference/nr:property[@type='UniRef50 ID']/@value", namespaces = ns, smart_strings=False))
             xml_all_members = elem.xpath("/nr:entry/nr:member|nr:representativeMember",namespaces=ns, smart_strings=False)
 
             for member in xml_all_members:
-                accession = ''.join(member.xpath("./nr:dbReference/nr:property[@type='UniProtKB accession']/@value|./nr:dbReference[@type='UniParc ID']/@id", namespaces = ns, smart_strings=False))
+                accession = member.xpath("./nr:dbReference/nr:property[@type='UniProtKB accession']/@value|./nr:dbReference[@type='UniParc ID']/@id", namespaces = ns, smart_strings=False)[0]
                 uniparc_cluster = ''.join(member.xpath("./nr:dbReference/nr:property[@type='UniParc ID']/@value", namespaces = ns, smart_strings=False))
                 tax_id = ''.join(member.xpath("./nr:dbReference/nr:property[@type='NCBI taxonomy']/@value", namespaces = ns, smart_strings=False))
+                tax_id = int(tax_id) if len(tax_id) else common_taxid
                 isRepr = True if member.xpath('name()', namespaces=ns, smart_strings=False) == 'representativeMember' else False
                 members.append((accession,int(tax_id), isRepr))
                 if uniparc_cluster:
@@ -118,9 +119,9 @@ def parse_uniref_xml_elem(elem):
             t_uniref = (nr_id,
                         common_taxid,
                         tuple(members),
-                        UniRef100,
-                        UniRef90,
-                        UniRef50,
+                        UniRef100 if len(UniRef100) > 1 else ''.join(UniRef100)[10:],
+                        UniRef90 if len(UniRef90) > 1 else ''.join(UniRef90)[9:],
+                        UniRef50 if len(UniRef50) > 1 else ''.join(UniRef50)[9:],
                         ''.join(elem.xpath("/nr:entry/nr:representativeMember/nr:sequence/text()", namespaces=ns, smart_strings=False)).replace('\n','')
                         )
         except Exception as e:
@@ -133,7 +134,6 @@ def parse_uniref_xml_elem(elem):
                     del ancestor.getparent()[0]
         
         return t_uniref
-            
 
 def parse_uniref_xml(xml_input, config):  
     uniref_xml = etree.iterparse(gzip.GzipFile(xml_input), events = ('end',), tag = '{http://uniprot.org/uniref}entry', huge_tree = True)
@@ -153,12 +153,12 @@ def parse_uniref_xml(xml_input, config):
          open("{}/pickled/{}_taxid_idmap.pkl".format(config['download_base_dir'],cluster),'wb') as pickle_taxid_map:
         try:
             file_chunk = 1
-            pickle_chunk = open("{}/{}/{}/{}_{}.pkl".format(config['download_base_dir'], config['pickled_dir'], cluster, cluster, file_chunk),'ab')
+            pickle_chunk = open("{}/{}/{}/{}_{}.pkl".format(config['download_base_dir'], config['pickled_dir'], cluster, cluster, file_chunk),'wb')
             for index, elem in enumerate(pool.imap_unordered(parse_uniref_xml_elem, yield_filtered_xml_string(uniref_xml), chunksize=chunksize)):
                 if not index % GROUP_CHUNK:
                     pickle_chunk.close()
                     file_chunk = 1 + (index//GROUP_CHUNK )
-                    pickle_chunk = open("{}/{}/{}/{}_{}.pkl".format(config['download_base_dir'], config['pickled_dir'], cluster, cluster, file_chunk),'ab')
+                    pickle_chunk = open("{}/{}/{}/{}_{}.pkl".format(config['download_base_dir'], config['pickled_dir'], cluster, cluster, file_chunk),'wb')
                 utils.optimized_dump(pickle_chunk, elem)
                 utils.optimized_dump(pickle_uniref_uniparc_idmap, list(set((m[0],elem[0]) for m in elem[2] if 'UPI' in m[0])))
                 utils.optimized_dump(pickle_uniref_idmap, (elem[0], file_chunk, ))
