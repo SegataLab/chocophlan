@@ -99,7 +99,7 @@ def parse_uniref_xml_elem(elem):
         try:
             nr_id = ''.join(elem.xpath("/nr:entry/@id", namespaces=ns, smart_strings=False))
             common_taxid = ''.join(elem.xpath("/nr:entry/nr:property[@type='common taxon ID']/@value", namespaces=ns, smart_strings=False))
-            common_taxid = int(common_taxid) if common_taxid else common_taxid
+            common_taxid = int(common_taxid) if common_taxid else 0
             #TODO Fix extraction of upper UniRef level, now returns a collapsed list
             UniRef100 = set(elem.xpath("(/nr:entry/nr:member|nr:representativeMember)/nr:dbReference/nr:property[@type='UniRef100 ID']/@value", namespaces = ns, smart_strings=False))
             UniRef90 = set(elem.xpath("(/nr:entry/nr:member|nr:representativeMember)/nr:dbReference/nr:property[@type='UniRef90 ID']/@value", namespaces = ns, smart_strings=False))
@@ -159,10 +159,11 @@ def parse_uniref_xml(xml_input, config):
                     pickle_chunk.close()
                     file_chunk = 1 + (index//GROUP_CHUNK )
                     pickle_chunk = open("{}/{}/{}/{}_{}.pkl".format(config['download_base_dir'], config['pickled_dir'], cluster, cluster, file_chunk),'wb')
-                utils.optimized_dump(pickle_chunk, elem)
-                utils.optimized_dump(pickle_uniref_uniparc_idmap, list(set((m[0],elem[0]) for m in elem[2] if 'UPI' in m[0])))
-                utils.optimized_dump(pickle_uniref_idmap, (elem[0], file_chunk, ))
-                utils.optimized_dump(pickle_taxid_map, { elem[0] : (set(t[:3] for t in elem[2]), elem[3:6]) })
+                if elem:
+                    utils.optimized_dump(pickle_chunk, elem)
+                    utils.optimized_dump(pickle_uniref_uniparc_idmap, list(set((m[0],elem[0]) for m in elem[2] if 'UPI' in m[0])))
+                    utils.optimized_dump(pickle_uniref_idmap, (elem[0], file_chunk, ))
+                    utils.optimized_dump(pickle_taxid_map, { elem[0] : (set(t[:3] for t in elem[2]), elem[3:6]) })
         except Exception as e:
             utils.error(str(e))
             utils.error('Processing of {} failed.'.format(xml_input))

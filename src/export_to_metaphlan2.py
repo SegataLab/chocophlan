@@ -345,6 +345,50 @@ class export_to_metaphlan2:
         return (nucls, db, failed, )
 
 
+    def get_genename_from_gca(self, upkb_from_species, has_repr):
+        repr_uniprotkb = list(filter(lambda x: (x[2]==has_repr) and 'UPI' not in x[0] and x[0] in self.uniprot, upkb_from_species))
+        repr_uniparc = list(filter(lambda x: (x[2]==has_repr) and 'UPI' in x[0] and x[0] in self.uniparc, upkb_from_species))
+        gca = None
+        if repr_uniprotkb:
+            # If entry is from UniProtKB take the gene names from the proteomes in which is present
+            for marker, _, _ in repr_uniprotkb:
+                upids = ["UP{}".format(str(upid).zfill(9)) for upid in self.uniprot[marker][1]]
+                #Some UniProtKB entries (like P00644) do not have any proteome associteda.
+                if not len(upids):
+                    tax_id = self.uniprot[marker][2]
+                    if hasattr(self.taxontree.taxid_n[tax_id], 'proteomes'):
+                        upids = self.taxontree.taxid_n[tax_id].proteomes
+                        upids = [up for up in upids if marker in self.proteomes[up]['members']]
+                # Use, if available a reference genome, otherwise, a non-reference and finally a redundant one
+                upid = [x for x in upids if x in self.proteomes and self.proteomes[x]['isReference']]
+                if not len(upid):
+                    upid = [x for x in upids if x in self.proteomes and not self.proteomes[x]['upi']]
+                if not len(upid):
+                    upid = [x for x in upids if x in self.proteomes and self.proteomes[x]['upi']]
+                if len(upid):
+                    gene_names = self.uniprot[marker][0]
+                    for u in upid:
+                        ncbi_ids = dict(self.proteomes[u].get('ncbi_ids',[(None,None)])).get('GCSetAcc',None)
+                        if ncbi_ids is not None:
+                            gca = ncbi_ids.split('.')[0]
+                            return gca, gene_names
+
+        if not gca or repr_uniparc:
+            for marker, _, _ in repr_uniparc:
+                all_genes = [(x[0],x[2]) for x in self.uniparc[marker] if self.proteomes["UP{}{}".format("0"*(9-len(str(x[0]))),x[0])]['isReference']]
+                if not len(all_genes):
+                    all_genes = [(x[0],x[2]) for x in self.uniparc[marker] if not self.proteomes["UP{}{}".format("0"*(9-len(str(x[0]))),x[0])]['upi']]
+                    if not len(all_genes):
+                        all_genes = [(x[0],x[2]) for x in self.uniparc[marker] if self.proteomes["UP{}{}".format("0"*(9-len(str(x[0]))),x[0])]['upi']]
+                if len(all_genes):
+                    for upid, gene_names in all_genes:
+                        upid = "UP{}".format(str(upid).zfill(9))
+                        ncbi_ids = dict(self.proteomes[upid].get('ncbi_ids',[(None,None)])).get('GCSetAcc',None)
+                        if ncbi_ids is not None:
+                            gca = ncbi_ids.split('.')[0]
+                            return gca, gene_names
+
+        return None, None
     """
     Use centroid of UniRef90 as plausible marker
     """
@@ -387,58 +431,27 @@ class export_to_metaphlan2:
                 # If UniRef90 has member from species or below, use it
                 upkb_from_species = list(filter(lambda x:int(x[1]) in low_lvls, np90_members))
                 has_repr = any(x[2] for x in upkb_from_species)
-                if upkb_from_species:
-                    repr_uniprotkb = list(filter(lambda x: (x[2]==has_repr) and 'UPI' not in x[0] and x[0] in self.uniprot, upkb_from_species))
-                    repr_uniparc = list(filter(lambda x: (x[2]==has_repr) and 'UPI' in x[0] and x[0] in self.uniparc, upkb_from_species))
-                    if repr_uniprotkb:
-                        # If entry is from UniProtKB take the gene names from the proteomes in which is present
-                        for marker, _, _ in repr_uniprotkb:
-                            upids = ["UP{}".format(str(upid).zfill(9)) for upid in self.uniprot[marker][1]]
-                            #Some UniProtKB entries (like P00644) do not have any proteome associteda.
-                            if not len(upids):
-                                tax_id = self.uniprot[marker][2]
-                                if hasattr(self.taxontree.taxid_n[tax_id], 'proteomes'):
-                                    upids = self.taxontree.taxid_n[tax_id].proteomes
-                                    upids = [up for up in upids if marker in self.proteomes[up]['members']]
-                            # Use, if available a reference genome, otherwise, a non-reference and finally a redundant one
-                            upid = [x for x in upids if x in self.proteomes and self.proteomes[x]['isReference']]
-                            if not len(upid):
-                                upid = [x for x in upids if x in self.proteomes and not self.proteomes[x]['upi']]
-                                if not len(upid):
-                                    upid = [x for x in upids if x in self.proteomes and self.proteomes[x]['upi']]
-                            if len(upid):
-                                gene_names = self.uniprot[marker][0]
-                                for u in upid:
-                                    ncbi_ids = dict(self.proteomes[u].get('ncbi_ids',[(None,None)])).get('GCSetAcc',None)
-                                    if ncbi_ids is not None:
-                                        gca = ncbi_ids.split('.')[0]
-                                        break
 
-                    if not gca or repr_uniparc:
-                        for marker, _, _ in repr_uniparc:
-                            all_genes = [(x[0],x[2]) for x in self.uniparc[marker] if self.proteomes["UP{}{}".format("0"*(9-len(str(x[0]))),x[0])]['isReference']]
-                            if not len(all_genes):
-                                all_genes = [(x[0],x[2]) for x in self.uniparc[marker] if not self.proteomes["UP{}{}".format("0"*(9-len(str(x[0]))),x[0])]['upi']]
-                                if not len(all_genes):
-                                    all_genes = [(x[0],x[2]) for x in self.uniparc[marker] if self.proteomes["UP{}{}".format("0"*(9-len(str(x[0]))),x[0])]['upi']]
-                            if len(all_genes):
-                                for upid, gene_names in all_genes:
-                                    upid = "UP{}".format(str(upid).zfill(9))
-                                    ncbi_ids = dict(self.proteomes[upid].get('ncbi_ids',[(None,None)])).get('GCSetAcc',None)
-                                    if ncbi_ids is not None:
-                                        gca = ncbi_ids.split('.')[0]
-                                        break
-                if gca and len(gene_names):
-                    if (gca, panproteome['tax_id'], taxonomy) not in gc:
-                        gc[(gca, panproteome['tax_id'], taxonomy)] = set()
-                    gc[(gca, panproteome['tax_id'], taxonomy)].add((np90_cluster,
-                                                                    gene_names, 
-                                                                    tuple(set(x for x in itertools.chain.from_iterable(panproteome['members'][np90_cluster]['external_species'].values())))
-                                                                    )
-                    )
-                else:
-                    self.log.warning('No genes or proteomes identified for marker {} in species {}'.format(marker, panproteome['tax_id']))
-            
+
+                if upkb_from_species:
+                    gca_gname = None
+                    for species_list, repr_flag in [(upkb_from_species,has_repr), (upkb_from_species,not has_repr),
+                                                    (np90_members,has_repr), (np90_members,not has_repr)]:
+                        gca, gene_names  = self.get_genename_from_gca(species_list,repr_flag)
+                        if gca is not None and gene_names is not None:
+                            break
+
+                    if gca and gene_names:
+                        if (gca, panproteome['tax_id'], taxonomy) not in gc:
+                            gc[(gca, panproteome['tax_id'], taxonomy)] = set()
+                        gc[(gca, panproteome['tax_id'], taxonomy)].add((np90_cluster,
+                                                                        gene_names, 
+                                                                        tuple(set(x for x in itertools.chain.from_iterable(panproteome['members'][np90_cluster]['external_species'].values())))
+                                                                        )
+                        )
+                    else:
+                        self.log.warning('No genes or proteomes identified for marker {} in species {}'.format(marker, panproteome['tax_id']))
+                
         markers_nucls, db, failed, res = [], {}, [], []
         if len(gc):
             with CodeTimer(name='Sequence extraction', debug=self.debug, logger=self.log):
