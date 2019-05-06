@@ -161,7 +161,7 @@ class chocophlan2humann2:
                     upkb_fa = [ ','.join('GO:'+str(x).zfill(7) for x in upkb_fa[0]),
                                 ','.join('KO:'+str(x).zfill(5) for x in upkb_fa[1]),
                                 ','.join(str(x) for x in upkb_fa[2]),
-                                ','.join('PF:'+str(x).zfill(5) for x in upkb_fa[3]),
+                                ','.join('PF'+str(x).zfill(5) for x in upkb_fa[3]),
                                 ','.join(str(x) for x in upkb_fa[4]),
                                 ','.join(str(x) for x in upkb_fa[5]) ]
                     func_annot[pangene] = upkb_fa

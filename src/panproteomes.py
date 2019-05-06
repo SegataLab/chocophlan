@@ -169,9 +169,9 @@ class Panproteome:
         try:
             with dummy.Pool(processes=100) as pool:
                 d = [ _ for _ in pool.imap_unordered(self.process_panproteome, 
-                    ((item, rank, cluster) for rank in ranks_to_process 
-                                           for item in self.d_ranks[rank] 
-                                           if self.taxontree.get_child_proteomes(item)))]
+                    ((item, rank, cluster) for rank in ranks_to_process
+                                           for item in self.d_ranks[rank]
+                                           if any(map(lambda x : self.proteomes[x].get('ncbi_ids',False), taxontree.get_child_proteomes(item) )) )) ]
         except Exception as e:
             utils.error(str(e))
             raise

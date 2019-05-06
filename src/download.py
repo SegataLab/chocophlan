@@ -347,7 +347,7 @@ def process(item, data, config):
         if len(id_):
             ncbi_ids['GCSetAcc'] = id_
             try:
-                download_folder = '{}/{}/{}/{}'.format(config['download_base_dir'], config['relpath_genomes'], id_.split('_')[1][0:6],id_.split('_')[1][6:9])
+                download_folder = '{}/{}/{}'.format(config['download_base_dir'], config['relpath_genomes'], id_.split('_')[1][0:6],id_.split('_')[1][6:9])
             except:
                 utils.info('{}\n'.format(id_))
             os.makedirs(download_folder, exist_ok=True)
@@ -365,10 +365,10 @@ def process(item, data, config):
     else:
         terminating.set()
 
-def process_from_file(item, data, config):
+def process_from_file(item, data, basefolder):
     if not terminating.is_set():
         try:
-            download_folder = '{}/{}/{}/{}'.format(config['download_base_dir'], config['relpath_genomes'], item.split('_')[1][0:6],item.split('_')[1][6:9])
+            download_folder = '{}/{}/{}'.format(basefolder, item.split('_')[1][0:6],item.split('_')[1][6:9])
         except:
             utils.info('{}\n'.format(item))
         os.makedirs(download_folder, exist_ok=True)
@@ -384,18 +384,16 @@ def process_from_file(item, data, config):
     else:
         terminating.set()
 
-def download_ncbi_from_txt(input_file, config):
+def download_ncbi_from_txt(input_file, basefolder):
     # download the assembly data once
     data = get_ncbi_assembly_info()
     terminating = dummy.Event()
     utils.info("Loading input file with GCA ids to download...\n")
     assembly_ids = [x.strip() for x in open(input_file).readlines()]
-    config['relpath_genomes'] = "{}_{}".format(config['relpath_genomes'], datetime.date.today().strftime ("%Y%m%d"))
-    partial_process = partial(process_from_file, data=data, config=config)
-    with dummy.Pool(initializer=initt, initargs=(terminating, ), processes=config['nproc']) as pool:
-        failed = [f for f in pool.imap_unordered(partial_process, assembly_ids, chunksize=config['nproc'])]
+    partial_process = partial(process_from_file, data=data, basefolder=basefolder)
+    with dummy.Pool(initializer=initt, initargs=(terminating, ), processes=20) as pool:
+        failed = [f for f in pool.imap_unordered(partial_process, assembly_ids, chunksize=10)]
 
-    assembly_noversion = [x.split('.')[0] for x in assembly_ids if x not in failed]
     failed = [x.split('.')[0] for x in filter(None,failed)]
 
     with open('failed_GCA.txt','w') as f:
