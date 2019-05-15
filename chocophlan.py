@@ -36,7 +36,7 @@ def chocophlan():
     # panproteomes.generate_panproteomes(config['panproteomes'])
     #stats.generate_stats(config['stats'])
     export_to_metaphlan2.run_all(config['export'])
-    chocophlan2phylophlan.export_to_phylophlan(config['export'])
+    # chocophlan2phylophlan.export_to_phylophlan(config['export'])
 
 if __name__ == '__main__':
     t0 = time.time()

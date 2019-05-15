@@ -4,7 +4,7 @@ __author__ = ('Francesco Beghini (francesco.beghini@unitn.it)'
             'Nicola Segata (nicola.segata@unitn.it), '
             'Nicolai Karcher (karchern@gmail.com),')
 
-__date__ = '21 Mar 2019'
+__date__ = '14 May 2019'
 
 from Bio import SeqIO
 from Bio.Alphabet import DNAAlphabet
@@ -168,6 +168,7 @@ class export_to_metaphlan2:
                             and sum((panproteome['members'][core]['external_genomes']['90_50']-self.taxa_to_remove).values()) <= external_genomes_50_threshold)
         
         if not markers.empty:
+            markers = markers.set_index('gene')
             markers = markers[((markers.len > 150) & (markers.len < 1500))]
             if not markers.empty:
                 markers = markers.assign(coreness_score = pd.Series(np.power(markers['coreness_perc'], 1/2)),
@@ -338,7 +339,8 @@ class export_to_metaphlan2:
                                                   'ext': list(set(ext_genomes)),
                                                   'len': len(nuc_seq),
                                                   'score': 0,
-                                                  'taxon': taxonomy[0]}
+                                                  'taxon': taxonomy[0]
+                                                }
                 else:
                     failed.append(str(core))
         if not len(failed): failed = None
@@ -394,9 +396,11 @@ class export_to_metaphlan2:
     """
     def get_uniref_uniprotkb_from_panproteome(self, panproteome):
         try:
-            panproteome = pickle.load(open(panproteome, 'rb'))
+            p_f = open(panproteome, 'rb')
+            panproteome = pickle.load(p_f)
         except:
-            self.log.erorr('[{}]\tCannot load panproteome.'.format(panproteome))
+            self.log.error('[{}]\tCannot load panproteome.'.format(panproteome))
+            return 
         pp_tax_id = panproteome['tax_id']
         low_lvls = [c.tax_id for c in self.taxontree.taxid_n[pp_tax_id].find_clades()]
         taxonomy = self.taxontree.print_full_taxonomy(pp_tax_id)
@@ -426,7 +430,7 @@ class export_to_metaphlan2:
         upid = ""
         res = []
         failed_uniprot_repr = []
-        for np90_cluster in possible_markers.gene:
+        for np90_cluster in possible_markers.index:
             gca, marker = None, None
             np90_members = self.uniref90_info_map['UniRef90_{}'.format(np90_cluster)][0]
             # If UniRef90 has member from species or below, use it
@@ -458,7 +462,7 @@ class export_to_metaphlan2:
         else:
             if len(failed_uniprot_repr) == possible_markers.shape[0]:
                 ifnotgenome = any([True for p in self.taxontree.get_child_proteomes(self.taxontree.taxid_n[pp_tax_id])
-                                        if self.proteomes[p].get('ncbi_ids',{}).get('GCSetAcc','')])
+                                        if dict(self.proteomes[p].get('ncbi_ids',{})).get('GCSetAcc','')])
                 self.log.warning('[{}]\tFailed to find any gene for all possible markers identified.{}'.format(panproteome['tax_id'], "No assemblies are available for the species' proteomes" if ifnotgenome else ''))
             return (panproteome['tax_id'], taxonomy)
 
@@ -473,6 +477,7 @@ class export_to_metaphlan2:
         #create export/markers_fasta
         if failed is not None and not all(x is None for x in failed):
             failed = list(filter(None, failed))[0]
+            possible_markers = possible_markers.loc[~possible_markers.index.isin(failed)]
             self.log.warning("{}: Failed to find features of markers {}".format(pp_tax_id, (','.join(failed))))
 
         if len(markers_nucls):
@@ -481,6 +486,8 @@ class export_to_metaphlan2:
             if len(gc):
                 pickle.dump(gc, open('{}/{}/markers_info/{}.txt'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']), 'wb'))
             possible_markers.to_csv('{}/{}/markers_stats/{}.txt'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']))
+        else:
+            self.log.warning("{}: No nucleotide sequences extracted".format(pp_tax_id))
 
 def map_markers_to_genomes(mpa_pkl, taxontree, proteomes, outfile_prefix, config):
     bowtie2 = 'bowtie2'
@@ -567,7 +574,7 @@ def map_markers_to_genomes(mpa_pkl, taxontree, proteomes, outfile_prefix, config
                 markers2contig[marker][contig] = (int(chunk.split('/')[-1]),[])
             markers2contig[marker][contig][1].append((chunk, start, CIGAR, flag))
 
-    gca2taxon = { gca[:-2] : taxid for upid, gca, taxid in ((p, dict(proteomes[p]['ncbi_ids']).getget('GCSetAcc',None), proteomes[p]['tax_id']) for p in proteomes if 'ncbi_ids' in proteomes[p]) if gca is not None}
+    gca2taxon = { gca[:-2] : taxid for upid, gca, taxid in ((p, dict(proteomes[p]['ncbi_ids']).get('GCSetAcc',None), proteomes[p]['tax_id']) for p in proteomes if 'ncbi_ids' in proteomes[p]) if gca is not None}
     taxon2gca = {}
     [taxon2gca.setdefault( taxontree.go_up_to_species(taxid) , [ ] ).append(gca) for gca, taxid in gca2taxon.items()]
     utils.info('\tDone.\n')
@@ -738,7 +745,6 @@ def merge_bad_species(sgb_release, gca2taxonomy, config):
 
     return taxa_to_remove
 
-
 def run_all(config):
     #Check if a previous export was performed for the same release
     #If exists but has failed (no DONE file in release folder), create a backup folder and export again
@@ -777,7 +783,7 @@ def run_all(config):
 
         utils.info('Pickling the MetaPhlAn2 database...\n')
         with bz2.BZ2File('{}/{}/{}.orig.pkl'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as outfile:
-            pickle.dump(export.db, outfile, pickle.HIGHEST_PROTOCOL)
+            pickle.dump(export.db, outfile, protocol=2)
         utils.info('Done.\n')
 
         with open('{}/{}/DONE'.format(export.config['export_dir'],export.config['exportpath_metaphlan2']), 'wt') as fcomp:
@@ -801,12 +807,14 @@ def run_all(config):
         outfile.write('\n'.join('{}\t{}'.format(marker, ext_species['external_species']) for marker, ext_species in markers2ext.items()))
 
     with bz2.BZ2File('{}/{}/{}.orig.nomerged.pkl'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as outfile:
-        pickle.dump(mpa_pkl, outfile, pickle.HIGHEST_PROTOCOL)
-  
+        pickle.dump(mpa_pkl, outfile, protocol=2)
+    
     try:
         with bz2.open('{}/{}/{}.fna.bz2'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'wt') as outfile, \
              open('{}/{}/{}.fna'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'r') as infile:
-             outfile.writelines(infile.readlines())
+            for record in SeqIO.parse(infile, 'fasta'):
+                if record.id in mpa_pkl['markers']:
+                    outfile.write(record.format('fasta'))
     except:
         utils.remove_file('{}/{}/{}.fna.bz2'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX))
         utils.error('Failed to compress the MetaPhlAn2 markers database. Exiting...')
@@ -819,7 +827,7 @@ def run_all(config):
         mpa_pkl['markers'][x]['ext'] = [y for y in set(mpa_pkl['markers'][x]['ext']) if y in all_gca]
 
     with bz2.BZ2File('{}/{}/{}.pkl'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as outfile:
-        pickle.dump(mpa_pkl, outfile, pickle.HIGHEST_PROTOCOL)
+        pickle.dump(mpa_pkl, outfile, protocol=2)
 
     with tarfile.TarFile('{}/{}/{}.tar'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as mpa_tar:
         mpa_tar.add(name = '{}/{}/{}.pkl'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX),
