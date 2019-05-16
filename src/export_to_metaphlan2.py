@@ -454,14 +454,15 @@ class export_to_metaphlan2:
                     )
                 else:
                     failed_uniprot_repr.append(np90_cluster)
-                
+        # TODO Log failed_uniprot_repr. Exclude all failed_uniprot_repr from the possible_markers. 
+        
         markers_nucls, db, failed, res = [], {}, [], []
         if len(gc):
             with dummy.Pool(processes=3) as pool:
                 res = [_ for _ in pool.imap_unordered(self.get_uniref90_nucl_seq, gc.items(), chunksize=10) if _ is not None]
         else:
             if len(failed_uniprot_repr) == possible_markers.shape[0]:
-                ifnotgenome = any([True for p in self.taxontree.get_child_proteomes(self.taxontree.taxid_n[pp_tax_id])
+                ifnotgenome = not any([True for p in self.taxontree.get_child_proteomes(self.taxontree.taxid_n[pp_tax_id])
                                         if dict(self.proteomes[p].get('ncbi_ids',{})).get('GCSetAcc','')])
                 self.log.warning('[{}]\tFailed to find any gene for all possible markers identified.{}'.format(panproteome['tax_id'], "No assemblies are available for the species' proteomes" if ifnotgenome else ''))
             return (panproteome['tax_id'], taxonomy)
@@ -850,6 +851,25 @@ def run_all(config):
     
     with open('{}/{}/mpa_latest'.format(export.config['export_dir'], export.config['exportpath_metaphlan2']), 'w') as latest:
         latest.write(OUTFILE_PREFIX)
+
+    all_markers_stats = []
+
+    for s in species:
+        tax_id = int(s.split('/')[-1].split('.')[0])
+        try:
+            marker_stat = pd.read_csv('{}/{}/markers_stats/{}.txt'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], tax_id))
+            cc = marker_stat.tier.value_counts().to_dict()
+        except FileNotFoundError:
+            cc = {'A': 0, 'B': 0, 'C' : 0, 'U' : 0, 'Z' : 0}
+        cc['n_markers'] = sum(cc.values())
+        cc['tax_id'] = tax_id
+        cc['tax_str'] = taxontree.print_full_taxonomy(tax_id)[0]
+        cc['has_genome'] = any([True for p in export.taxontree.get_child_proteomes(export.taxontree.taxid_n[tax_id])
+                                        if dict(export.proteomes[p].get('ncbi_ids',{})).get('GCSetAcc','')])
+        all_markers_stats.append(cc)
+
+    all_markers_stats_df = pd.DataFrame.from_dict(all_markers_stats).fillna(0).astype({'A': int, 'B': int, 'C' : int, 'U' : int, 'Z' : int})
+    all_markers_stats_df.to_csv('{}/{}/all_markers_stats.txt'.format(export.config['export_dir'], export.config['exportpath_metaphlan2']), sep = '\t', index = False)
 
 if __name__ == '__main__':
     t0 = time.time()
