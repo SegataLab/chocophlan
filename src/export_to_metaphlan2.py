@@ -454,8 +454,11 @@ class export_to_metaphlan2:
                     )
                 else:
                     failed_uniprot_repr.append(np90_cluster)
-        # TODO Log failed_uniprot_repr. Exclude all failed_uniprot_repr from the possible_markers. 
-        
+
+        if failed_uniprot_repr:
+            self.log.warning('[{}]\tFailed to find an UniProtKB representative for the following UniRef90: {}'.format(panproteome['tax_id'], ','.join(failed_uniprot_repr)))
+            possible_markers = possible_markers.loc[~possible_markers.index.isin(failed_uniprot_repr)]
+
         markers_nucls, db, failed, res = [], {}, [], []
         if len(gc):
             with dummy.Pool(processes=3) as pool:
@@ -481,14 +484,14 @@ class export_to_metaphlan2:
             possible_markers = possible_markers.loc[~possible_markers.index.isin(failed)]
             self.log.warning("{}: Failed to find features of markers {}".format(pp_tax_id, (','.join(failed))))
 
-        if len(markers_nucls):
+        if len(markers_nucls) > 9:
             with open('{}/{}/markers_fasta/{}.fna'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']), 'wt') as fasta_markers:
                 [fasta_markers.write(marker.format('fasta')) for marker in markers_nucls]
-            if len(gc):
-                pickle.dump(gc, open('{}/{}/markers_info/{}.txt'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']), 'wb'))
-            possible_markers.to_csv('{}/{}/markers_stats/{}.txt'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']))
+        if len(gc):
+            pickle.dump(gc, open('{}/{}/markers_info/{}.txt'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']), 'wb'))
+        possible_markers.to_csv('{}/{}/markers_stats/{}.txt'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']))
         else:
-            self.log.warning("{}: No nucleotide sequences extracted".format(pp_tax_id))
+            self.log.warning("[{}]\tNo nucleotide sequences extracted".format(pp_tax_id))
 
 def map_markers_to_genomes(mpa_pkl, taxontree, proteomes, outfile_prefix, config):
     bowtie2 = 'bowtie2'
@@ -803,13 +806,13 @@ def run_all(config):
     utils.info('Done.\n')
 
     mpa_pkl, markers2ext = map_markers_to_genomes(export.db, export.taxontree, export.proteomes, OUTFILE_PREFIX, export.config)
-    
+
     with open('{}/{}/{}_ext.tsv'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as outfile:
         outfile.write('\n'.join('{}\t{}'.format(marker, ext_species['external_species']) for marker, ext_species in markers2ext.items()))
 
     with bz2.BZ2File('{}/{}/{}.orig.nomerged.pkl'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as outfile:
         pickle.dump(mpa_pkl, outfile, protocol=2)
-    
+
     try:
         with bz2.open('{}/{}/{}.fna.bz2'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'wt') as outfile, \
              open('{}/{}/{}.fna'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'r') as infile:
@@ -866,6 +869,7 @@ def run_all(config):
         cc['tax_str'] = taxontree.print_full_taxonomy(tax_id)[0]
         cc['has_genome'] = any([True for p in export.taxontree.get_child_proteomes(export.taxontree.taxid_n[tax_id])
                                         if dict(export.proteomes[p].get('ncbi_ids',{})).get('GCSetAcc','')])
+        cc['excluded<10markers'] = True if cc['n_markers'] < 10 else False
         all_markers_stats.append(cc)
 
     all_markers_stats_df = pd.DataFrame.from_dict(all_markers_stats).fillna(0).astype({'A': int, 'B': int, 'C' : int, 'U' : int, 'Z' : int})
