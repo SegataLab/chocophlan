@@ -406,18 +406,7 @@ class export_to_metaphlan2:
         taxonomy = self.taxontree.print_full_taxonomy(pp_tax_id)
         if pp_tax_id == 562:
             possible_markers = self.get_ecoli_markers(panproteome)
-        elif pp_tax_id in [303,     #Pseudomonas putida 
-                            76759,   #Pseudomonas monteilii 
-                            316,     #Pseudomonas stutzeri
-                            1396,    #Bacillus cereus
-                            1428,    #Bacillus thuringiensis
-                            1405,    #Bacillus mycoides
-                            1408,    #Bacillus pumilus
-                            1390,    #Bacillus amyloliquefaciens
-                            86664,   #Bacillus flexus
-                            115862,  #Mycobacterium caprae
-                            621      #Shigella boydii
-            ]:
+        elif pp_tax_id in self.config['taxa_low_markers']:
             possible_markers = self.extract_markers(panproteome, 50, 14, 10)
             if not possible_markers.empty:
                 possible_markers = possible_markers[:150]
@@ -437,7 +426,6 @@ class export_to_metaphlan2:
             upkb_from_species = list(filter(lambda x:int(x[1]) in low_lvls, np90_members))
             has_repr = any(x[2] for x in upkb_from_species)
             if upkb_from_species:
-                gca_gname = None
                 for species_list, repr_flag in [(upkb_from_species,has_repr), (upkb_from_species,not has_repr),
                                                 (np90_members,has_repr), (np90_members,not has_repr)]:
                     gca, gene_names  = self.get_genename_from_gca(species_list,repr_flag)
@@ -487,11 +475,11 @@ class export_to_metaphlan2:
         if len(markers_nucls) > 9:
             with open('{}/{}/markers_fasta/{}.fna'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']), 'wt') as fasta_markers:
                 [fasta_markers.write(marker.format('fasta')) for marker in markers_nucls]
+        elif len(markers_nucls) == 0:
+            self.log.warning("[{}]\tNo nucleotide sequences extracted".format(pp_tax_id))
         if len(gc):
             pickle.dump(gc, open('{}/{}/markers_info/{}.txt'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']), 'wb'))
         possible_markers.to_csv('{}/{}/markers_stats/{}.txt'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']))
-        else:
-            self.log.warning("[{}]\tNo nucleotide sequences extracted".format(pp_tax_id))
 
 def map_markers_to_genomes(mpa_pkl, taxontree, proteomes, outfile_prefix, config):
     bowtie2 = 'bowtie2'
@@ -866,7 +854,7 @@ def run_all(config):
             cc = {'A': 0, 'B': 0, 'C' : 0, 'U' : 0, 'Z' : 0}
         cc['n_markers'] = sum(cc.values())
         cc['tax_id'] = tax_id
-        cc['tax_str'] = taxontree.print_full_taxonomy(tax_id)[0]
+        cc['tax_str'] = export.taxontree.print_full_taxonomy(tax_id)[0]
         cc['has_genome'] = any([True for p in export.taxontree.get_child_proteomes(export.taxontree.taxid_n[tax_id])
                                         if dict(export.proteomes[p].get('ncbi_ids',{})).get('GCSetAcc','')])
         cc['excluded<10markers'] = True if cc['n_markers'] < 10 else False

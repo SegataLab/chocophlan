@@ -126,6 +126,15 @@ def check_configs(config, verbose=False):
                           .format('{}: {}\n    '.join(zip(['section_key', 'section', 'value'],
                                                           [section_key, section, value]))),
                           init_new_line=True, exit=True)
+            elif 'taxa_low_markers' in section:
+                try:
+                    section_dic[section] = [ int(x) for x in value.split(',')]
+                except Exception as e:
+                    error(str(e), init_new_line=True)
+                    error('Is not an comma separated int!\n    {}'
+                          .format('{}: {}\n    '.join(zip(['section_key', 'section', 'value'],
+                                                          [section_key, section, value]))),
+                          init_new_line=True, exit=True)
             elif 'verbose' in section:
                 try:
                     section_dic[section] = value == 'True'
