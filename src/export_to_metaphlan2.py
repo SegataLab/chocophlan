@@ -406,6 +406,10 @@ class export_to_metaphlan2:
         taxonomy = self.taxontree.print_full_taxonomy(pp_tax_id)
         if pp_tax_id == 562:
             possible_markers = self.get_ecoli_markers(panproteome)
+        elif pp_tax_id in self.species_merged_into:
+            possible_markers = self.get_p_markers(panproteome)
+            if possible_markers.empty:
+                possible_markers = self.extract_markers(panproteome, 50, 14, 10)
         elif pp_tax_id in self.config['taxa_low_markers']:
             possible_markers = self.extract_markers(panproteome, 50, 14, 10)
             if not possible_markers.empty:
@@ -697,12 +701,15 @@ def merge_bad_species(sgb_release, gca2taxonomy, config):
                     r"(.*_and_.*)|"
                     r"(.*(cyano|proteo|actino)bacterium_.*)")
 
-    bad_genomes = { gca : '|'.join(taxstr.split('|')[:7]) for gca, taxstr in dict(zip(gca2taxonomy.GCA_accession,gca2taxonomy.taxstr)).items() if r.match(taxstr.split('|')[6][3:])}
+    bad_genomes = { gca : ('|'.join(taxstr.split('|')[:7]), '|'.join(taxidstr.split('|')[:7]))
+                    for _, gca, _, _, taxstr, taxidstr in gca2taxonomy.itertuples()
+                    if r.match(taxstr.split('|')[6][3:])
+                }
 
-    gca2sgb = dict((y, (x[1],x[9])) for _, x in sgb_release.iterrows() for y in x[5].split(',') if y in bad_genomes)
+    gca2sgb = dict((y, (x[1], x[9], x[10])) for _, x in sgb_release.iterrows() for y in x[5].split(',') if y in bad_genomes)
     merged = {}
     keep = {}
-    for genome, (sgb, taxonomy) in gca2sgb.items():
+    for genome, (sgb, taxonomy, taxidstr) in gca2sgb.items():
         nrefgenomes = sgb_release.loc[sgb_release['ID'] == sgb, 'Number of reconstructed genomes'].item()
         #If genome is unique in the SGB, keep it
         if nrefgenomes == 1:
@@ -713,15 +720,17 @@ def merge_bad_species(sgb_release, gca2taxonomy, config):
     
     new_species_merged = {}
     for sgb, gca_tax in merged.items():
-        merged_into='|'.join(sgb_release.loc[sgb_release['ID'] == sgb, 'Assigned taxonomy'].item().split('|')[:7])
+        merged_into = ('|'.join(sgb_release.loc[sgb_release['ID'] == sgb, 'Assigned taxonomy'].item().split('|')[:7]),
+                       '|'.join(sgb_release.loc[sgb_release['ID'] == sgb, 'Assigned taxonomic ID'].item().split('|')[:7]))
         species_in_sgb = set(taxstr for (gca, taxstr) in gca_tax)
         # merged_into=max([(s,count_marker_per_clade[s]) for s in species_in_sgb],key = lambda x:x[1])[0]
         new_species_merged.setdefault(merged_into,[]).extend(gca_tax)
 
     with open('{}/{}/merged_species_spp.tsv'.format(config['export_dir'],config['exportpath_metaphlan2']), 'wt') as fout:
-        fout.write('GCA\told_taxonomy\tmerged_into\n')
-        fout.write('\n'.join('{}\t{}\t{}'.format(gca, old_t, new_t) for new_t, gca_tax in new_species_merged.items() for gca, old_t in gca_tax))
-        fout.write('\n'.join('{}\t{}\t{}'.format(gca, taxa, taxa) for taxa, gca_tax in keep.items() for gca in gca_tax))    
+        fout.write('GCA\told_taxonomy\told_taxonomy_id\tmerged_into\tmerged_into_id\n')
+        fout.write('\n'.join('{}\t{}\t{}\t{}\t{}'.format(gca, old_t[0], old_t[1], new_t[0], new_t[1]) for new_t, gca_tax in new_species_merged.items() for gca, old_t in gca_tax))
+        fout.write('\n')
+        fout.write('\n'.join('{}\t{}\t{}\t{}\t{}'.format(gca, taxa[0], taxa[1], taxa[0], taxa[1]) for taxa, gca_tax in keep.items() for gca in gca_tax))
 
     gca2taxid = dict(zip(gca2taxonomy.GCA_accession,gca2taxonomy.NCBI_taxid))
     taxa_to_remove = [(x[0], gca2taxid[x[0]]) for merged_into, bad_species in new_species_merged.items() if len(bad_species) > 1 for x in bad_species]
@@ -760,6 +769,8 @@ def run_all(config):
     sgb_release = sgb_release.loc[sgb_release['# Label'] == 'SGB',]
     export.genomes_to_remove, export.taxa_to_remove = zip(*merge_bad_species(sgb_release, gca2taxonomy, export.config))
     export.taxa_to_remove = Counter(export.taxa_to_remove * 50000)
+    merged_species = pd.read_csv('{}/{}/merged_species_spp.tsv'.format(config['export_dir'],config['exportpath_metaphlan2']), sep = '\t')
+    export.species_merged_into = [int(x.split('|')[-1]) for x in set(merged_species.merged_into_id)]
 
     if not os.path.exists('{}/{}/DONE'.format(export.config['export_dir'],export.config['exportpath_metaphlan2'])):
         species = [ '{}/{}/species/90/{}.pkl'.format(export.config['download_base_dir'], export.config['relpath_panproteomes_dir'], item.tax_id) 
