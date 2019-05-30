@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 __author__ = ('Francesco Beghini (francesco.beghini@unitn.it)'
             'Francesco Asnicar (f.asnicar@unitn.it)'
-            'Nicola Segata (nicola.segata@unitn.it), '
-            'Nicolai Karcher (karchern@gmail.com),')
+            'Nicola Segata (nicola.segata@unitn.it)')
 
 __date__ = '14 May 2019'
 
@@ -408,8 +407,10 @@ class export_to_metaphlan2:
             possible_markers = self.get_ecoli_markers(panproteome)
         elif pp_tax_id in self.species_merged_into:
             possible_markers = self.get_p_markers(panproteome)
-            if possible_markers.empty:
+            if len(possible_markers) < 10:
                 possible_markers = self.extract_markers(panproteome, 50, 14, 10)
+                if not possible_markers.empty:
+                    possible_markers = possible_markers[:150]
         elif pp_tax_id in self.config['taxa_low_markers']:
             possible_markers = self.extract_markers(panproteome, 50, 14, 10)
             if not possible_markers.empty:
@@ -539,7 +540,7 @@ def map_markers_to_genomes(mpa_pkl, taxontree, proteomes, outfile_prefix, config
     mpa_markers_splitted_fna = '{}/{}/{}_splitted.fna'.format(config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix) 
     utils.info('\tSplitting markers in chunks of 150nts...')
     split_markers(mpa_markers_fna, mpa_markers_splitted_fna)
-    
+    utils.info('\tDone.\n')
     if os.path.isfile(mpa_markers_splitted_fna):
         terminating = dummy.Event()
         try:
@@ -865,9 +866,9 @@ def run_all(config):
             cc = {'A': 0, 'B': 0, 'C' : 0, 'U' : 0, 'Z' : 0}
         cc['n_markers'] = sum(cc.values())
         cc['tax_id'] = tax_id
-        cc['tax_str'] = export.taxontree.print_full_taxonomy(tax_id)[0]
+        cc['tax_str'] = export.taxontree.print_full_taxonomy(tax_id)[0] if tax_id in self.taxontree.taxid_n else '' 
         cc['has_genome'] = any([True for p in export.taxontree.get_child_proteomes(export.taxontree.taxid_n[tax_id])
-                                        if dict(export.proteomes[p].get('ncbi_ids',{})).get('GCSetAcc','')])
+                                        if dict(export.proteomes[p].get('ncbi_ids',{})).get('GCSetAcc','')]) if tax_id in self.taxontree.taxid_n else False
         cc['excluded<10markers'] = True if cc['n_markers'] < 10 else False
         all_markers_stats.append(cc)
 

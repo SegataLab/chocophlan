@@ -15,7 +15,7 @@ import glob
 import gzip
 import itertools
 import logging
-# import multiprocessing.dummy as dummy
+import multiprocessing.dummy as dummy
 import os
 import pickle
 import re
@@ -26,7 +26,6 @@ import bz2
 from collections import Counter
 from operator import itemgetter
 from tempfile import NamedTemporaryFile
-from pathos.multiprocessing import ThreadingPool
 import gffutils
 import pandas as pd
 from Bio import SeqIO
@@ -203,14 +202,14 @@ class chocophlan2humann2:
         if failed_uniprot_repr:
             self.log.warning('[{}]\tFailed to find an UniProtKB representative for the following UniRef90: {}'.format(species_id, ','.join(failed_uniprot_repr)))
 
-        pool = ThreadingPool(100)
-        res = [_ for _ in pool.uimap(self.get_uniref90_nucl_seq, gc.items()) if _ is not None]
+        with dummy.Pool(processes=2, maxtasksperchild = 3) as pool:
+            res = [_ for _ in pool.imap(self.get_uniref90_nucl_seq, gc.items(), chunksize=10) if _ is not None]
         
         pangenes, failed = zip(*res)
         pangenes = list(itertools.chain.from_iterable(filter(None,pangenes)))
         
         if failed is not None and not all(x is None for x in failed):
-            failed = list(filter(None, failed))
+            failed = list(filter(None, failed))[0]
             self.log.warning("[{}]\tFailed to extract nucleotide sequences for the following pangene {}".format(species_id, (','.join(failed))))
         if len(pangenes):
             #save tsv of annots
@@ -225,8 +224,8 @@ def run_all(config):
 
     mpa_pkl = pickle.load(bz2.BZ2File('{}/{}/{}.pkl'.format(export_humann2.config['export_dir'], export_humann2.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'r'))
     
-    pool = ThreadingPool(100)
-    res = [_ for _ in pool.uimap(export_humann2.export_panproteome, [int(s[0].split('|')[-1]) for s in mpa_pkl['taxonomy'].values()])]
+    with dummy.Pool(processes=30) as pool:
+        res = [_ for _ in pool.imap(export_humann2.export_panproteome, [int(s[0].split('|')[-1]) for s in mpa_pkl['taxonomy'].values()], chunksize = 200)]
 
     with bz2.open('{}/{}/functional_annot/annot.tsv.bz2'.format(export_humann2.config['export_dir'], export_humann2.config['exportpath_humann2']), 'wt') as functional_annot:
         functional_annot.write('pangene\tGO\tKO\tKEGG\tPfam\tEC\teggNOG\n')
