@@ -92,17 +92,17 @@ def get_uniref90_nucl_seq(item):
         gca = ncbi_ids.split('.')[0]
     else:
         log.error('[{}]\t No genome associated to proteome {}'.format(taxid, upid))
-        return [None, None, None]
+        return None
     seqs_dir = '{}/{}/{}/{}/'.format(shared_variables.config['download_base_dir'], shared_variables.config['relpath_genomes'], gca[4:][:6], gca[4:][6:])
     if not os.path.exists(seqs_dir):
         log.error('[{}]\tNo genome and GFF annotations downloaded for {}'.format(taxid, gca))
-        return [None, None, None]
+        return None
     try:
         in_seq_file = glob.glob(seqs_dir+'*.fna.gz')[0]
         in_gff_file = glob.glob(seqs_dir+'*.gff.gz')[0]
     except Exception as e:
         log.error('[{}]Missing genome or GFF annotation for {}'.format(taxid, gca))
-        return [None, None, None]
+        return None
 
     with NamedTemporaryFile(dir='/shares/CIBIO-Storage/CM/tmp/chocophlan') as fna_decompressed:
         gff_db = gffutils.create_db(in_gff_file, ':memory:', id_spec='locus_tag', merge_strategy="merge")
@@ -208,8 +208,10 @@ def export_panproteome(species_id):
     with dummy.Pool(processes=2) as pool:
         res = [_ for _ in pool.imap(get_uniref90_nucl_seq, gc.items(), chunksize=10) if _ is not None]
     
-    pangenes, failed = zip(*res)
-    pangenes = list(itertools.chain.from_iterable(filter(None,pangenes)))
+    failed, pangenes = [], []
+    if res:
+        pangenes, failed = zip(*res)
+        pangenes = list(itertools.chain.from_iterable(filter(None,pangenes)))
     
     if failed is not None and not all(x is None for x in failed):
         failed = list(filter(None, failed))[0]
