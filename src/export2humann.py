@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 author__ = ('Nicola Segata (nicola.segata@unitn.it), '
             'Francesco Beghini (francesco.beghini@unitn.it)'
-            'Nicolai Karcher (karchern@gmail.com),'
             'Francesco Asnicar (f.asnicar@unitn.it)'
             'Fabio Cumbo (fabio.cumbo@unitn.it')
 
-__date__ = '3 Apr 2019'
+__date__ = '2 Jun 2019'
 
 
 import argparse as ap
@@ -17,6 +16,9 @@ import itertools
 import logging
 import multiprocessing.dummy as dummy
 import multiprocessing
+from pathos.multiprocessing import ProcessPool
+from pathos.threading import ThreadPool
+import pathos as pa
 import os
 import pickle
 import re
@@ -205,9 +207,9 @@ def export_panproteome(species_id):
     if failed_uniprot_repr:
         log.warning('[{}]\tFailed to find an UniProtKB representative for the following UniRef90: {}'.format(species_id, ','.join(failed_uniprot_repr)))
 
-    with dummy.Pool(processes=2) as pool:
-        res = [_ for _ in pool.imap(get_uniref90_nucl_seq, gc.items(), chunksize=10) if _ is not None]
-    
+    with pa.pools.ThreadPool(nodes=5) as pool_t:
+        res = [_ for _ in pool_t.uimap(get_uniref90_nucl_seq, gc.items()) if _ is not None]
+
     failed, pangenes = [], []
     if res:
         pangenes, failed = zip(*res)
@@ -230,8 +232,8 @@ def run_all(config):
 
     mpa_pkl = pickle.load(bz2.BZ2File('{}/{}/{}.pkl'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'r'))
     
-    with multiprocessing.Pool(processes=30) as pool:
-        res = [_ for _ in pool.imap(export_panproteome, [int(s[0].split('|')[-1]) for s in mpa_pkl['taxonomy'].values()], chunksize = 200)]
+    with pa.pools.ProcessPool(ncpus=8) as pll:
+        res = [_ for _ in pll.uimap(export_panproteome, [int(s[0].split('|')[-1]) for s in mpa_pkl['taxonomy'].values()])]
 
     with bz2.open('{}/{}/functional_annot/annot.tsv.bz2'.format(config['export_dir'], config['exportpath_humann2']), 'wt') as functional_annot:
         functional_annot.write('pangene\tGO\tKO\tKEGG\tPfam\tEC\teggNOG\n')
