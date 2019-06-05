@@ -316,33 +316,33 @@ class export_to_metaphlan2:
                         break
 
                 if found:
-                    fna = Fasta(fna_decompressed.name)
+                    with Fasta(fna_decompressed.name) as fna:
+                        try:
+                            nuc_seq = feature.sequence(fna).upper()
+                        except Exception as e:
+                            print(taxid)
+                            raise e
+                        mpa_marker = '{}__{}__{}'.format(taxid, core, feature['Name'][0].replace('|','_'))
+                        record = '>{} {}\n{}\n'.format(mpa_marker, 'UniRef90_{};{};{}'.format(core, taxonomy[0], gca), nuc_seq)
+                        nucls.append(record)
+                        if taxonomy_db not in db['taxonomy']:
+                            db['taxonomy'][taxonomy_db] = (taxonomy[1], sum(contig.rlen for contig in fna.faidx.index.values()),)
+                        ext_genomes = []
+                        for x in ext_species:
+                            cp = self.taxontree.get_child_proteomes(self.taxontree.taxid_n[x])
+                            if len(cp):
+                                ext_genomes.append(dict(self.proteomes[next(iter(cp))].get('ncbi_ids',{})).get('GCSetAcc','').split('.')[0])
 
-                    try:
-                        nuc_seq = feature.sequence(fna).upper()
-                    except Exception as e:
-                        print(taxid)
-                        raise e
-                    mpa_marker = '{}__{}__{}'.format(taxid, core, feature['Name'][0].replace('|','_'))
-                    record = '>{} {}\n{}\n'.format(mpa_marker, 'UniRef90_{};{};{}'.format(core, taxonomy[0], gca), nuc_seq)
-                    nucls.append(record)
-                    if taxonomy_db not in db['taxonomy']:
-                        db['taxonomy'][taxonomy_db] = (taxonomy[1], sum(contig.rlen for contig in fna.faidx.index.values()),)
-                    ext_genomes = []
-                    for x in ext_species:
-                        cp = self.taxontree.get_child_proteomes(self.taxontree.taxid_n[x])
-                        if len(cp):
-                            ext_genomes.append(dict(self.proteomes[next(iter(cp))].get('ncbi_ids',{})).get('GCSetAcc','').split('.')[0])
-
-                    db['markers'][mpa_marker] = { 'clade': '{}__{}'.format(clade.rank[0], clade.name),
-                                                  'ext': list(set(ext_genomes)),
-                                                  'len': len(nuc_seq),
-                                                  'score': 0,
-                                                  'taxon': taxonomy[0]
-                                                }
+                        db['markers'][mpa_marker] = { 'clade': '{}__{}'.format(clade.rank[0], clade.name),
+                                                    'ext': list(set(ext_genomes)),
+                                                    'len': len(nuc_seq),
+                                                    'score': 0,
+                                                    'taxon': taxonomy[0]
+                                                    }
                 else:
                     failed.append(str(core))
         if not len(failed): failed = None
+        [ gff_db.delete(x) for x in gff_db.all_features() ]
         return (nucls, db, failed, )
 
 
@@ -832,6 +832,9 @@ def run_all(config):
 
     with bz2.BZ2File('{}/{}/{}.pkl'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as outfile:
         pickle.dump(mpa_pkl, outfile, protocol=2)
+
+    with bz2.open('{}/{}/{}_marker_info.txt.bz2'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as outfile:
+        outfile.write('\n'.join('{}\t{}'.format(m, mpa_pkl['markers'][m]) for m in mpa_pkl['markers']))
 
     with tarfile.TarFile('{}/{}/{}.tar'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as mpa_tar:
         mpa_tar.add(name = '{}/{}/{}.pkl'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX),
