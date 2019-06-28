@@ -66,17 +66,18 @@ def initialize (config):
 
     os.makedirs('{}/{}/functional_annot/'.format(shared_variables.config['export_dir'], shared_variables.config['exportpath_humann2']), exist_ok=True)
     os.makedirs('{}/{}/panproteomes_fna/'.format(shared_variables.config['export_dir'], shared_variables.config['exportpath_humann2']), exist_ok=True)
+    os.makedirs('{}/{}/gca_upkb_to_nr/'.format(shared_variables.config['export_dir'], shared_variables.config['exportpath_humann2']), exist_ok=True)
     all_uprot_chunks = filter(re.compile('(trembl|sprot)_[0-9]{1,}.pkl').match, os.listdir('{}/{}/uniprotkb/'.format(shared_variables.config['download_base_dir'], shared_variables.config['pickled_dir'])))
     all_uparc_chunks = filter(re.compile('uniparc_[0-9]{4}.pkl').match, os.listdir('{}/{}/uniparc/'.format(shared_variables.config['download_base_dir'], shared_variables.config['pickled_dir'])))
     uniref90_taxid = "{}{}".format(shared_variables.config['download_base_dir'],shared_variables.config['relpath_pickle_uniref90_taxid_idmap'])
 
     for i in all_uprot_chunks:
         uniprot_chunk = '{}/{}/uniprotkb/{}'.format(shared_variables.config['download_base_dir'], shared_variables.config['pickled_dir'], i)
-        shared_variables.uniprot.update({entry[0] : [ entry[3],entry[4],entry[1] ] + list(entry[8:14]) for entry in utils.load_pickle(uniprot_chunk)})        #geneid, proteomeid, tax_id
+        shared_variables.uniprot.update({entry[0] : [ entry[3],entry[4],entry[1] ] + list(entry[8:17]) for entry in utils.load_pickle(uniprot_chunk)})        #geneid, proteomeid, tax_id
 
     for i in all_uparc_chunks:
         uniparc_chunk = '{}/{}/uniparc/{}'.format(shared_variables.config['download_base_dir'], shared_variables.config['pickled_dir'], i)
-        shared_variables.uniparc.update({elem[0] : elem[1] for elem in utils.load_pickle(uniparc_chunk)})
+        shared_variables.uniparc.update({elem[0] : [ elem[1] ]+ list(elem[3:6]) for elem in utils.load_pickle(uniparc_chunk)})
 
     shared_variables.uniref90_taxid_map = {}
     [shared_variables.uniref90_taxid_map.update(elem) for elem in utils.load_pickle(uniref90_taxid)]
@@ -228,6 +229,29 @@ def export_panproteome(species_id):
         with bz2.BZ2File('{}/{}/functional_annot/{}.txt.bz2'.format(shared_variables.config['export_dir'], shared_variables.config['exportpath_humann2'], species_id), 'w') as functional_annot:
             pickle.dump(func_annot, functional_annot)
 
+def export_genome_annotation(panproteome_id):
+    gca_id = dict(shared_variables.proteomes[panproteome_id].get('ncbi_ids',{})).get('GCSetAcc',None)
+    species_id = shared_variables.proteomes[panproteome_id]['tax_id']
+    taxonomy = shared_variables.taxontree.print_full_taxonomy(species_id)[0].replace('|','.')
+    missing = []
+    if gca_id and len(shared_variables.proteomes[panproteome_id]['members']):
+        gca_id = gca_id.split('.')[0]
+        with bz2.open('{}/{}/gca_upkb_to_nr/{}.txt.bz2'.format(shared_variables.config['export_dir'], shared_variables.config['exportpath_humann2'], gca_id), 'wt') as fasta_pangenes:
+            fasta_pangenes.write('GCA\ttaxonomy\tNR90\tNR50\n')
+            for member in shared_variables.proteomes[panproteome_id]['members']:
+                if member in shared_variables.uniprot:
+                    NR90, NR50 = shared_variables.uniprot[member][9:11]
+                elif member in shared_variables.uniparc:
+                    NR90, NR50 = shared_variables.uniparc[member][2:4]
+                else:
+                    missing.append(member)
+                fasta_pangenes.write('{}\t{}\t{}\t{}\n'.format( gca_id, 
+                                                                taxonomy,
+                                                                NR90,
+                                                                NR50
+                                                            )
+                                    )
+
 def run_all(config):
     config['exportpath_metaphlan2'] = os.path.join( config['exportpath_metaphlan2'],OUTFILE_PREFIX)
     config['relpath_gca2taxa'] = config['relpath_gca2taxa'].replace('DATE',version.__UniRef_version__)
@@ -246,7 +270,9 @@ def run_all(config):
                 all_annot.update({x:y for x, y in pickle.load(p_fa)})
         functional_annot.write('NR90\tNR50\tGO\tKO\tKEGG\tPfam\tEC\teggNOG\n')
         functional_annot.write('\n'.join( '{}\t{}'.format( k, '\t'.join(v)) for k, v in all_annot.items() ) )
-
+    
+    with mp.Pool(processes = 10, maxtasksperchild = 100) as pll:
+        res = [ _ for _ in pll.imap_unordered(export_genome_annotation, shared_variables.proteomes, chunksize=50)]
 
 if __name__ == '__main__':
     t0 = time.time()
