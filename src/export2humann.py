@@ -232,12 +232,11 @@ def export_panproteome(species_id):
 def export_genome_annotation(panproteome_id):
     gca_id = dict(shared_variables.proteomes[panproteome_id].get('ncbi_ids',{})).get('GCSetAcc',None)
     species_id = shared_variables.proteomes[panproteome_id]['tax_id']
-    taxonomy = shared_variables.taxontree.print_full_taxonomy(species_id)[0].replace('|','.')
     missing = []
     if gca_id and len(shared_variables.proteomes[panproteome_id]['members']):
         gca_id = gca_id.split('.')[0]
         with bz2.open('{}/{}/gca_upkb_to_nr/{}.txt.bz2'.format(shared_variables.config['export_dir'], shared_variables.config['exportpath_humann2'], gca_id), 'wt') as fasta_pangenes:
-            fasta_pangenes.write('GCA\ttaxonomy\tNR90\tNR50\n')
+            fasta_pangenes.write('#GCA\tUPKB\tNR90\tNR50\n')
             for member in shared_variables.proteomes[panproteome_id]['members']:
                 if member in shared_variables.uniprot:
                     NR90, NR50 = shared_variables.uniprot[member][9:11]
@@ -246,7 +245,7 @@ def export_genome_annotation(panproteome_id):
                 else:
                     missing.append(member)
                 fasta_pangenes.write('{}\t{}\t{}\t{}\n'.format( gca_id, 
-                                                                taxonomy,
+                                                                member,
                                                                 NR90,
                                                                 NR50
                                                             )
@@ -267,12 +266,17 @@ def run_all(config):
     with bz2.open('{}/{}/{}_functional_annotation_mapping.tsv.bz2'.format(config['export_dir'], config['exportpath_humann2'],OUTFILE_PREFIX), 'wt') as functional_annot:
         for s in glob.glob('/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/chocophlan/export_201901/humann2/functional_annot/*.txt.bz2'):
             with bz2.BZ2File(s) as p_fa:
-                all_annot.update({x:y for x, y in pickle.load(p_fa)})
-        functional_annot.write('NR90\tNR50\tGO\tKO\tKEGG\tPfam\tEC\teggNOG\n')
+            functional_annot.write('NR90\tNR50\tGO\tKO\tKEGG\tPfam\tEC\teggNOG\n')
         functional_annot.write('\n'.join( '{}\t{}'.format( k, '\t'.join(v)) for k, v in all_annot.items() ) )
     
     with mp.Pool(processes = 10, maxtasksperchild = 100) as pll:
         res = [ _ for _ in pll.imap_unordered(export_genome_annotation, shared_variables.proteomes, chunksize=50)]
+
+    with bz2.open('{}/{}/gca_upkb_to_NR90_NR50.tsv.bz2'.format(config['export_dir'], config['exportpath_humann2']), 'wt') as genome_functional_annot:
+        genome_functional_annot.write('NR90\tNR50\tGO\tKO\tKEGG\tPfam\tEC\teggNOG\n')
+        for s in glob.iglob('/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/chocophlan/export_201901/humann2/gca_upkb_to_nr/*.txt.bz2'):
+            with bz2.open(s, 'rt') as p_fa:
+                genome_functional_annot.writelines( line for line in p_fa if '#GCA' not in line )
 
 if __name__ == '__main__':
     t0 = time.time()
