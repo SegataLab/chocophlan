@@ -18,6 +18,7 @@ import multiprocessing.dummy as dummy
 from collections import Counter
 from functools import partial
 import copy
+import bz2
 import glob
 import itertools
 import re
@@ -150,7 +151,8 @@ class Panproteome:
 
             if len(uniref_panproteome):
                 stats.Stats.pangenes_stats(uniref_panproteome, self.config)
-                pickle.dump(uniref_panproteome, open('{}{}/{}/{}/{}.pkl'.format(self.config['download_base_dir'], self.config['relpath_panproteomes_dir'], rank, panproteome_cluster, item.tax_id),'wb'))
+                with bz2.open('{}{}/{}/{}/{}.pkl'.format(self.config['download_base_dir'], self.config['relpath_panproteomes_dir'], rank, panproteome_cluster, item.tax_id),'w') as out_file:
+                    pickle.dump(uniref_panproteome, out_file)
             
     def create_panproteomes(self, cluster):
         if cluster == 100:

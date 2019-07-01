@@ -15,6 +15,7 @@ import pickle
 import multiprocessing.dummy as dummy
 import glob
 import time
+import bz2
 from operator import itemgetter
 
 if __name__ == '__main__':
@@ -52,7 +53,8 @@ class chocophlan2phylophlan:
                                                         CLUSTER,
                                                         tax_id)
             if os.path.exists(fp):
-                panproteome = pickle.load(open(fp,'rb'))
+                with bz2.open(fp,'r') as fin:
+                    panproteome = pickle.load(fin)
                 taxa_str = self.taxontree.print_full_taxonomy(tax_id)[0]
                 core_genes = Panproteome.find_core_genes(panproteome)
                 

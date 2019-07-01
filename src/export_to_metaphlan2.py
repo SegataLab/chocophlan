@@ -395,8 +395,8 @@ class export_to_metaphlan2:
     """
     def get_uniref_uniprotkb_from_panproteome(self, panproteome):
         try:
-            p_f = open(panproteome, 'rb')
-            panproteome = pickle.load(p_f)
+            with bz2.open(panproteome, 'r') as p_f:
+                panproteome = pickle.load(p_f)
         except:
             self.log.error('[{}]\tCannot load panproteome.'.format(panproteome))
             return 
