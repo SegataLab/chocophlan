@@ -192,6 +192,10 @@ def read_params():
     group.add_argument('--exportpath_humann2',
                        default='humann2/',
                        help='')
+
+    group.add_argument('--exportpath_panphlan',
+                       default='panphlan_pangenomes/',
+                       help='')
     
     group.add_argument('--exportpath_core_proteins',
                        default='core_proteins/',

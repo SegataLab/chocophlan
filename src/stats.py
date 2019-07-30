@@ -149,6 +149,7 @@ class Stats:
         res = {'{}_{}'.format(species,pangene) : {'tax_id':species,
                    'coreness' : panproteome['members'][pangene]['coreness'],
                    'coreness_perc' : panproteome['members'][pangene]['coreness']/panproteome['number_proteomes'],
+                   'copy_number' : ';'.join('{}:{}:{}'.format(acc,upid,c) for (acc,upid),c in panproteome['members'][pangene]['copy_number'].items()),
                    'external_hits_50' : ';'.join(str(x) for x in panproteome['members'][pangene]['external_hits']['90_50']),
                    'external_hits_90' : ';'.join(str(x) for x in panproteome['members'][pangene]['external_hits']['90_90']),
                    'uniqueness_90' : panproteome['members'][pangene]['uniqueness']['90_90'],
