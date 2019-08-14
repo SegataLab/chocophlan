@@ -126,6 +126,9 @@ class export_to_metaphlan2:
         if config['verbose']:
             utils.info('Finished.\n')
 
+    def get_gca(self, upid):
+        return dict(self.proteomes[upid].get('ncbi_ids',[(None,None)])).get('GCSetAcc',None)
+
     def extract_markers(self, panproteome, core_coreness_threshold,
                         core_uniqueness_90_threshold = float('Inf'),
                         core_uniqueness_50_threshold = float('Inf'),
@@ -296,10 +299,10 @@ class export_to_metaphlan2:
             failed = []
             taxonomy_db = '{}|t__{}'.format(taxonomy[0], gca)
             for core, gene_names, ext_species in t:
-                if type(gene_names) == tuple:
-                    gene_names = [x[1] for x in gene_names]
-                else:
-                    gene_names = (gene_names, )
+                # if type(gene_names) == tuple:
+                #     gene_names = [x[1] for x in gene_names]
+                # else:
+                #     gene_names = (gene_names, )
 
                 found = False
                 for gene_name in gene_names:
@@ -425,18 +428,28 @@ class export_to_metaphlan2:
         res = []
         failed_uniprot_repr = []
         for np90_cluster in possible_markers.index:
-            gca, marker = None, None
-            np90_members = self.uniref90_info_map['UniRef90_{}'.format(np90_cluster)][0]
-            # If UniRef90 has member from species or below, use it
-            upkb_from_species = list(filter(lambda x:int(x[1]) in low_lvls, np90_members))
-            has_repr = any(x[2] for x in upkb_from_species)
-            if upkb_from_species:
-                for species_list, repr_flag in [(upkb_from_species,has_repr), (upkb_from_species,not has_repr),
-                                                (np90_members,has_repr), (np90_members,not has_repr)]:
-                    gca, gene_names  = self.get_genename_from_gca(species_list,repr_flag)
-                    if gca is not None and gene_names is not None:
-                        break
-
+            for (upkb_id, upid), count in panproteome['members'][np90_cluster]['copy_number'].items():
+                is_uparc = upkb_id.startswith('UPI')
+                upkb_entry = self.uniprot[upkb_id] if not is_uparc else self.uniparc[upkb_id]
+                if is_uparc:
+                    gene_names = tuple(x[2] for x in upkb_entry if x[1] in low_lvls)
+                else:
+                    gene_names = tuple(x[1] for x in upkb_entry[0] )
+                gca = self.get_gca(upid)
+                if not gca:
+                    continue
+                gca = gca.split('.')[0]
+                # gca, marker = None, None
+                # np90_members = self.uniref90_info_map['UniRef90_{}'.format(np90_cluster)][0]
+                # # If UniRef90 has member from species or below, use it
+                # upkb_from_species = list(filter(lambda x:int(x[1]) in low_lvls, np90_members))
+                # has_repr = any(x[2] for x in upkb_from_species)
+                # if upkb_from_species:
+                #     for species_list, repr_flag in [(upkb_from_species,has_repr), (upkb_from_species,not has_repr),
+                #                                     (np90_members,has_repr), (np90_members,not has_repr)]:
+                #         gca, gene_names  = self.get_genename_from_gca(species_list,repr_flag)
+                #         if gca is not None and gene_names is not None:
+                #             break
                 if gca and gene_names:
                     if (gca, panproteome['tax_id'], taxonomy) not in gc:
                         gc[(gca, panproteome['tax_id'], taxonomy)] = set()
@@ -445,6 +458,7 @@ class export_to_metaphlan2:
                                                                     tuple(set(x for x in itertools.chain.from_iterable(panproteome['members'][np90_cluster]['external_species'].values())))
                                                                     )
                     )
+                    break
                 else:
                     failed_uniprot_repr.append(np90_cluster)
 
@@ -454,8 +468,7 @@ class export_to_metaphlan2:
 
         markers_nucls, db, failed, res = [], {}, [], []
         if len(gc):
-            with dummy.Pool(processes=3) as pool:
-                res = [_ for _ in pool.imap_unordered(self.get_uniref90_nucl_seq, gc.items(), chunksize=10) if _ is not None]
+                res = list(map(self.get_uniref90_nucl_seq, gc.items()))
         else:
             if len(failed_uniprot_repr) == possible_markers.shape[0]:
                 ifnotgenome = not any([True for p in self.taxontree.get_child_proteomes(self.taxontree.taxid_n[pp_tax_id])
@@ -534,7 +547,7 @@ def map_markers_to_genomes(mpa_pkl, taxontree, proteomes, outfile_prefix, config
             fcomp.write('\n'.join(bt2_indexes))
     else:
         with open('{}/mpa2_eval/bt2_idx/DONE'.format(config['export_dir']), 'rt') as fcomp:
-            bt2_indexes = [x.strip() for x in fcomp]
+            bt2_indexes = ['{}/mpa2_eval/bt2_idx/{}'.format(config['export_dir'],x.strip()) for x in fcomp]
 
     mpa_markers_fna = '{}/{}/{}.fna'.format(config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix)
     mpa_markers_splitted_fna = '{}/{}/{}_splitted.fna'.format(config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix) 
@@ -545,7 +558,7 @@ def map_markers_to_genomes(mpa_pkl, taxontree, proteomes, outfile_prefix, config
         terminating = dummy.Event()
         try:
             utils.info('\tStarted mapping of MetaPhlAn2 markers to reference genomes...')
-            bt2_map_args = [ (bt2_idx, mpa_markers_splitted_fna, os.path.join(BT2OUT_FOLDER, bt2_idx.split('/')[-1] + '.sam')) for bt2_idx in bt2_indexes ]
+            bt2_map_args = [ (bowtie2, bt2_idx, mpa_markers_splitted_fna, os.path.join(BT2OUT_FOLDER, bt2_idx.split('/')[-1] + '.sam')) for bt2_idx in bt2_indexes ]
             with mp.Pool(initializer = init_parse, initargs = (terminating, ), processes=10) as pool:
                 sams = [x for x in pool.imap_unordered(run_bowtie2, bt2_map_args, chunksize=2)]
         except Exception as e:
@@ -571,13 +584,15 @@ def map_markers_to_genomes(mpa_pkl, taxontree, proteomes, outfile_prefix, config
                 markers2contig[marker][contig] = (int(chunk.split('/')[-1]),[])
             markers2contig[marker][contig][1].append((chunk, start, CIGAR, flag))
 
-    gca2taxon = { gca[:-2] : taxid for upid, gca, taxid in ((p, dict(proteomes[p]['ncbi_ids']).get('GCSetAcc',None), proteomes[p]['tax_id']) for p in proteomes if 'ncbi_ids' in proteomes[p]) if gca is not None}
+    gca2taxon = { gca[:-2] : taxontree.go_up_to_species(taxid) for upid, gca, taxid in ((p, dict(proteomes[p]['ncbi_ids']).get('GCSetAcc',None), proteomes[p]['tax_id']) for p in proteomes if 'ncbi_ids' in proteomes[p]) if gca is not None}
     taxon2gca = {}
-    [taxon2gca.setdefault( taxontree.go_up_to_species(taxid) , [ ] ).append(gca) for gca, taxid in gca2taxon.items()]
+    [taxon2gca.setdefault( taxid , [ ] ).append(gca) for gca, taxid in gca2taxon.items()]
     utils.info('\tDone.\n')
     marker_present = {}
     utils.info('\tBuilding marker species matrix presence...')
-    for marker, contig, total_chunks, chunks in ((marker, contig, total_chunks, chunks) for marker, _ in markers2contig.items() for contig, (total_chunks, chunks) in _.items()):
+    for marker, contig, total_chunks, chunks in ((marker, contig, total_chunks, chunks) for marker, _ in markers2contig.items() 
+                                                                                        for contig, (total_chunks, chunks) in _.items()
+                                                ):
         flag = set(x[3] for x in chunks)
         reverse_strand = all([hex(f & 0x10) == '0x10' for f in flag])
 
@@ -588,6 +603,7 @@ def map_markers_to_genomes(mpa_pkl, taxontree, proteomes, outfile_prefix, config
         for c in chunks:
             if previous_start == 0 and c[0].startswith('1/'):
                 previous_start = int(c[1]) - (-1 if reverse_strand else +1) * READLEN
+            #Determine if the chunks are consecutive and re-build the marker
             if c[0] == '{}/{}'.format(idx, total_chunks) and previous_start + (-1 if reverse_strand else +1) * READLEN == int(c[1]):
                 temp_chunks.append(c)
                 idx = idx +1 
@@ -653,9 +669,9 @@ def build_bt2_idx(bin_list):
         return idx_name
 
 def run_bowtie2(args):
-    bin_idx, mpa_markers_splitted_fna, out_sam = args
+    bowtie2, bin_idx, mpa_markers_splitted_fna, out_sam = args
     if not terminating.is_set():
-        bt2_mapping_comm = ['bowtie2', '-f', mpa_markers_splitted_fna,
+        bt2_mapping_comm = [bowtie2, '-f', mpa_markers_splitted_fna,
                                        '-x', bin_idx,
                                        '-a', 
                                        '--very-sensitive',
@@ -665,6 +681,7 @@ def run_bowtie2(args):
                                        '--threads 20',
                                        '-S', out_sam ]
         try:
+            # print(' '.join(bt2_mapping_comm))
             sb.check_call(bt2_mapping_comm, stdout=sb.DEVNULL, stderr=sb.DEVNULL)
         except sb.CalledProcessError as e:
             terminating.set()
@@ -766,7 +783,7 @@ def run_all(config):
 
     gca2taxonomy = pd.read_csv(os.path.join(export.config['export_dir'], export.config['relpath_gca2taxa']), sep='\t')
     # gca2taxonomy = dict(zip(gca2taxonomy.GCA_accession, gca2taxonomy.NCBI_taxid))
-    sgb_release = pd.read_csv('/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/sgbrepo/releases/SGB.Jan19.txt.bz2', sep='\t', skiprows=1)
+    sgb_release = pd.read_csv('/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/sgbrepo/releases/Jan19/SGB.Jan19.txt.bz2', sep='\t', skiprows=1)
     sgb_release = sgb_release.loc[sgb_release['# Label'] == 'SGB',]
     export.genomes_to_remove, export.taxa_to_remove = zip(*merge_bad_species(sgb_release, gca2taxonomy, export.config))
     export.taxa_to_remove = Counter(export.taxa_to_remove * 50000)
@@ -813,6 +830,21 @@ def run_all(config):
     with bz2.BZ2File('{}/{}/{}.orig.nomerged.pkl'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as outfile:
         pickle.dump(mpa_pkl, outfile, protocol=2)
 
+    for tax, (taxid, glen) in mpa_pkl['taxonomy'].items():
+        if 'CAG' in tax and not export.taxontree.taxid_n[int(taxid.split('|')[-1])].is_low_quality:
+            true_species = '_'.join(tax.split('|')[-2][3:].split('_')[:2]) 
+            true_taxid = list(filter(lambda x: x.name==true_species, taxontree.taxid_n.values()))
+            if true_taxid:
+                true_taxid = true_taxid[0].tax_id
+            _taxid = taxid.split('|')[-1]
+
+            if sum(1 for x in ( sum(1 for e in mpa_pkl['markers'][x]['ext'] if taxontree.go_up_to_species(gca2taxon[e]) == true_taxid) / len(mpa_pkl['markers'][x]['ext']) 
+                if len(mpa_pkl['markers'][x]['ext']) else 0 
+                for x in filter(lambda x:x.startswith(_taxid), mpa_pkl['markers'])
+            ) if x > 0.5) /  len(list(filter(lambda x:x.startswith(_taxid), mpa_pkl['markers']))) > 0.5:
+                torem = list(filter(lambda x:x.startswith(_taxid), mpa_pkl['markers']))
+                [mpa_pkl['markers'].pop(x) for x in torem]
+    
     try:
         with bz2.open('{}/{}/{}.fna.bz2'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'wt') as outfile, \
              open('{}/{}/{}.fna'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'r') as infile:
@@ -826,14 +858,15 @@ def run_all(config):
     finally:
         utils.remove_file('{}/{}/{}.fna'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX))
 
-    all_gca = [x.split('|')[-1].split('__')[1] for x in mpa_pkl['taxonomy'].keys()]
+    all_gca = set(x.split('|')[-1].split('__')[1] for x in mpa_pkl['taxonomy'].keys())
+
     for x in mpa_pkl['markers']:
-        mpa_pkl['markers'][x]['ext'] = [y for y in set(mpa_pkl['markers'][x]['ext']) if y in all_gca]
+        mpa_pkl['markers'][x]['ext'] = list(all_gca.intersection(set(mpa_pkl['markers'][x]['ext'])))
 
     with bz2.BZ2File('{}/{}/{}.pkl'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as outfile:
         pickle.dump(mpa_pkl, outfile, protocol=2)
 
-    with bz2.open('{}/{}/{}_marker_info.txt.bz2'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as outfile:
+    with bz2.open('{}/{}/{}_marker_info.txt.bz2'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'wt') as outfile:
         outfile.write('\n'.join('{}\t{}'.format(m, mpa_pkl['markers'][m]) for m in mpa_pkl['markers']))
 
     with tarfile.TarFile('{}/{}/{}.tar'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as mpa_tar:
@@ -869,9 +902,9 @@ def run_all(config):
             cc = {'A': 0, 'B': 0, 'C' : 0, 'U' : 0, 'Z' : 0}
         cc['n_markers'] = sum(cc.values())
         cc['tax_id'] = tax_id
-        cc['tax_str'] = export.taxontree.print_full_taxonomy(tax_id)[0] if tax_id in self.taxontree.taxid_n else '' 
+        cc['tax_str'] = export.taxontree.print_full_taxonomy(tax_id)[0] if tax_id in export.taxontree.taxid_n else '' 
         cc['has_genome'] = any([True for p in export.taxontree.get_child_proteomes(export.taxontree.taxid_n[tax_id])
-                                        if dict(export.proteomes[p].get('ncbi_ids',{})).get('GCSetAcc','')]) if tax_id in self.taxontree.taxid_n else False
+                                        if dict(export.proteomes[p].get('ncbi_ids',{})).get('GCSetAcc','')]) if tax_id in export.taxontree.taxid_n else False
         cc['excluded<10markers'] = True if cc['n_markers'] < 10 else False
         all_markers_stats.append(cc)
 
