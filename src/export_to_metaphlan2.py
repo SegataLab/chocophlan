@@ -183,7 +183,7 @@ class export_to_metaphlan2:
                     tiers = []
                     for row in markers.itertuples():
                         if ( (row.coreness_perc >= 0.8) and 
-                             (row.uniqueness_90 <= 1) and 
+                             (row.uniqueness_90 <= 2) and 
                              (row.uniqueness_50 <= 2) and 
                              ( ((row.external_genomes_90 <= 10 ) and (row.external_genomes_50 <= 5) ) if (external_genomes_90_threshold != float('Inf') and external_genomes_50_threshold != float('Inf')) else True)):
                             tiers.append('A')
@@ -211,7 +211,7 @@ class export_to_metaphlan2:
 
     def get_p_markers(self, panproteome):
         if panproteome['number_proteomes'] > 1 and not self.taxontree.taxid_n[panproteome['tax_id']].is_low_quality:
-            markers = self.extract_markers(panproteome, 80, 1, 2, 10, 5)
+            markers = self.extract_markers(panproteome, 80, 2, 2, 10, 5)
             if not markers.empty and markers.tier.value_counts().sum() > 50:
                 markers = markers[:150]
             else:
@@ -500,7 +500,7 @@ class export_to_metaphlan2:
         possible_markers.to_csv('{}/{}/markers_stats/{}.txt'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']))
 
 def map_markers_to_genomes(mpa_pkl, taxontree, proteomes, outfile_prefix, config):
-    bowtie2 = 'bowtie2'
+    bowtie2 = '/shares/CIBIO-Storage/CM/mir/tools/bowtie2-2.3.4.3/bowtie2'
     BT2OUT_FOLDER = '{}/mpa2_eval/bt2_out'.format(os.path.abspath(config['export_dir']))
     BT2IDX_FOLDER = '{}/mpa2_eval/bt2_idx'.format(os.path.abspath(config['export_dir']))
 
@@ -562,6 +562,7 @@ def map_markers_to_genomes(mpa_pkl, taxontree, proteomes, outfile_prefix, config
             with mp.Pool(initializer = init_parse, initargs = (terminating, ), processes=10) as pool:
                 sams = [x for x in pool.imap_unordered(run_bowtie2, bt2_map_args, chunksize=2)]
         except Exception as e:
+            utils.error(e)
             utils.error('\tFailed to map BowTie2...Exiting.')
             return
         finally:
@@ -707,7 +708,8 @@ def merge_bad_species(sgb_release, gca2taxonomy, config):
     # count_marker_per_clade = Counter(v['taxon'] for v in mpa_db['markers'].values())
 
     r = re.compile( r"(.*(C|c)andidat(e|us)_.*)|"
-                    r"(.*_sp(_.*|$|))|"
+                    r"(.*_CAG_.*)|"
+                    r"(.*_sp(_.*|$))|"
                     r"((.*_|^)(b|B)acterium(_.*|))|"
                     r"(.*(eury|)archaeo(n_|te|n$).*)|"
                     r"(.*(endo|)symbiont.*)|"
@@ -717,6 +719,7 @@ def merge_bad_species(sgb_release, gca2taxonomy, config):
                     r"(.*_taxon_.*)|"
                     r"(.*_et_al_.*)|"
                     r"(.*_and_.*)|"
+                    r"(.*Shigella_.*)|"
                     r"(.*(cyano|proteo|actino)bacterium_.*)")
 
     bad_genomes = { gca : ('|'.join(taxstr.split('|')[:7]), '|'.join(taxidstr.split('|')[:7]))
@@ -724,34 +727,90 @@ def merge_bad_species(sgb_release, gca2taxonomy, config):
                     if r.match(taxstr.split('|')[6][3:])
                 }
 
-    gca2sgb = dict((y, (x[1], x[9], x[10])) for _, x in sgb_release.iterrows() for y in x[5].split(',') if y in bad_genomes)
+    gca2sgb = dict((y, (x[1], x[9], x[10])) for _, x in sgb_release.iterrows() for y in x['List of reference genomes'].split(','))
+    tax2sgb =  dict()
+    [tax2sgb.setdefault(taxid.split('|')[-1],[]).append(x['ID']) for _, x in sgb_release.iterrows() for y in x['List of alternative taxonomic IDs'].split(',') for taxid in y.split(':')[::2]]
     merged = {}
     keep = {}
     for genome, (sgb, taxonomy, taxidstr) in gca2sgb.items():
-        nrefgenomes = sgb_release.loc[sgb_release['ID'] == sgb, 'Number of reconstructed genomes'].item()
-        #If genome is unique in the SGB, keep it
-        if nrefgenomes == 1:
-            keep.setdefault(bad_genomes[genome],[]).append(genome)
-        #If there are multiple refences, keep only one and the others list in a list of merged genomes
-        else:
-            merged.setdefault(sgb,[]).append((genome,bad_genomes[genome]))
+        if genome in bad_genomes:
+            taxonomy, taxidstr = bad_genomes[genome]
+            nrefgenomes = sgb_release.loc[sgb_release['ID'] == sgb, 'Number of reference genomes'].item()
+            #If genome is unique in the SGB, keep it
+            if nrefgenomes == 1:
+                keep.setdefault((taxonomy, taxidstr,),[]).append(genome)
+            #If there are multiple refences, keep only one and the others list in a list of merged genomes
+            else:
+                merged.setdefault(sgb,[]).append((genome,(taxonomy, taxidstr,)))
     
+    #to_remove = set(y.split('|')[-1] for x,(y,z) in mpa_pkl['taxonomy'].items() if 'CAG' in x or 'Shigella' in x)
+    # all_species = set((x, y.split('|')[-1]) for x,(y,z) in mpa_pkl['taxonomy'].items())
+    report = {}
+
+    # def x(species):
+    #     report[species] = {}
+    #     report[species]['n_tot'] = len(list(filter(lambda x: x.startswith(species+'_'), mpa_pkl['markers'])))
+
+    #     ext_species_counter = Counter(itertools.chain((int(gca2taxonomy.loc[gca2taxonomy['GCA_accession'] == x].taxidstr.item().split('|')[6]) for marker in filter(lambda x: x.startswith(species+'_'), mpa_pkl['markers'])
+    #                                              for x in mpa_pkl['markers'][marker]['ext']
+    #                                                 )
+    #                                 ))
+    #     ext_sgb_counter = Counter(itertools.chain((gca2sgb[x][0] for marker in filter(lambda x: x.startswith(species+'_'), mpa_pkl['markers'])
+    #                                              for x in mpa_pkl['markers'][marker]['ext']
+    #                                                 )
+    #                                 ))
+    #     i=0.3
+    #     report[species][str(i)+'__all_confounded'] = set(x[0] for x in filter(lambda x: x[1]> i*report[species]['n_tot'], ext_species_counter.items()))
+    #     report[species][str(i)+'__all_confounded_len'] = len(report[species][str(i)+'__all_confounded'])
+    #     same_sgb_as_species = set(x[0] for x in filter(lambda x: x[1]> i*report[species]['n_tot'], ext_sgb_counter.items()) if species in tax2sgb and x[0] in tax2sgb[species])
+    #     report[species][str(i)+'__same_sgb'] = set(x for x in ext_species_counter if str(x) in tax2sgb and set(tax2sgb[str(x)]).intersection(same_sgb_as_species))
+        
+    #     merged_into = Counter([tax2sgb[str(ext)][0] for ext in report[species][str(i)+'__same_sgb'] for _ in range(ext_sgb_counter[tax2sgb[str(ext)][0]])])
+    #     if merged_into:
+    #         merged_into = merged_into.most_common(1)[0][0]
+    #     report[species][str(i)+'__same_sgb_len'] = len(report[species][str(i)+'__same_sgb'])
+    #     report[species]['merged_into'] = merged_into
+    #     report[species]['taxonomy'] = taxontree.print_full_taxonomy(int(species))[0]
+
+    # list(map(x, to_remove))
+    # report_pd = pd.DataFrame.from_dict(report).T
+    # report_pd.to_excel('markers_confounding.xlsx')
+    
+    #ADD REPORT TO NEW_SPECIES_MERGED
+
     new_species_merged = {}
     for sgb, gca_tax in merged.items():
         merged_into = ('|'.join(sgb_release.loc[sgb_release['ID'] == sgb, 'Assigned taxonomy'].item().split('|')[:7]),
                        '|'.join(sgb_release.loc[sgb_release['ID'] == sgb, 'Assigned taxonomic ID'].item().split('|')[:7]))
+        if r.match(merged_into[0].split('|')[6]) and sgb_release.loc[sgb_release['ID'] == sgb, 'Number of Alternative taxonomies'].item() > 1:
+            old = merged_into
+            new_merged_into = list(filter(lambda x: not r.match(x[1]), enumerate(sgb_release.loc[sgb_release['ID'] == sgb, 'List of alternative taxonomies'].item().split(','))))
+            if new_merged_into:
+                merged_into = (new_merged_into[0][1].split(':')[0], sgb_release.loc[sgb_release['ID'] == sgb, 'List of alternative taxonomic IDs'].item().split(',')[new_merged_into[0][0]].split(':')[0], )
+
         species_in_sgb = set(taxstr for (gca, taxstr) in gca_tax)
         # merged_into=max([(s,count_marker_per_clade[s]) for s in species_in_sgb],key = lambda x:x[1])[0]
-        new_species_merged.setdefault(merged_into,[]).extend(gca_tax)
+        new_species_merged.setdefault(merged_into,set()).update(species_in_sgb)
+
+    # for species, v in report.items():
+    #     if v['merged_into']:
+    #         merged_into = ('|'.join(sgb_release.loc[sgb_release['ID'] == v['merged_into'], 'Assigned taxonomy'].item().split('|')[:7]),
+    #                    '|'.join(sgb_release.loc[sgb_release['ID'] == v['merged_into'], 'Assigned taxonomic ID'].item().split('|')[:7]))
+    #         if r.match(merged_into[0].split('|')[6]) and sgb_release.loc[sgb_release['ID'] == sgb, 'Number of Alternative taxonomies'].item() > 1:
+    #             old = merged_into
+    #             new_merged_into = list(filter(lambda x: not r.match(x[1]), enumerate(sgb_release.loc[sgb_release['ID'] == v['merged_into'], 'List of alternative taxonomies'].item().split(','))))
+    #             if new_merged_into:
+    #                 merged_into = (new_merged_into[0][1].split(':')[0], sgb_release.loc[sgb_release['ID'] == sgb, 'List of alternative taxonomic IDs'].item().split(',')[new_merged_into[0][0]].split(':')[0], )
+    #         new_species_merged.setdefault(merged_into,set()).add( taxontree.print_full_taxonomy(int(species))) 
 
     with open('{}/{}/merged_species_spp.tsv'.format(config['export_dir'],config['exportpath_metaphlan2']), 'wt') as fout:
-        fout.write('GCA\told_taxonomy\told_taxonomy_id\tmerged_into\tmerged_into_id\n')
-        fout.write('\n'.join('{}\t{}\t{}\t{}\t{}'.format(gca, old_t[0], old_t[1], new_t[0], new_t[1]) for new_t, gca_tax in new_species_merged.items() for gca, old_t in gca_tax))
+        fout.write('old_taxonomy\told_taxonomy_id\tmerged_into\tmerged_into_id\n')
+        fout.write('\n'.join('{}\t{}\t{}\t{}'.format(list(old_tax)[0][0], list(old_tax)[0][1], new_t[0], new_t[1]) for new_t, old_tax in new_species_merged.items()))
         fout.write('\n')
-        fout.write('\n'.join('{}\t{}\t{}\t{}\t{}'.format(gca, taxa[0], taxa[1], taxa[0], taxa[1]) for taxa, gca_tax in keep.items() for gca in gca_tax))
+        fout.write('\n'.join('{}\t{}\t{}\t{}'.format(taxa[0], taxa[1], taxa[0], taxa[1]) for taxa, gca_tax in keep.items() for gca in gca_tax))
 
     gca2taxid = dict(zip(gca2taxonomy.GCA_accession,gca2taxonomy.NCBI_taxid))
-    taxa_to_remove = [(x[0], gca2taxid[x[0]]) for merged_into, bad_species in new_species_merged.items() if len(bad_species) > 1 for x in bad_species]
+    taxa_to_remove = [int(x[1].split('|')[6]) for merged_into, bad_species in new_species_merged.items() if len(bad_species) > 1 or (len(bad_species)==1 and list(bad_species)[0] != merged_into) for x in bad_species]
     
     # taxa2markers = {}
     # [taxa2markers.setdefault(v['taxon'],[]).append(k) for k,v in mpa_db['markers'].items()]
@@ -785,7 +844,7 @@ def run_all(config):
     # gca2taxonomy = dict(zip(gca2taxonomy.GCA_accession, gca2taxonomy.NCBI_taxid))
     sgb_release = pd.read_csv('/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/sgbrepo/releases/Jan19/SGB.Jan19.txt.bz2', sep='\t', skiprows=1)
     sgb_release = sgb_release.loc[sgb_release['# Label'] == 'SGB',]
-    export.genomes_to_remove, export.taxa_to_remove = zip(*merge_bad_species(sgb_release, gca2taxonomy, export.config))
+    export.taxa_to_remove = merge_bad_species(sgb_release, gca2taxonomy, export.config)
     export.taxa_to_remove = Counter(export.taxa_to_remove * 50000)
     merged_species = pd.read_csv('{}/{}/merged_species_spp.tsv'.format(config['export_dir'],config['exportpath_metaphlan2']), sep = '\t')
     export.species_merged_into = [int(x.split('|')[-1]) for x in set(merged_species.merged_into_id)]
@@ -845,6 +904,7 @@ def run_all(config):
                 torem = list(filter(lambda x:x.startswith(_taxid), mpa_pkl['markers']))
                 [mpa_pkl['markers'].pop(x) for x in torem]
     
+        ##remove c__Coriobacteriia and 92706 Brevibacterium flavum
     try:
         with bz2.open('{}/{}/{}.fna.bz2'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'wt') as outfile, \
              open('{}/{}/{}.fna'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'r') as infile:

@@ -135,7 +135,7 @@ def get_uniref90_nucl_seq(item):
                     except Exception as e:
                         print(taxid)
                         raise e
-                    mpa_marker = '{}__{}__{}|{}|{}|UniRef50_{}|{}|{}'.format(taxid, NR90[9:], feature['Name'][0], taxonomy, NR90, NR50, len(nuc_seq), gca)
+                    mpa_marker = '{}__{}__{}|{}|{}|{}|{}'.format(taxid, NR90[9:], feature['Name'][0], taxonomy, NR90, NR50, len(nuc_seq))
                     record = SeqIO.SeqRecord(seq=Seq(nuc_seq, alphabet=DNAAlphabet()), id=mpa_marker, description='')
                     nucls.append(record)
                 else:
@@ -145,7 +145,14 @@ def get_uniref90_nucl_seq(item):
     return (nucls, failed, )
 
 def export_panproteome_centroid(species_id):
-    panproteome = pd.read_csv('{}/{}/{}.txt.bz2'.format(shared_variables.config['export_dir'], shared_variables.config['panproteomes_stats'], species_id), sep = '\t', index_col = 0)
+    try:
+        panproteome = pd.read_csv('{}/{}/{}.txt.bz2'.format(shared_variables.config['export_dir'], shared_variables.config['panproteomes_stats'], species_id), sep = '\t', index_col = 0)
+    except:
+        log.error('[{}]\tCannot load panproteome.'.format(species_id))
+        return 
+    if panproteome.empty:
+        return
+
     taxonomy = shared_variables.taxontree.print_full_taxonomy(species_id)[0].replace('|','.')
     low_lvls = [c.tax_id for c in shared_variables.taxontree.taxid_n[species_id].find_clades()]
     gc = {}
@@ -157,21 +164,20 @@ def export_panproteome_centroid(species_id):
         func_annot = {}
         pangene = 'UniRef90_'+pangene.split('_')[1]
         pangene_nr50 = 'UniRef50_'+shared_variables.uniref90_taxid_map[pangene][1][2]
-
+        added=False
         for (upkb_id, upid, count) in (x.split(':') for x in row.copy_number.split(';')):
-            is_uparc = upkb_id.startswith('UPI')
-            upkb_entry = shared_variables.uniprot[upkb_id] if not is_uparc else shared_variables.uniparc[upkb_id]
-            if is_uparc:
-                gene_names = tuple(x[2] for x in upkb_entry[0] if x[1] in low_lvls)
-            else:
-                gene_names = tuple(x[1] for x in upkb_entry[0] )
-            gca = get_gca(upid)
+            gca = get_gca(upid)            
             if gca:
+                is_uparc = upkb_id.startswith('UPI')
+                upkb_entry = shared_variables.uniprot[upkb_id] if not is_uparc else shared_variables.uniparc[upkb_id]
+                if is_uparc:
+                    gene_names = tuple(x[2] for x in upkb_entry[0] if x[1] in low_lvls)
+                else:
+                    gene_names = tuple(x[1] for x in upkb_entry[0] )    
                 gca = gca.split('.')[0]
                 if not is_uparc:
                     upkb_fa = shared_variables.uniprot[upkb_id][3:]
                 else:
-                    break
                     tmp = [ list(itertools.chain(set(x))) for x in zip(*[shared_variables.uniprot[x[0]][3:] for x in shared_variables.uniref90_taxid_map[pangene][0] 
                     if not x[0].startswith('UPI') and x[1] in low_lvls and x[0] in shared_variables.uniprot])]
                     upkb_fa = [list(set(itertools.chain.from_iterable(x))) for x in tmp[:6]]
@@ -186,20 +192,23 @@ def export_panproteome_centroid(species_id):
                                     ','.join(str(x) for x in upkb_fa[5]) ]
                         func_annot[pangene] = upkb_fa
 
-                if len(gca) and len(gene_names):
+                if gene_names:
                     if (gca, species_id, taxonomy) not in gc:
                         gc[(gca, species_id, taxonomy)] = {}
                     if (pangene, pangene_nr50) not in gc[(gca, species_id, taxonomy)]:
-                        gc[(gca, species_id, taxonomy)][(pangene, pangene_nr50)] = set()    
+                        gc[(gca, species_id, taxonomy)][(pangene, pangene_nr50)] = set()
                     gc[(gca, species_id, taxonomy)][(pangene, pangene_nr50)].update(gene_names)
+                    added=True
                     break
-        return (gc, func_annot)
+        return (gc, func_annot, pangene if not added else None)
 
-    _gc, func_annot = zip(*map(get_gene_names, panproteome.itertuples()))
+    _gc, func_annot, failed = zip(*map(get_gene_names, panproteome.itertuples()))
     
     func_annot = {k:v for x in func_annot for k, v in x.items()}
     [gc.setdefault(k, {}).setdefault(w, set()).update(z) for x in filter(None,_gc) for k, v in x.items() for w,z in v.items()]
-
+    if failed is not None and not all(x is None for x in failed):
+        failed = list(filter(None, failed))
+        log.warning("[{}]\tFailed to find gene names associated to the following pangenes {}".format(species_id, (','.join(failed))))
     # nproc = max(min(10,len(gc)),1)
     # chunksize = 1 if nproc == len(gc) else 1+math.ceil(len(gc)/nproc)
 
@@ -272,6 +281,18 @@ def get_genes_coordinates(item):
     [ gff_db.delete(x) for x in gff_db.all_features() ]
     return (coords, failed, in_seq_file, )
 
+def get_proteome_type(upid):
+    isref = shared_variables.proteomes[upid]['isReference']
+    isupi = shared_variables.proteomes[upid]['upi']
+
+    if isref:
+        return 1
+    else:
+        if not isupi:
+            return 2
+        else:
+            return 3
+
 def export_panphlan_panproteome(species_id):
     try:
         panproteome = pd.read_csv('{}/{}/{}.txt.bz2'.format(shared_variables.config['export_dir'], shared_variables.config['panproteomes_stats'], species_id), sep = '\t', index_col = 0)  
@@ -302,7 +323,9 @@ def export_panphlan_panproteome(species_id):
 
     for row in panproteome.itertuples():
         pangene = 'UniRef90_'+row.Index.split('_')[1]
-        [gc.setdefault(k, {}).setdefault(w, set()).update(z) for x in map(ext_gene_names,((pangene, x.split(':')) for x in row.copy_number.split(';'))) for k,v in x.items() for w,z in v.items()]
+        genes = list((pangene, x.split(':')) for x in row.copy_number.split(';'))
+        sorted_genes = list(zip(*sorted(zip(genes, list(map(get_proteome_type, [k[1][1] for k in genes]))), key=lambda x:x[1])))[0]
+        [gc.setdefault(k, {}).setdefault(w, set()).update(z) for x in map(ext_gene_names, sorted_genes[:1000]) for k,v in x.items() for w,z in v.items()]
 
 
     if len(gc):
@@ -324,6 +347,7 @@ def export_panphlan_panproteome(species_id):
             pangenes_annot = list(itertools.chain.from_iterable(filter(None,pangenes_annot)))
 
         for in_seq_file in gca_path:
+            gca =  re.search(r'(GCA_[0-9]{9})', in_seq_file).group(0)
             try:
                 os.symlink(in_seq_file, '{}/{}/{}/panphlan_{}_genomes/{}.fna.gz'.format(shared_variables.config['export_dir'], shared_variables.config['exportpath_panphlan'], species_id, species_id, gca))
             except OSError as e:
@@ -352,7 +376,7 @@ def export_genome_annotation(panproteome_id):
             fasta_pangenes.write('#GCA\tUPKB\tNR90\tNR50\n')
             for member in shared_variables.proteomes[panproteome_id]['members']:
                 if member in shared_variables.uniprot:
-                    NR90, NR50 = shared_variables.uniprot[member][9:11]
+                    NR90, NR50 = shared_variables.uniprot[member][10:12]
                 elif member in shared_variables.uniparc:
                     NR90, NR50 = shared_variables.uniparc[member][2:4]
                 else:
@@ -371,10 +395,9 @@ def run_all(config):
 
     mpa_pkl = pickle.load(bz2.BZ2File('{}/{}/{}.pkl'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'r'))
     
-    with mp.Pool(processes = 30, maxtasksperchild = 70) as pll:
-        res = [_ for _ in pll.imap_unordered(export_panproteome_centroid, [int(s[0].split('|')[-1]) for s in mpa_pkl['taxonomy'].values()], chunksize=1)]
+    with mp.Pool(processes = 40, maxtasksperchild = 70) as pll:
+        res = [_ for _ in pll.imap_unordered(export_panproteome_centroid, set(int(s[0].split('|')[-1]) for s in mpa_pkl['taxonomy'].values()), chunksize=1)]
 
-    all_annot = {}
     OUTFILE_PREFIX = 'HUMAnN2_CHOCOPhlAn_{}'.format(version.__CHOCOPhlAn_version__)
     with bz2.open('{}/{}/{}_functional_annotation_mapping.tsv.bz2'.format(config['export_dir'], config['exportpath_humann2'],OUTFILE_PREFIX), 'wt') as functional_annot:
         for s in glob.glob('/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/chocophlan/export_201901/humann2/functional_annot/*.txt.bz2'):
@@ -386,7 +409,7 @@ def run_all(config):
         res = [ _ for _ in pll.imap_unordered(export_genome_annotation, shared_variables.proteomes, chunksize=1)]
 
     with bz2.open('{}/{}/gca_upkb_to_NR90_NR50.tsv.bz2'.format(config['export_dir'], config['exportpath_humann2']), 'wt') as genome_functional_annot:
-        genome_functional_annot.write('NR90\tNR50\tGO\tKO\tKEGG\tPfam\tEC\teggNOG\n')
+        genome_functional_annot.write('GCA\tUPKBID\tNR90\tNR50\n')
         for s in glob.iglob('/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/chocophlan/export_201901/humann2/gca_upkb_to_nr/*.txt.bz2'):
             with bz2.open(s, 'rt') as p_fa:
                 genome_functional_annot.writelines( line for line in p_fa if '#GCA' not in line )
@@ -398,7 +421,7 @@ def run_all(config):
                                     if any(list(map(get_gca,shared_variables.taxontree.get_child_proteomes(item))))
                                 )
     
-    with mp.Pool(processes = 30, maxtasksperchild = 60) as pll:
+    with mp.Pool(processes = 12, maxtasksperchild = 1) as pll:
         res = [_ for _ in pll.imap_unordered(export_panphlan_panproteome, all_species_with_proteome, chunksize=1)]
 
 if __name__ == '__main__':
