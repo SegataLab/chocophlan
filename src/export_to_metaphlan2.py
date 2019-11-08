@@ -87,7 +87,10 @@ class CodeTimer:
 class export_to_metaphlan2:
     def __init__(self, config):
         self.debug = config['verbose']
-        resource.setrlimit(resource.RLIMIT_NOFILE, (131072, 131072))
+        try:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (131072, 131072))
+        except Exception as ex:
+            print(ex)
         self.log = logging.getLogger(__name__)
         ch = logging.FileHandler('CHOCOPhlAn_export_to_metaphlan_{}.log'.format(datetime.datetime.today().strftime('%Y%m%d_%H%M')),'w')
         ch.setLevel(logging.INFO)
@@ -290,7 +293,7 @@ class export_to_metaphlan2:
             self.log.error('[{}]\tMissing genome or GFF annotation for {}'.format(taxid, gca))
             return [None, None, None]
 
-        with NamedTemporaryFile(dir='/shares/CIBIO-Storage/CM/tmp/chocophlan') as fna_decompressed:
+        with NamedTemporaryFile(dir='/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/chocophlan/tmp/') as fna_decompressed:
             gff_db = gffutils.create_db(in_gff_file, ':memory:', id_spec='locus_tag', merge_strategy="merge")
             with gzip.open(in_seq_file, 'rb') as fna_gz, open(fna_decompressed.name, 'wb') as fna_out:
                 shutil.copyfileobj(fna_gz, fna_out)
@@ -499,7 +502,7 @@ class export_to_metaphlan2:
             pickle.dump(gc, open('{}/{}/markers_info/{}.txt'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']), 'wb'))
         possible_markers.to_csv('{}/{}/markers_stats/{}.txt'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']))
 
-def map_markers_to_genomes(mpa_pkl, taxontree, proteomes, outfile_prefix, config):
+def map_markers_to_genomes(mpa_markers_fna, mpa_pkl, taxontree, proteomes, outfile_prefix, config):
     bowtie2 = '/shares/CIBIO-Storage/CM/mir/tools/bowtie2-2.3.4.3/bowtie2'
     BT2OUT_FOLDER = '{}/mpa2_eval/bt2_out'.format(os.path.abspath(config['export_dir']))
     BT2IDX_FOLDER = '{}/mpa2_eval/bt2_idx'.format(os.path.abspath(config['export_dir']))
@@ -549,8 +552,7 @@ def map_markers_to_genomes(mpa_pkl, taxontree, proteomes, outfile_prefix, config
         with open('{}/mpa2_eval/bt2_idx/DONE'.format(config['export_dir']), 'rt') as fcomp:
             bt2_indexes = ['{}/mpa2_eval/bt2_idx/{}'.format(config['export_dir'],x.strip()) for x in fcomp]
 
-    mpa_markers_fna = '{}/{}/{}.fna'.format(config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix)
-    mpa_markers_splitted_fna = '{}/{}/{}_splitted.fna'.format(config['export_dir'], config['exportpath_metaphlan2'],outfile_prefix) 
+    mpa_markers_splitted_fna = mpa_markers_fna.replace('.fna', '_splitted.fna')
     utils.info('\tSplitting markers in chunks of 150nts...')
     split_markers(mpa_markers_fna, mpa_markers_splitted_fna)
     utils.info('\tDone.\n')
@@ -558,7 +560,7 @@ def map_markers_to_genomes(mpa_pkl, taxontree, proteomes, outfile_prefix, config
         terminating = dummy.Event()
         try:
             utils.info('\tStarted mapping of MetaPhlAn2 markers to reference genomes...')
-            bt2_map_args = [ (bowtie2, bt2_idx, mpa_markers_splitted_fna, os.path.join(BT2OUT_FOLDER, bt2_idx.split('/')[-1] + '.sam')) for bt2_idx in bt2_indexes ]
+            bt2_map_args = [ (bowtie2, bt2_idx, mpa_markers_splitted_fna, os.path.join(BT2OUT_FOLDER, outfile_prefix + "__" + bt2_idx.split('/')[-1] + '.sam')) for bt2_idx in bt2_indexes ]
             with mp.Pool(initializer = init_parse, initargs = (terminating, ), processes=10) as pool:
                 sams = [x for x in pool.imap_unordered(run_bowtie2, bt2_map_args, chunksize=2)]
         except Exception as e:
@@ -842,7 +844,7 @@ def run_all(config):
 
     gca2taxonomy = pd.read_csv(os.path.join(export.config['export_dir'], export.config['relpath_gca2taxa']), sep='\t')
     # gca2taxonomy = dict(zip(gca2taxonomy.GCA_accession, gca2taxonomy.NCBI_taxid))
-    sgb_release = pd.read_csv('/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/sgbrepo/releases/Jan19/SGB.Jan19.txt.bz2', sep='\t', skiprows=1)
+    sgb_release = pd.read_csv('/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/sgbrepo/releases/Jul19/SGB.Jul19.txt.bz2', sep='\t', skiprows=1)
     sgb_release = sgb_release.loc[sgb_release['# Label'] == 'SGB',]
     export.taxa_to_remove = merge_bad_species(sgb_release, gca2taxonomy, export.config)
     export.taxa_to_remove = Counter(export.taxa_to_remove * 50000)
@@ -870,10 +872,11 @@ def run_all(config):
             fcomp.write(OUTFILE_PREFIX)
 
         utils.info('Merging all the markers sequences...\n')
-        with open('{}/{}/{}.fna'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'wb') as mpa2_markers_fna:
+        mpa_fna_db = '{}/{}/{}.fna'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX)
+        with open(mpa_fna_db, 'wb') as mpa2_markers_fna:
             for f in glob.glob('{}/{}/markers_fasta/*.fna'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'])):
                 with open(f, 'rb') as fm:
-                    shutil.copyfileobj(fm, mpa2_markers_fna, 1024*1024*10)
+                    mpa2_markers_fna.write(fm.read())
         utils.info('Done.\n')
     else:
         utils.info('MetaPhlAn2 markers already extracted. Loading the MetaPhlAn2 database...\n')
@@ -881,7 +884,7 @@ def run_all(config):
             export.db = pickle.load(infn)
     utils.info('Done.\n')
 
-    mpa_pkl, markers2ext = map_markers_to_genomes(export.db, export.taxontree, export.proteomes, OUTFILE_PREFIX, export.config)
+    mpa_pkl, markers2ext = map_markers_to_genomes(mpa_fna_db, export.db, export.taxontree, export.proteomes, OUTFILE_PREFIX, export.config)
 
     with open('{}/{}/{}_ext.tsv'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as outfile:
         outfile.write('\n'.join('{}\t{}'.format(marker, ext_species['external_species']) for marker, ext_species in markers2ext.items()))
@@ -911,6 +914,11 @@ def run_all(config):
             for record in SeqIO.parse(infile, 'fasta'):
                 if record.id in mpa_pkl['markers']:
                     outfile.write(record.format('fasta'))
+        with bz2.open('{}/{}/{}.fna.bz2'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'rt') as outfile:
+            ids = [x[1:].split()[0].strip() for x in outfile if x[0] == '>']
+        for marker in set(mpa_pkl['markers']).difference(ids):
+            mpa_pkl['markers'].pop(marker)
+                
     except:
         utils.remove_file('{}/{}/{}.fna.bz2'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX))
         utils.error('Failed to compress the MetaPhlAn2 markers database. Exiting...')
@@ -970,6 +978,96 @@ def run_all(config):
 
     all_markers_stats_df = pd.DataFrame.from_dict(all_markers_stats).fillna(0).astype({'A': int, 'B': int, 'C' : int, 'U' : int, 'Z' : int})
     all_markers_stats_df.to_csv('{}/{}/all_markers_stats.txt'.format(export.config['export_dir'], export.config['exportpath_metaphlan2']), sep = '\t', index = False)
+
+
+def build_virus_db(config, taxontree, proteomes):
+    from ete3 import NCBITaxa
+    ncbi = NCBITaxa()
+    new_db_fp = '{0}/{1}/{2}/{2}.pkl'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX)
+    v20_db_fp = '/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/metaphlan2/metaphlan_databases/mpa_v20_m200.pkl'
+    new_db_pkl = pickle.load(bz2.open(new_db_fp))
+    v20_db_pkl = pickle.load(bz2.open(v20_db_fp))
+    
+    virus_markers = list(filter(lambda x: v20_db_pkl['markers'][x]['taxon'].startswith('k__V'), v20_db_pkl['markers']))
+    tmp_pkl = { 'markers' : {}, 'taxonomy' : {} }
+    tmp_pkl['markers'] = {k : v20_db_pkl['markers'][k] for k in virus_markers}
+    tmp_pkl['taxonomy'] = {k:v for k,v in v20_db_pkl['taxonomy'].items() if k.startswith('k__V')}
+
+    str2taxa = {}
+    for x in tmp_pkl['taxonomy']:
+        if x.startswith('k__Vir'):
+            taxname = x.split('|')[6][3:].replace('_',' ')
+            taxid = ncbi.get_name_translator([taxname])
+            if not taxid:
+                taxid = ncbi.get_fuzzy_name_translation(x.split('|')[6][3:].replace('_',' '), 0.7)[0]
+            else:
+                taxid = taxid[taxname][0]
+            if taxid:
+                str2taxa[x] = taxid
+ 
+    newtaxa = {}
+    for taxstr, taxid in str2taxa.items():
+        clade = '|'.join(taxstr.split('|')[:7])
+        new_taxstr, new_taxid = taxontree.print_full_taxonomy(taxid)
+        if 't__' in new_taxstr:
+            new_taxstr, new_taxid = new_taxstr.split('|'), new_taxid.split('|')
+            _, _ = new_taxstr.pop(-2), new_taxid.pop(-2)
+            new_taxstr = '|'.join(new_taxstr).replace('t__','s__')
+            new_taxid = '|'.join(new_taxid)
+        newtaxa[clade] = ((new_taxstr, new_taxid), tmp_pkl['taxonomy'].pop(taxstr))
+
+    for old_taxstr, ((new_taxstr, new_taxid), genome_size) in newtaxa.items():
+        tmp_pkl['taxonomy'][new_taxstr] = (new_taxid, genome_size)
+
+    all_m = list(tmp_pkl['markers'].keys())
+    for marker in all_m:
+        if len(tmp_pkl['markers'][marker]['ext']):
+            tmp_pkl['markers'][marker]['ext'] = set(filter(lambda x: not x.startswith('GC'), tmp_pkl['markers'][marker]['ext']))
+        old_taxon = tmp_pkl['markers'][marker]['taxon']
+        
+        if old_taxon not in newtaxa:
+            if 't__' in old_taxon:
+                #Keep the old clade and update the taxonomy till the t__
+                new_clade = tmp_pkl['markers'][marker]['clade']
+                old_taxon = '|'.join(old_taxon.split('|')[:-1])
+                new_taxon = '{}|{}'.format(newtaxa[old_taxon][0][0], new_clade)
+                taxid = newtaxa[old_taxon][0][1].split('|')[-1]
+            elif 'g__' in old_taxon:
+                #Update the whole taxonomy
+                last_level = old_taxon.split('|')[-1][:3]
+                level_member = list(filter(lambda x: x.startswith(old_taxon), newtaxa.keys()))[0]
+                new_taxon = re.search( '.*{}.*\|'.format(last_level), newtaxa[level_member][0][0]).group()[:-1]
+                new_clade = new_taxon.split('|')[-1]
+                taxid = newtaxa[level_member][0][1].split('|')[new_taxon.count('|')]
+        else:
+            new_taxon = newtaxa[old_taxon][0][0]
+            new_clade = new_taxon.split('|')[-1]
+            taxid = newtaxa[old_taxon][0][1] .split('|')[-1]
+            
+        tmp_pkl['markers'][marker]['clade'] = new_clade
+        tmp_pkl['markers'][marker]['taxon'] = new_taxon
+        tmp_pkl['markers']['{}__{}'.format(taxid, marker)] = tmp_pkl['markers'].pop(marker)
+    
+    tmp_pkl['taxonomy'].update(new_db_pkl['taxonomy'])
+
+    mpa_v294_viruses_fp = '{0}/{1}/{2}_viruses/{2}.fna'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX)
+    mpa_v294_fp = '{0}/{1}/{2}/{2}.fna.bz2'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX)
+    with bz2.open('/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/metaphlan2/metaphlan_databases/mpa_v20_m200.fna.bz2', 'rb') as mpa_v20_fna:
+        with NamedTemporaryFile(dir='/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/chocophlan/tmp/') as fna_decompressed,  open(fna_decompressed.name, 'wb') as fna_out:
+            fna_out.write(mpa_v20_fna.read())
+
+            with Fasta(fna_decompressed.name) as v20_markers, \
+                open(mpa_v294_viruses_fp, 'wt') as fout:
+                    for m in tmp_pkl['markers']:
+                        fout.write('>{}\n{}\n'.format(m, v20_markers[m.split('__')[1]][:].seq ))
+
+    mpa_pkl, markers2ext = map_markers_to_genomes(mpa_v294_viruses_fp, tmp_pkl, taxontree, proteomes, OUTFILE_PREFIX+"_viruses", config)
+    mpa_pkl['markers'].update(new_db_pkl['markers'])
+    with open(mpa_v294_viruses_fp, 'at') as mpa_v29_virus, bz2.open(mpa_v294_fp, 'rb') as mpa_v20_fna:
+        mpa_v29_virus.write(mpa_v20_fna.read())
+
+    with bz2.open('{0}/{1}/{2}_viruses/{2}.pkl'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'wb') as mpa_viruses_pkl:
+        pickle.dump(mpa_pkl, mpa_viruses_pkl, protocol=2)
 
 if __name__ == '__main__':
     t0 = time.time()
