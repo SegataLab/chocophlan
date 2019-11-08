@@ -106,7 +106,7 @@ def get_uniref90_nucl_seq(item):
         return (None, None, )
     nucls = []
     failed = []
-    with NamedTemporaryFile(dir='/shares/CIBIO-Storage/CM/tmp/chocophlan') as fna_decompressed:
+    with NamedTemporaryFile(dir='/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/chocophlan/tmp/') as fna_decompressed:
         gff_db = gffutils.create_db(in_gff_file, ':memory:', id_spec='locus_tag', merge_strategy="merge")
 
         with gzip.open(in_seq_file, 'rb') as fna_gz, open(fna_decompressed.name, 'wb') as fna_out:
@@ -250,7 +250,7 @@ def get_genes_coordinates(item):
         log.error('Missing genome or GFF annotation for {}'.format(gca))
         return None
 
-    with NamedTemporaryFile(dir='/shares/CIBIO-Storage/CM/tmp/chocophlan') as fna_decompressed:
+    with NamedTemporaryFile(dir='/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/chocophlan/tmp/') as fna_decompressed:
         gff_db = gffutils.create_db(in_gff_file, ':memory:', id_spec='locus_tag', merge_strategy="merge")
 
         with gzip.open(in_seq_file, 'rb') as fna_gz, open(fna_decompressed.name, 'wb') as fna_out:
