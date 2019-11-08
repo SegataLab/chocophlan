@@ -7,7 +7,6 @@ __author__ = ('Francesco Beghini (francesco.beghini@unitn.it)'
 __date__ = '11 Apr 2018'
 
 
-from _version import *
 import os
 import argparse as ap
 import configparser as cp
@@ -17,6 +16,8 @@ import glob
 import time
 import bz2
 from operator import itemgetter
+from _version import __UniRef_version__
+import _version as version
 
 if __name__ == '__main__':
     import utils
@@ -35,6 +36,9 @@ class chocophlan2phylophlan:
     def __init__(self, config):
         if config['verbose']:
             utils.info('Loading pickled databases...')
+        self.d_out_core = {}
+        self.d_out_refp = {}
+        self.d_out_refg = {}
 
         self.taxontree = pickle.load(open("{}/{}".format(config['download_base_dir'],config['relpath_pickle_taxontree']), 'rb'))
         self.proteomes = pickle.load(open("{}{}".format(config['download_base_dir'],config['relpath_pickle_proteomes']), 'rb'))
@@ -87,11 +91,7 @@ class chocophlan2phylophlan:
         else:
             terminating.set()
 
-    def chocophlan2phylophlan(self):
-        d_out_core = {}
-        d_out_refp = {}
-        d_out_refg = {}
-
+    def run_export(self):
         reference_species = set(
             self.proteomes[proteome]['tax_id'] 
             if self.taxontree.taxid_n[self.proteomes[proteome]['tax_id']].rank == 'species' 
@@ -111,21 +111,21 @@ class chocophlan2phylophlan:
 
         for item in filter(None,d):
             cor, ref, gen = item
-            d_out_core[cor[0]] = (cor[1], cor[2])
-            d_out_refp[ref[0]] = (ref[1], ref[2])
-            d_out_refg[gen[0]] = (gen[1], gen[2])
+            self.d_out_core[cor[0]] = (cor[1], cor[2])
+            self.d_out_refp[ref[0]] = (ref[1], ref[2])
+            self.d_out_refg[gen[0]] = (gen[1], gen[2])
 
         if self.config['verbose']:
             utils.info('Exporting core proteins, proteomes and genomes...\n')
 
         # REMOVE SPECIES WITHOUT ANY GENOME
         # NO PROTEOMES
-        with open('{}/taxa2proteomes_cpa{}_up{}.txt'.format(self.exportpath,__CHOCOPhlAn_version__, __UniRef_version__), 'w') as t2p_out:
-            with open('{}/taxa2core_cpa{}_up{}.txt'.format(self.exportpath,__CHOCOPhlAn_version__, __UniRef_version__), 'w') as t2c_out:
-                with open('{}/taxa2genomes_cpa{}_up{}.txt'.format(self.exportpath,__CHOCOPhlAn_version__, __UniRef_version__), 'w') as t2g_out:
-                    lines_t2p = ['#CHOCOPhlAn version {}\n'.format(__CHOCOPhlAn_version__), '#'+open('data/relnotes.txt').readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of proteomes\n']
-                    lines_t2c = ['#CHOCOPhlAn version {}\n'.format(__CHOCOPhlAn_version__), '#'+open('data/relnotes.txt').readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of core proteins\n']
-                    lines_t2g = ['#CHOCOPhlAn version {}\n'.format(__CHOCOPhlAn_version__), '#'+open('data/relnotes.txt').readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of genomes\n']
+        with open('{}/taxa2proteomes_cpa{}_up{}.txt'.format(self.exportpath,version.__CHOCOPhlAn_version__, version.__UniRef_version__), 'w') as t2p_out:
+            with open('{}/taxa2core_cpa{}_up{}.txt'.format(self.exportpath,version.__CHOCOPhlAn_version__, version.__UniRef_version__), 'w') as t2c_out:
+                with open('{}/taxa2genomes_cpa{}_up{}.txt'.format(self.exportpath,version.__CHOCOPhlAn_version__, version.__UniRef_version__), 'w') as t2g_out:
+                    lines_t2p = ['#CHOCOPhlAn version {}\n'.format(version.__CHOCOPhlAn_version__), '#'+open('data/relnotes.txt').readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of proteomes\n']
+                    lines_t2c = ['#CHOCOPhlAn version {}\n'.format(version.__CHOCOPhlAn_version__), '#'+open('data/relnotes.txt').readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of core proteins\n']
+                    lines_t2g = ['#CHOCOPhlAn version {}\n'.format(version.__CHOCOPhlAn_version__), '#'+open('data/relnotes.txt').readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of genomes\n']
 
                     lines_t2p.extend(['{}\t{}\thttp://www.uniprot.org/uniprot/?query=proteome:{{}}&compress=yes&force=true&format=fasta\t{}\n'.format(tax_id, entry[0], ';'.join(entry[1])) for tax_id, entry in d_out_refp.items()])
                     lines_t2c.extend(['{}\t{}\thttp://www.uniprot.org/uniref/UniRef90_{{}}.fasta\t{}\n'.format(tax_id, entry[0], ';'.join(entry[1])) for tax_id, entry in d_out_core.items()])
@@ -139,7 +139,7 @@ class chocophlan2phylophlan:
 
 def export_to_phylophlan(config):
     c = chocophlan2phylophlan(config)
-    c.chocophlan2phylophlan()
+    c.run_export()
 
 if __name__ == '__main__':
     t0 = time.time()
@@ -148,8 +148,7 @@ if __name__ == '__main__':
     config = utils.read_configs(args.config_file, verbose=args.verbose)
     config = utils.check_configs(config, verbose=args.verbose)
     config = config['export']
-    c = chocophlan2phylophlan(config)
-    c.chocophlan2phylophlan()
+    export_to_phylophlan(config)
     t1 = time.time()
     utils.info('Total elapsed time {}s\n'.format(int(t1 - t0)))
     sys.exit(0)
