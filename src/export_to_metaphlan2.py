@@ -535,7 +535,7 @@ def map_markers_to_genomes(mpa_markers_fna, mpa_pkl, taxontree, proteomes, outfi
         utils.info('\tDone.\n')
 
     contig2ass = { contig : genome[:13] for contig,genome in contig2ass.items() }
-    if not os.path.exists('{}/mpa2_eval/bt2_idx/DONE'.format(config['export_dir'])):
+    if not os.path.exists('{}/mpa2_eval/bt2_idx/DONE_{}'.format(config['export_dir'], outfile_prefix)):
         terminating = dummy.Event()
         try:
             utils.info('\tCreating BowTie2 indexes...')
@@ -546,10 +546,10 @@ def map_markers_to_genomes(mpa_markers_fna, mpa_pkl, taxontree, proteomes, outfi
         except Exception as e:
             utils.error('\tFailed to create a BowTie2 indexing...Exiting.')
             return
-        with open('{}/mpa2_eval/bt2_idx/DONE'.format(config['export_dir']), 'wt') as fcomp:
+        with open('{}/mpa2_eval/bt2_idx/DONE_{}'.format(config['export_dir'], outfile_prefix), 'wt') as fcomp:
             fcomp.write('\n'.join(bt2_indexes))
     else:
-        with open('{}/mpa2_eval/bt2_idx/DONE'.format(config['export_dir']), 'rt') as fcomp:
+        with open('{}/mpa2_eval/bt2_idx/DONE_{}'.format(config['export_dir'], outfile_prefix), 'rt') as fcomp:
             bt2_indexes = ['{}/mpa2_eval/bt2_idx/{}'.format(config['export_dir'],x.strip()) for x in fcomp]
 
     mpa_markers_splitted_fna = mpa_markers_fna.replace('.fna', '_splitted.fna')
@@ -980,6 +980,13 @@ def run_all(config):
     all_markers_stats_df.to_csv('{}/{}/all_markers_stats.txt'.format(export.config['export_dir'], export.config['exportpath_metaphlan2']), sep = '\t', index = False)
 
 
+def init_fuzzy(ncbi_):
+    global ncbi_db
+    ncbi_db = ncbi_
+
+def get_fuzzy_taxonomy(k):
+    return (k, ncbi_db.get_fuzzy_name_translation(k.split('|')[6][3:].replace('_',' '), sim=0.7))
+
 def build_virus_db(config, taxontree, proteomes):
     from ete3 import NCBITaxa
     ncbi = NCBITaxa()
@@ -994,55 +1001,70 @@ def build_virus_db(config, taxontree, proteomes):
     tmp_pkl['taxonomy'] = {k:v for k,v in v20_db_pkl['taxonomy'].items() if k.startswith('k__V')}
 
     str2taxa = {}
+    to_proc = []
     for x in tmp_pkl['taxonomy']:
         if x.startswith('k__Vir'):
             taxname = x.split('|')[6][3:].replace('_',' ')
             taxid = ncbi.get_name_translator([taxname])
             if not taxid:
-                taxid = ncbi.get_fuzzy_name_translation(x.split('|')[6][3:].replace('_',' '), 0.7)[0]
+                to_proc.append(x)
             else:
                 taxid = taxid[taxname][0]
             if taxid:
                 str2taxa[x] = taxid
- 
+
+
+    with mp.Pool(initializer = init_fuzzy, initargs = (ncbi, ), processes=30) as pool:
+        d = {x[0] : x[1][0] for x in pool.imap_unordered(get_fuzzy_taxonomy, to_proc, chunksize=10)}
+
+    # partial_fuzzy = partial(ncbi.get_fuzzy_name_translation,sim=0.7 )
+    # d = [x[0] for x in map(partial_fuzzy, (k for k in to_proc)) ]
+    
+    for x, taxid in d:
+        str2taxa[x] = taxid
+
     newtaxa = {}
     for taxstr, taxid in str2taxa.items():
-        clade = '|'.join(taxstr.split('|')[:7])
-        new_taxstr, new_taxid = taxontree.print_full_taxonomy(taxid)
-        if 't__' in new_taxstr:
-            new_taxstr, new_taxid = new_taxstr.split('|'), new_taxid.split('|')
-            _, _ = new_taxstr.pop(-2), new_taxid.pop(-2)
-            new_taxstr = '|'.join(new_taxstr).replace('t__','s__')
-            new_taxid = '|'.join(new_taxid)
-        newtaxa[clade] = ((new_taxstr, new_taxid), tmp_pkl['taxonomy'].pop(taxstr))
+        if 's__Marseillevirus' in taxstr:
+            new_taxstr, new_taxid = ('k__Viruses|p__Viruses_unclassified|c__Viruses_unclassified|o__Viruses_unclassified|f__Marseilleviridae|g__Marseillevirus|s__Marseillevirus_marseillevirus',
+                                     '10239||||944644|1513458|694581')
+        elif 's__Mavirus' in taxstr:
+            new_taxstr, new_taxid = ('k__Viruses|p__Viruses_unclassified|c__Viruses_unclassified|o__Viruses_unclassified|f__Lavidaviridae|g__Mavirus|s__Cafeteriavirus_dependent_mavirus',
+                                     '10239||||1914302|993034|1932923')
+        else:
+            new_taxstr, new_taxid = taxontree.print_full_taxonomy(taxid)
+        newtaxa[taxstr] = ((new_taxstr, new_taxid), tmp_pkl['taxonomy'].pop(taxstr))
 
     for old_taxstr, ((new_taxstr, new_taxid), genome_size) in newtaxa.items():
-        tmp_pkl['taxonomy'][new_taxstr] = (new_taxid, genome_size)
+        clade = old_taxstr.split('|')[-1]
+        tmp_pkl['taxonomy']['|'.join([new_taxstr, clade])] = (new_taxid, genome_size)
 
     all_m = list(tmp_pkl['markers'].keys())
     for marker in all_m:
         if len(tmp_pkl['markers'][marker]['ext']):
             tmp_pkl['markers'][marker]['ext'] = set(filter(lambda x: not x.startswith('GC'), tmp_pkl['markers'][marker]['ext']))
         old_taxon = tmp_pkl['markers'][marker]['taxon']
-        
-        if old_taxon not in newtaxa:
-            if 't__' in old_taxon:
-                #Keep the old clade and update the taxonomy till the t__
-                new_clade = tmp_pkl['markers'][marker]['clade']
-                old_taxon = '|'.join(old_taxon.split('|')[:-1])
-                new_taxon = '{}|{}'.format(newtaxa[old_taxon][0][0], new_clade)
-                taxid = newtaxa[old_taxon][0][1].split('|')[-1]
-            elif 'g__' in old_taxon:
-                #Update the whole taxonomy
-                last_level = old_taxon.split('|')[-1][:3]
-                level_member = list(filter(lambda x: x.startswith(old_taxon), newtaxa.keys()))[0]
-                new_taxon = re.search( '.*{}.*\|'.format(last_level), newtaxa[level_member][0][0]).group()[:-1]
+        newtaxa_key = list(filter(lambda x: x.startswith(old_taxon), newtaxa))
+        if newtaxa_key:
+            old_taxon = newtaxa_key[0]
+            if old_taxon not in newtaxa:
+                if 't__' in old_taxon:
+                    #Keep the old clade and update the taxonomy till the t__
+                    new_clade = tmp_pkl['markers'][marker]['clade']
+                    old_taxon = '|'.join(old_taxon.split('|')[:-1])
+                    new_taxon = '{}|{}'.format(newtaxa[old_taxon][0][0], new_clade)
+                    taxid = newtaxa[old_taxon][0][1].split('|')[-1]
+                elif 'g__' in old_taxon:
+                    #Update the whole taxonomy
+                    last_level = old_taxon.split('|')[-1][:3]
+                    level_member = list(filter(lambda x: x.startswith(old_taxon), newtaxa.keys()))[0]
+                    new_taxon = re.search( '.*{}.*\|'.format(last_level), newtaxa[level_member][0][0]).group()[:-1]
+                    new_clade = new_taxon.split('|')[-1]
+                    taxid = newtaxa[level_member][0][1].split('|')[new_taxon.count('|')]
+            else:
+                new_taxon = newtaxa[old_taxon][0][0]
                 new_clade = new_taxon.split('|')[-1]
-                taxid = newtaxa[level_member][0][1].split('|')[new_taxon.count('|')]
-        else:
-            new_taxon = newtaxa[old_taxon][0][0]
-            new_clade = new_taxon.split('|')[-1]
-            taxid = newtaxa[old_taxon][0][1] .split('|')[-1]
+                taxid = newtaxa[old_taxon][0][1] .split('|')[-1]
             
         tmp_pkl['markers'][marker]['clade'] = new_clade
         tmp_pkl['markers'][marker]['taxon'] = new_taxon
