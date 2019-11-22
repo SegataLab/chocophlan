@@ -4,7 +4,7 @@ __author__ = ('Francesco Beghini (francesco.beghini@unitn.it)'
             'Nicola Segata (nicola.segata@unitn.it)')
 
 
-__date__ = '11 Apr 2018'
+__date__ = '12 Nov 2019'
 
 
 import os
@@ -12,8 +12,10 @@ import argparse as ap
 import configparser as cp
 import pickle
 import multiprocessing.dummy as dummy
+import multiprocessing as mp
 import glob
 import time
+import pandas as pd
 import bz2
 from operator import itemgetter
 from _version import __UniRef_version__
@@ -31,6 +33,11 @@ CLUSTER = 90
 def init_parse(terminating_):
     global terminating
     terminating = terminating_
+
+def get_core_genes(panproteome):
+    max_proteomes = max(panproteome.coreness)
+    coreness_threshold = 0.5 if max_proteomes == 2 else (.66 if max_proteomes == 3 else 0.75)
+    return [x.split('_')[1] for x in panproteome.loc[panproteome.coreness_perc >= coreness_threshold,].index.tolist()]
 
 class chocophlan2phylophlan:
     def __init__(self, config):
@@ -51,41 +58,41 @@ class chocophlan2phylophlan:
 
     def process(self, tax_id):
         if not terminating.is_set():
-            fp = '{}/{}/{}/{}/{}.pkl'.format(self.config['download_base_dir'], 
-                                                     self.config['relpath_panproteomes_dir'], 
-                                                        'species',
-                                                        CLUSTER,
-                                                        tax_id)
+            fp = '{}/{}/{}.txt.bz2'.format(self.config['export_dir'], 
+                                            self.config['panproteomes_stats'], 
+                                            tax_id)
             if os.path.exists(fp):
-                with bz2.open(fp,'r') as fin:
-                    panproteome = pickle.load(fin)
-                taxa_str = self.taxontree.print_full_taxonomy(tax_id)[0]
-                core_genes = Panproteome.find_core_genes(panproteome)
-                
-                d_out_core = (tax_id, taxa_str, core_genes)
-                d_out_refp = (tax_id, taxa_str, [])
-                d_out_refg = (tax_id, taxa_str, [])
+                panproteome = pd.read_csv(fp, sep = '\t', index_col=0)
+                if not panproteome.empty:
+                    taxa_str = self.taxontree.print_full_taxonomy(tax_id)[0]
+                    core_genes = get_core_genes(panproteome)
+                    
+                    d_out_core = (tax_id, taxa_str, core_genes)
+                    d_out_refp = (tax_id, taxa_str, [])
+                    d_out_refg = (tax_id, taxa_str, [])
 
-                #add first reference, non rendundant, redundant
-                d_all_prot = {'re':[], 'nr': [], 'rr':[]}
-                for p in self.taxontree.get_child_proteomes(self.taxontree.taxid_n[tax_id]):
-                    if self.proteomes[p]['isReference']:
-                        d_all_prot['re'].append(p)
-                    elif self.proteomes[p]['upi']:
-                        d_all_prot['rr'].append(p)
-                    else:
-                        d_all_prot['nr'].append(p)
+                    #add first reference, non rendundant, redundant
+                    d_all_prot = {'re':[], 'nr': [], 'rr':[]}
+                    for p in self.taxontree.get_child_proteomes(self.taxontree.taxid_n[tax_id]):
+                        if self.proteomes[p]['isReference']:
+                            d_all_prot['re'].append(p)
+                        elif self.proteomes[p]['upi']:
+                            d_all_prot['rr'].append(p)
+                        else:
+                            d_all_prot['nr'].append(p)
 
-                d_out_refp[2].extend(d_all_prot['re'] + d_all_prot['rr'] + d_all_prot['nr'])
+                    d_out_refp[2].extend(d_all_prot['re'] + d_all_prot['rr'] + d_all_prot['nr'])
 
-                try:
-                    d_out_refg[2].extend([dict(self.proteomes[p]['ncbi_ids']).get('GCSetAcc','') for p in d_out_refp[2] if p in self.proteomes and 'ncbi_ids' in self.proteomes[p]])
-                except Exception as e:
-                    utils.info(tax_id+'\n')
-                    raise e
-                    terminating.set()
+                    try:
+                        d_out_refg[2].extend([dict(self.proteomes[p]['ncbi_ids']).get('GCSetAcc','') for p in d_out_refp[2] if p in self.proteomes and 'ncbi_ids' in self.proteomes[p]])
+                    except Exception as e:
+                        utils.info(tax_id+'\n')
+                        raise e
+                        terminating.set()
 
-                return (d_out_core, d_out_refp, d_out_refg)
+                    return (d_out_core, d_out_refp, d_out_refg)
+                else:
+                    print('Panproteome {} not available'.format(fp))
             else:
                 print('Panproteome {} not available'.format(fp))
         else:
@@ -104,7 +111,7 @@ class chocophlan2phylophlan:
 
         terminating = dummy.Event()
         with dummy.Pool(initializer = init_parse, initargs = (terminating, ), processes = self.config['nproc']) as pool:
-            d = [x for x in pool.imap_unordered(self.process, reference_species, chunksize=10)]
+            d = [x for x in pool.imap_unordered(self.process, reference_species, chunksize=2)]
 
         if self.config['verbose']:
             utils.info('Done.\n')
@@ -123,13 +130,13 @@ class chocophlan2phylophlan:
         with open('{}/taxa2proteomes_cpa{}_up{}.txt'.format(self.exportpath,version.__CHOCOPhlAn_version__, version.__UniRef_version__), 'w') as t2p_out:
             with open('{}/taxa2core_cpa{}_up{}.txt'.format(self.exportpath,version.__CHOCOPhlAn_version__, version.__UniRef_version__), 'w') as t2c_out:
                 with open('{}/taxa2genomes_cpa{}_up{}.txt'.format(self.exportpath,version.__CHOCOPhlAn_version__, version.__UniRef_version__), 'w') as t2g_out:
-                    lines_t2p = ['#CHOCOPhlAn version {}\n'.format(version.__CHOCOPhlAn_version__), '#'+open('data/relnotes.txt').readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of proteomes\n']
-                    lines_t2c = ['#CHOCOPhlAn version {}\n'.format(version.__CHOCOPhlAn_version__), '#'+open('data/relnotes.txt').readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of core proteins\n']
-                    lines_t2g = ['#CHOCOPhlAn version {}\n'.format(version.__CHOCOPhlAn_version__), '#'+open('data/relnotes.txt').readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of genomes\n']
+                    lines_t2p = ['#CHOCOPhlAn version {}\n'.format(version.__CHOCOPhlAn_version__), '#'+open('{}/_relnotes.txt'.format(self.config['download_base_dir'])).readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of proteomes\n']
+                    lines_t2c = ['#CHOCOPhlAn version {}\n'.format(version.__CHOCOPhlAn_version__), '#'+open('{}/_relnotes.txt'.format(self.config['download_base_dir'])).readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of core proteins\n']
+                    lines_t2g = ['#CHOCOPhlAn version {}\n'.format(version.__CHOCOPhlAn_version__), '#'+open('{}/_relnotes.txt'.format(self.config['download_base_dir'])).readline(), '#NCBI Taxonomy id\tFull Taxonomy\tList of genomes\n']
 
-                    lines_t2p.extend(['{}\t{}\thttp://www.uniprot.org/uniprot/?query=proteome:{{}}&compress=yes&force=true&format=fasta\t{}\n'.format(tax_id, entry[0], ';'.join(entry[1])) for tax_id, entry in d_out_refp.items()])
-                    lines_t2c.extend(['{}\t{}\thttp://www.uniprot.org/uniref/UniRef90_{{}}.fasta\t{}\n'.format(tax_id, entry[0], ';'.join(entry[1])) for tax_id, entry in d_out_core.items()])
-                    lines_t2g.extend(['{}\t{}\t{}\n'.format(tax_id, entry[0], ';'.join(entry[1])) for tax_id, entry in d_out_refg.items()])
+                    lines_t2p.extend(['{}\t{}\thttp://www.uniprot.org/uniprot/?query=proteome:{{}}&compress=yes&force=true&format=fasta\t{}\n'.format(tax_id, entry[0], ';'.join(entry[1])) for tax_id, entry in self.d_out_refp.items()])
+                    lines_t2c.extend(['{}\t{}\thttp://www.uniprot.org/uniref/UniRef90_{{}}.fasta\t{}\n'.format(tax_id, entry[0], ';'.join(entry[1])) for tax_id, entry in self.d_out_core.items()])
+                    lines_t2g.extend(['{}\t{}\t{}\n'.format(tax_id, entry[0], ';'.join(entry[1])) for tax_id, entry in self.d_out_refg.items()])
 
                     t2p_out.writelines(lines_t2p)
                     t2c_out.writelines(lines_t2c)
