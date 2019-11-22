@@ -29,6 +29,7 @@ from collections import Counter
 from operator import itemgetter
 from tempfile import NamedTemporaryFile
 import gffutils
+import pybedtools
 import pandas as pd
 from Bio import SeqIO
 from Bio.Alphabet import DNAAlphabet
@@ -52,13 +53,20 @@ ch = logging.FileHandler('CHOCOPhlAn_export2humann_{}.log'.format(datetime.datet
 ch.setLevel(logging.INFO)
 log.addHandler(ch)
 
+def init_parse(terminating_):
+    global terminating
+    terminating = terminating_
+
 def get_gca(upid):
     return dict(shared_variables.proteomes.get(upid,{}).get('ncbi_ids',[(None,None)])).get('GCSetAcc',None)
 
 def initialize (config):
     if config['verbose']:
         utils.info('Loading pickled databases...')
-    resource.setrlimit(resource.RLIMIT_NOFILE, (131072, 131072))
+    try:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (131072, 131072))
+    except Exception as e:
+        print(e)
 
     shared_variables.config = config
     shared_variables.func_annot = {}
@@ -237,49 +245,47 @@ def export_panproteome_centroid(species_id):
             pickle.dump(func_annot, functional_annot)
 
 def get_genes_coordinates(item):
-    gca, t = item
-    coords = []
-    seqs_dir = '{}/{}/{}/{}/'.format(shared_variables.config['download_base_dir'], shared_variables.config['relpath_genomes'], gca[4:][:6], gca[4:][6:])
-    if not os.path.exists(seqs_dir):
-        log.error('No genome and GFF annotations downloaded for {}'.format(gca))
-        return None
-    try:
-        in_seq_file = glob.glob(seqs_dir+'*.fna.gz')[0]
-        in_gff_file = glob.glob(seqs_dir+'*.gff.gz')[0]
-    except Exception as e:
-        log.error('Missing genome or GFF annotation for {}'.format(gca))
-        return None
+    if not terminating.is_set():
+        gca, t = item
+        coords = []
+        seqs_dir = '{}/{}/{}/{}/'.format(shared_variables.config['download_base_dir'], shared_variables.config['relpath_genomes'], gca[4:][:6], gca[4:][6:])
+        if not os.path.exists(seqs_dir):
+            log.error('No genome and GFF annotations downloaded for {}'.format(gca))
+            return None
+        try:
+            in_seq_file = glob.glob(seqs_dir+'*.fna.gz')[0]
+            in_gff_file = glob.glob(seqs_dir+'*.gff.gz')[0]
+        except Exception as e:
+            log.error('Missing genome or GFF annotation for {}'.format(gca))
+            return None
 
-    with NamedTemporaryFile(dir='/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/chocophlan/tmp/') as fna_decompressed:
-        gff_db = gffutils.create_db(in_gff_file, ':memory:', id_spec='locus_tag', merge_strategy="merge")
-
-        with gzip.open(in_seq_file, 'rb') as fna_gz, open(fna_decompressed.name, 'wb') as fna_out:
-            shutil.copyfileobj(fna_gz, fna_out)
-
-        with Fasta(fna_decompressed.name) as fna:
-            failed = []
-            for NR90, gene_names in t.items():
-                found = False
-                for gene_name in gene_names:
-                    c = gff_db.conn.cursor()
-                    try:
-                        _ = c.execute('{} WHERE featuretype == "gene" AND attributes LIKE ?'.format(gffutils.constants._SELECT), ('%"{}"%'.format(gene_name),))
-                    except Exception as ex:
-                        log.info("{} WHERE featuretype == 'gene' AND attributes LIKE '%\"{}\"%'".format(gffutils.constants._SELECT, gene_name))
-                    results = c.fetchone()
-                    if results is not None:
-                        feature = gffutils.Feature(**results)
-                        found = True
-                        break
-
-                if found:  
-                    coords.append((NR90, gene_name, gca, feature.chrom, str(feature.start), str(feature.end),))
-                else:
-                    failed.append(str(gene_name))
-
-    if not len(failed): failed = None
-    [ gff_db.delete(x) for x in gff_db.all_features() ]
-    return (coords, failed, in_seq_file, )
+        gff = pybedtools.BedTool(in_gff_file).filter(lambda x: x[2] == 'gene')
+        all_features = {'{}:{}-{}'.format(x.chrom, x.start, x.end):x.fields[-1] for x in gff.as_intervalfile()}
+        all_genes = {dict(y.split('=') for y in x.split(';'))['Name']:k for k,x in all_features.items()}
+        try:
+            all_locus = {dict(y.split('=') for y in x.split(';'))['locus_tag']:k for k, x in all_features.items() if 'locus_tag' in x}
+        except Exception as e:
+            print(gca)
+            raise e
+        failed = []
+        for NR90, gene_names in t:
+            results_genes = set(gene_names).intersection(all_genes)
+            results_locus = set(gene_names).intersection(all_locus)
+            results = None
+            if results_genes:
+                results = results_genes.pop()
+                entry = all_genes[results]
+            elif results_locus:
+                results = results_locus.pop()
+                entry = all_locus[results]
+                
+            if results is not None:
+                chrom, start, end = re.split(':|-', entry)
+                coords.append((NR90, results, gca, chrom, start, end,))
+            else:
+                failed.append(str(NR90))
+        if not len(failed): failed = None
+        return (coords, failed, in_seq_file, )
 
 def get_proteome_type(upid):
     isref = shared_variables.proteomes[upid]['isReference']
@@ -301,31 +307,35 @@ def export_panphlan_panproteome(species_id):
     low_lvls = [c.tax_id for c in shared_variables.taxontree.taxid_n[species_id].find_clades()]
     gc = {}
     print("Started "+str(species_id))
-    def ext_gene_names(ext_item):
-            gc = {}
-            pangene, (upkb_id, upid, count) = ext_item
-            gca = dict(shared_variables.proteomes[upid].get('ncbi_ids',[(None,None)])).get('GCSetAcc',None)
-            if gca:
-                is_uparc = upkb_id.startswith('UPI')
-                upkb_entry = shared_variables.uniprot[upkb_id] if not is_uparc else shared_variables.uniparc[upkb_id]
-                if is_uparc:
-                    gene_names = tuple(x[2] for x in upkb_entry[0] if x[1] in low_lvls)
-                else:
-                    gene_names = tuple(x[1] for x in upkb_entry[0] )
-                gca = gca.split('.')[0]
-                if len(gca) and len(gene_names):
-                    if gca not in gc:
-                        gc[gca] = {}
-                    if pangene not in gc[gca]:
-                        gc[gca][pangene] = set()
-                    gc[gca][pangene].update(gene_names)
-            return gc
 
-    for row in panproteome.itertuples():
-        pangene = 'UniRef90_'+row.Index.split('_')[1]
-        genes = list((pangene, x.split(':')) for x in row.copy_number.split(';'))
-        sorted_genes = list(zip(*sorted(zip(genes, list(map(get_proteome_type, [k[1][1] for k in genes]))), key=lambda x:x[1])))[0]
-        [gc.setdefault(k, {}).setdefault(w, set()).update(z) for x in map(ext_gene_names, sorted_genes[:1000]) for k,v in x.items() for w,z in v.items()]
+    def ext_gene_names(ext_item):
+        if not terminating.is_set():
+            (pangene, upkb_id), upids = ext_item
+            gcas = []
+            is_uparc = upkb_id.startswith('UPI')
+            upkb_entry = shared_variables.uniprot[upkb_id] if not is_uparc else shared_variables.uniparc[upkb_id]
+            if is_uparc:
+                gene_names = tuple(x[2] for x in upkb_entry[0] if x[1] in low_lvls)
+            else:
+                gene_names = tuple(x[1] for x in upkb_entry[0] )
+            for upid in upids:
+                gca = dict(shared_variables.proteomes[upid].get('ncbi_ids',[(None,None)])).get('GCSetAcc',None)
+                if gca: gca = gca.split('.')[0]
+                gcas.append(gca)
+            
+            return (pangene, gene_names, gcas)
+    
+    genes = []
+    [ genes.extend(list(('UniRef90_'+row.Index.split('_')[1], x.split(':')) for x in row.copy_number.split(';'))) for row in panproteome.itertuples() ]
+        # sorted_genes = list(zip(*sorted(zip(genes, list(map(get_proteome_type, [k[1][1] for k in genes]))), key=lambda x:x[1])))[0]
+    
+    kk = {}
+    [kk.setdefault((value[0], value[1][0]), []).extend([value[1][1]]) for value in genes ]
+    terminating = dummy.Event()
+    with dummy.Pool(initializer = init_parse, initargs = (terminating, ), processes=100) as pool:
+        d = [x for x in pool.imap_unordered(ext_gene_names, kk.items(), chunksize=10)]
+
+    [ gc.setdefault(gca, []).append((pangene,gene_names)) for pangene, gene_names, gcas in d for gca in gcas if gca is not None]
 
 
     if len(gc):
@@ -333,8 +343,9 @@ def export_panphlan_panproteome(species_id):
         os.makedirs('{}/{}/{}/panphlan_{}_genomes'.format(shared_variables.config['export_dir'], shared_variables.config['exportpath_panphlan'], species_id, species_id), exist_ok=True)
         # nproc = min(10,len(gc))
         # chunksize = 1 if nproc == len(gc) else round(nproc/len(gc))+1
-        # with dummy.Pool(processes=nproc) as pool_t:
-        res = list(map(get_genes_coordinates, gc.items()))
+        terminating = dummy.Event()
+        with dummy.Pool(initializer = init_parse, initargs = (terminating, ), processes=100) as pool_t:
+            res = [x for x in pool_t.imap_unordered(get_genes_coordinates, gc.items(), chunksize=10)]
 
         failed, pangenes_annot, gca_path = [], [], []
         if res:
@@ -348,16 +359,18 @@ def export_panphlan_panproteome(species_id):
 
         for in_seq_file in gca_path:
             gca =  re.search(r'(GCA_[0-9]{9})', in_seq_file).group(0)
+            in_seq_file = os.path.abspath(in_seq_file)
+            to = os.path.abspath('{}/{}/{}/panphlan_{}_genomes/{}.fna.gz'.format(shared_variables.config['export_dir'], shared_variables.config['exportpath_panphlan'], species_id, species_id, gca))
             try:
-                os.symlink(in_seq_file, '{}/{}/{}/panphlan_{}_genomes/{}.fna.gz'.format(shared_variables.config['export_dir'], shared_variables.config['exportpath_panphlan'], species_id, species_id, gca))
+                os.symlink(in_seq_file, to)
             except OSError as e:
                 if e.errno == errno.EEXIST:
-                    os.remove('{}/{}/{}/panphlan_{}_genomes/{}.fna.gz'.format(shared_variables.config['export_dir'], shared_variables.config['exportpath_panphlan'], species_id, species_id, gca))
-                    os.symlink(in_seq_file, '{}/{}/{}/panphlan_{}_genomes/{}.fna.gz'.format(shared_variables.config['export_dir'], shared_variables.config['exportpath_panphlan'], species_id, species_id, gca))
+                    os.remove(to)
+                    os.symlink(in_seq_file, to)
 
 
         if failed is not None and not all(x is None for x in failed):
-            failed = list(filter(None, failed))[0]
+            failed = set(list(filter(None, failed))[0])
             log.warning("[{}]\tFailed to extract gene coordinates for the following pangene {}".format(species_id, (','.join(failed))))
 
         if len(pangenes_annot):
@@ -404,7 +417,7 @@ def run_all(config):
             with bz2.BZ2File(s) as p_fa:
                 functional_annot.write('NR90\tNR50\tGO\tKO\tKEGG\tPfam\tEC\teggNOG\n')
                 functional_annot.write('\n'.join( '{}\t{}'.format( x[0], '\t'.join(x[1])) for x in dict(pickle.load(p_fa)).items() ) )
-    
+
     with mp.Pool(processes = 10, maxtasksperchild = 100) as pll:
         res = [ _ for _ in pll.imap_unordered(export_genome_annotation, shared_variables.proteomes, chunksize=1)]
 
