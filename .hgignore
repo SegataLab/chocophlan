@@ -6,3 +6,9 @@ eval/
 export*/
 genom_annot/
 data*/
+*.log
+*.pyc
+.vscode/*
+*ipynb*
+*xlsx*
+curated_markers/

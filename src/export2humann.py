@@ -152,9 +152,25 @@ def get_uniref90_nucl_seq(item):
     [ gff_db.delete(x) for x in gff_db.all_features() ]
     return (nucls, failed, )
 
+
 def export_panproteome_centroid(species_id):
     try:
-        panproteome = pd.read_csv('{}/{}/{}.txt.bz2'.format(shared_variables.config['export_dir'], shared_variables.config['panproteomes_stats'], species_id), sep = '\t', index_col = 0)
+        if shared_variables.taxontree.taxid_n[species_id].rank == 'species':
+            panproteome = pd.read_csv('{}/{}/{}.txt.bz2'.format(shared_variables.config['export_dir'], shared_variables.config['panproteomes_stats'], species_id), sep = '\t', index_col = 0)
+        else:
+            if species_id == 235:
+                taxids = [235,29459,29461,36855,236,120577,120576,29460,1218315,981386,444163,520449,437701,520448,693750,693748,437685,1160234,1169234,1160235,437670,1169233,437687,437671,437663,437684,1341688,1891098,1867845,1149952,1844051,1885919]
+            else:
+                taxids = [clade.tax_id for clade in shared_variables.taxontree.taxid_n[species_id].find_clades()
+                        if os.path.exists('{}/{}/species/90/{}.pkl'.format(shared_variables.config['download_base_dir'], shared_variables.config['relpath_panproteomes_dir'], clade.tax_id)) and 
+                        not clade.is_low_quality
+                    ]
+            low_lvls = set(c.tax_id for t in taxids for c in shared_variables.taxontree.taxid_n[t].find_clades())
+            merged_pangenome = pd.DataFrame()
+            for t in taxids:
+                panproteome = pd.read_csv('{}/{}/{}.txt.bz2'.format(shared_variables.config['export_dir'], shared_variables.config['panproteomes_stats'], t), sep = '\t', index_col = 0)
+                merged_pangenome = pd.concat([merged_pangenome, panproteome])
+            panproteome = merged_pangenome
     except:
         log.error('[{}]\tCannot load panproteome.'.format(species_id))
         return 
@@ -251,13 +267,13 @@ def get_genes_coordinates(item):
         seqs_dir = '{}/{}/{}/{}/'.format(shared_variables.config['download_base_dir'], shared_variables.config['relpath_genomes'], gca[4:][:6], gca[4:][6:])
         if not os.path.exists(seqs_dir):
             log.error('No genome and GFF annotations downloaded for {}'.format(gca))
-            return None
+            return (None,None,None, )
         try:
             in_seq_file = glob.glob(seqs_dir+'*.fna.gz')[0]
             in_gff_file = glob.glob(seqs_dir+'*.gff.gz')[0]
         except Exception as e:
             log.error('Missing genome or GFF annotation for {}'.format(gca))
-            return None
+            return (None,None,None, )
 
         gff = pybedtools.BedTool(in_gff_file).filter(lambda x: x[2] == 'gene')
         all_features = {'{}:{}-{}'.format(x.chrom, x.start, x.end):x.fields[-1] for x in gff.as_intervalfile()}
@@ -341,8 +357,6 @@ def export_panphlan_panproteome(species_id):
     if len(gc):
         os.makedirs('{}/{}/{}'.format(shared_variables.config['export_dir'], shared_variables.config['exportpath_panphlan'], species_id), exist_ok=True)
         os.makedirs('{}/{}/{}/panphlan_{}_genomes'.format(shared_variables.config['export_dir'], shared_variables.config['exportpath_panphlan'], species_id, species_id), exist_ok=True)
-        # nproc = min(10,len(gc))
-        # chunksize = 1 if nproc == len(gc) else round(nproc/len(gc))+1
         terminating = dummy.Event()
         with dummy.Pool(initializer = init_parse, initargs = (terminating, ), processes=100) as pool_t:
             res = [x for x in pool_t.imap_unordered(get_genes_coordinates, gc.items(), chunksize=10)]
@@ -357,7 +371,7 @@ def export_panphlan_panproteome(species_id):
                 return
             pangenes_annot = list(itertools.chain.from_iterable(filter(None,pangenes_annot)))
 
-        for in_seq_file in gca_path:
+        for in_seq_file in filter(None, gca_path):
             gca =  re.search(r'(GCA_[0-9]{9})', in_seq_file).group(0)
             in_seq_file = os.path.abspath(in_seq_file)
             to = os.path.abspath('{}/{}/{}/panphlan_{}_genomes/{}.fna.gz'.format(shared_variables.config['export_dir'], shared_variables.config['exportpath_panphlan'], species_id, species_id, gca))
@@ -411,7 +425,7 @@ def run_all(config):
     with mp.Pool(processes = 40, maxtasksperchild = 70) as pll:
         res = [_ for _ in pll.imap_unordered(export_panproteome_centroid, set(int(s[0].split('|')[-1]) for s in mpa_pkl['taxonomy'].values()), chunksize=1)]
 
-    OUTFILE_PREFIX = 'HUMAnN2_CHOCOPhlAn_{}'.format(version.__CHOCOPhlAn_version__)
+    OUTFILE_PREFIX = 'HUMAnN2_{}_CHOCOPhlAn_{}'.format(version.__MetaPhlAn2_db_version__, version.__CHOCOPhlAn_version__)
     with bz2.open('{}/{}/{}_functional_annotation_mapping.tsv.bz2'.format(config['export_dir'], config['exportpath_humann2'],OUTFILE_PREFIX), 'wt') as functional_annot:
         for s in glob.glob('/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/chocophlan/export_201901/humann2/functional_annot/*.txt.bz2'):
             with bz2.BZ2File(s) as p_fa:

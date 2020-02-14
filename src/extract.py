@@ -230,17 +230,24 @@ class Nodes:
         for c in clade.clades:
             self.get_leave_ids(c, recur=True)
 
-    def go_up_to_species(self, taxid):
+    def go_up_to_species(self, taxid, up_to_group=False):
         if taxid in self.taxid_n and taxid > 1:
             rank = self.taxid_n[taxid].rank
             rank_index = self.reduced_tax_levels.index(rank) if rank in self.reduced_tax_levels else float('infinity')
             if rank_index > self.reduced_tax_levels.index('species'):
-                father = self.taxid_n[taxid].parent_tax_id
-                return self.go_up_to_species(father)
+                if up_to_group and rank == 'speciesgroup':
+                    return taxid
+                else:
+                    father = self.taxid_n[taxid].parent_tax_id
+                    return self.go_up_to_species(father, up_to_group)
             elif rank_index == self.reduced_tax_levels.index('species'):
+                if up_to_group:
+                    father = self.taxid_n[taxid].parent_tax_id
+                    if self.taxid_n[father].rank == 'speciessubgroup':
+                        return self.go_up_to_species(father, up_to_group)
+                    if self.taxid_n[father].rank == 'speciesgroup':
+                        return father
                 return taxid
-            else:
-                return None
 
     def get_child_proteomes(self, clade):
         if clade.initially_terminal and hasattr(clade,'proteomes'):
@@ -250,19 +257,25 @@ class Nodes:
             pp.update(self.get_child_proteomes(c))
         return pp
      
-    def print_full_taxonomy(self, tax_id):
+    def print_full_taxonomy(self, tax_id, include_groups=False):
         ranks2code = {'superkingdom': 'k', 'phylum': 'p', 'class': 'c',
-                      'order': 'o', 'family': 'f', 'genus': 'g', 'species': 's', 'taxon': 't', 'sgb' : 't'}
+                      'order': 'o', 'family': 'f', 'genus': 'g', 'species': 's','speciesgroup': 's', 'taxon': 't', 'sgb' : 't'}
         order = ('k', 'p', 'c', 'o', 'f', 'g', 's', 't')
 
         # path = [p for p in self.tree.root.get_path(self.taxid_n[tax_id]) if p.rank in ranks2code or (p.rank=='norank')]
         parent_tax_id = tax_id
         path = []
+        if self.taxid_n[tax_id].rank == 'speciesgroup':
+            path.append(self.taxid_n[tax_id])
+            parent_tax_id = self.taxid_n[tax_id].parent_tax_id
 
         while(parent_tax_id != 1):
             curr_tax = self.taxid_n[parent_tax_id]
             if curr_tax.rank in ranks2code or (curr_tax.rank=='norank'):
-                path.append(curr_tax)
+                if curr_tax.rank == 'speciesgroup' and not include_groups:
+                    pass
+                else:
+                    path.append(curr_tax)
             parent_tax_id = curr_tax.parent_tax_id
 
         path.reverse()

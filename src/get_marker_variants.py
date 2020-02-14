@@ -12,6 +12,7 @@ import glob
 import os
 import re
 import errno
+import gzip
 from Bio import SeqIO
 from functools import partial
 from pyfaidx import Fasta
@@ -115,8 +116,8 @@ def get_ffn_from_fna(genome, panphlan_csv):
         genome_id = re.search('GCA_[0-9]{9}', genome)
         panphlan_csv = panphlan_csv.loc[panphlan_csv.gca == genome_id.group(),]
         with Fasta(a.seqfn, duplicate_action="first", key_function = lambda x: x.split('(')[0]) as ffn_in, open(genome.replace('fna','ffn')[:-3], 'wt') as ffn_out:
-            ids_to_extract = set('{}:{}-{}'.format(x.contig, x.start-1, x.end) for x in panphlan_csv.itertuples())
-            ids_to_extract = ids_to_extract.intersection(ffn_in.keys())
+            ids_to_extract = set('{}:{}-{}'.format(x.contig, x.start, x.end) for x in panphlan_csv.itertuples())
+            ids_to_extract = ids_to_extract.intersection(set(ffn_in.keys()))
             ffn_out.write('\n'.join(
                 ['>{}\n{}'.format(x, ffn_in[x]) for x in ids_to_extract]
             ))
@@ -241,15 +242,13 @@ def get_mpa_variants_from_uc(taxid, all_markers, contig2ass, config):
             log.info('No variants found for species {}'.format(taxid))
     else:
         log.info('Species {} with no standard marker name'.format(taxid))
-    
+     
     
 
 def run_all(config):
     os.makedirs('{0}/{1}/panproteome_variants'.format(config['export_dir'],config['exportpath_humann2']), exist_ok=True)
     os.makedirs('{0}/{1}/{2}_variants/marker_variants'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX), exist_ok=True)
-    mpa_pkl = pickle.load(bz2.open('{}/{}/{}/{}.pkl'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX, OUTFILE_PREFIX)))
-    all_markers = [x[1:].strip().split() for x in bz2.open('{}/{}/{}/{}.fna
-    .bz2'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX, OUTFILE_PREFIX), 'rt') if x[0] == '>' ]
+    all_markers = [x[1:].strip().split() for x in bz2.open('{}/{}/{}/{}.fna.bz2'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX, OUTFILE_PREFIX), 'rt') if x[0] == '>' ]
 
     all_species_mpa = set(marker[0].split('_')[0] for marker in all_markers)
     all_species_hnn = set(x.split('/')[-1].split('.')[0] for x in glob.iglob(os.path.join(config['export_dir'],config['exportpath_humann2'],'panproteomes_fna','*')))

@@ -30,6 +30,7 @@ import numpy as np
 import os
 import pandas as pd
 import pickle
+import pybedtools
 import random
 import re
 import resource
@@ -98,7 +99,7 @@ class export_to_metaphlan2:
 
         if config['verbose']:
             utils.info('Loading pickled databases...')
-        self.db = {'taxonomy' : {}, 'markers': {}}
+        self.db = {'taxonomy' : {}, 'markers': {}, 'merged_taxon' : {}}
         self.config = config
         self.uniprot = {}
         self.uniparc = {}
@@ -136,7 +137,8 @@ class export_to_metaphlan2:
                         core_uniqueness_90_threshold = float('Inf'),
                         core_uniqueness_50_threshold = float('Inf'),
                         external_genomes_90_threshold = float('Inf'),
-                        external_genomes_50_threshold = float('Inf')
+                        external_genomes_50_threshold = float('Inf'),
+                        agg_fun = sum
                     ):
         pc_coreness_threshold = (core_coreness_threshold * panproteome['number_proteomes'])/100
 
@@ -149,8 +151,8 @@ class export_to_metaphlan2:
                         'coreness': panproteome['members'][core]['coreness'],
                         'uniqueness_90' : panproteome['members'][core]['uniqueness_nosp']['90_90'],
                         'uniqueness_50' : panproteome['members'][core]['uniqueness_nosp']['90_50'],
-                        'external_genomes_90' : sum((panproteome['members'][core]['external_genomes']['90_90']-self.taxa_to_remove).values()),
-                        'external_genomes_50' : sum((panproteome['members'][core]['external_genomes']['90_50']-self.taxa_to_remove).values())}
+                        'external_genomes_90' : agg_fun((panproteome['members'][core]['external_genomes']['90_90']-self.taxa_to_remove).values()),
+                        'external_genomes_50' : agg_fun((panproteome['members'][core]['external_genomes']['90_50']-self.taxa_to_remove).values())}
                         for core in cores_to_use if len(core)
                             if panproteome['members'][core]['uniqueness_nosp']['90_90'] <= core_uniqueness_90_threshold 
                             and panproteome['members'][core]['uniqueness_nosp']['90_50'] <= core_uniqueness_50_threshold
@@ -252,28 +254,6 @@ class export_to_metaphlan2:
         markers = self.extract_markers(panproteome, 50, 5, float('Inf'), 15, 15)
         return markers
 
-    def get_markers_for_species_in_group(self, panproteome):
-        group_id = self.taxontree.taxid_n[panproteome['tax_id']].parent_tax_id
-        
-        group = self.taxontree.taxid_n[group_id]
-        same_group_ids = [sp.tax_id for sp in group.find_elements()]
-
-        genus = self.taxontree.taxid_n[group.parent_tax_id]
-        same_genus_ids = [sp.tax_id for sp in genus.find_elements()]
-
-        for pangene in panproteome['members']:
-            if len(pangene):
-                for cluster in ['90_90','90_50']:
-                    external_species_nosp = set(panproteome['members'][pangene]['external_species_nosp'][cluster]).difference(same_group_ids)
-                    
-                    ids_to_remove = set(panproteome['members'][pangene]['external_genomes'][cluster].keys()).intersection(same_group_ids)
-                    [panproteome['members'][pangene]['external_genomes'][cluster].pop(taxid) for taxid in ids_to_remove]
-
-                    panproteome['members'][pangene]['uniqueness_nosp'][cluster] = len(external_species_nosp)
-
-        markers = self.extract_markers(panproteome, 50, 20, 20)
-        return markers
-
     '''
         Create marker starting from UniRef90 associated gene DNA sequence
     '''
@@ -282,73 +262,79 @@ class export_to_metaphlan2:
         db = {'taxonomy' : {}, 'markers': {}}
 
         seqs_dir = '{}/{}/{}/{}/'.format(self.config['download_base_dir'], self.config['relpath_genomes'], gca[4:][:6], gca[4:][6:])
-        clade = self.taxontree.taxid_n[self.taxontree.go_up_to_species(taxid)]
+        if self.taxontree.taxid_n[taxid].rank == 'speciesgroup':
+            clade = self.taxontree.taxid_n[taxid]
+        else:
+            clade = self.taxontree.taxid_n[self.taxontree.go_up_to_species(taxid)]
         if not os.path.exists(seqs_dir):
             self.log.error('[{}]\tNo genome and GFF annotations downloaded for {}'.format(taxid, gca))
             return [None, None, None]
         try:
-            in_seq_file = glob.glob(seqs_dir+'*.fna.gz')[0]
-            in_gff_file = glob.glob(seqs_dir+'*.gff.gz')[0]
+            in_seq_file = glob.glob(seqs_dir+'*.fna.gz')[-1]
+            in_gff_file = glob.glob(seqs_dir+'*.gff.gz')[-1]
         except Exception as e:
             self.log.error('[{}]\tMissing genome or GFF annotation for {}'.format(taxid, gca))
             return [None, None, None]
 
         with NamedTemporaryFile(dir='/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/chocophlan/tmp/') as fna_decompressed:
-            gff_db = gffutils.create_db(in_gff_file, ':memory:', id_spec='locus_tag', merge_strategy="merge")
             with gzip.open(in_seq_file, 'rb') as fna_gz, open(fna_decompressed.name, 'wb') as fna_out:
                 shutil.copyfileobj(fna_gz, fna_out)
-
-            nucls = []
+            if os.path.exists(in_gff_file+'.genes'): os.unlink(in_gff_file+'.genes')
+            gff = pybedtools.BedTool(in_gff_file).filter(lambda x: x[2] == 'gene').saveas(in_gff_file+'.genes')
+            all_features = {'{}:{}-{}'.format(x.chrom, x.start, x.end):x.fields[-1] for x in gff.as_intervalfile()}
+            gff = pybedtools.BedTool(in_gff_file+'.genes')
+            try:
+                seqs = gff.sequence(fi=fna_decompressed.name, s=True, split=True)
+            except:
+                print((gca, taxid, taxonomy))
+            all_genes = {dict(y.split('=') for y in x.split(';'))['Name']:k for k,x in all_features.items()}
+            try:
+                all_locus = {dict(y.split('=') for y in x.split(';'))['locus_tag']:k for k, x in all_features.items() if 'locus_tag' in x}
+            except Exception as e:
+                all_locus = {}
             failed = []
+            nucls = []
             taxonomy_db = '{}|t__{}'.format(taxonomy[0], gca)
-            for core, gene_names, ext_species in t:
-                # if type(gene_names) == tuple:
-                #     gene_names = [x[1] for x in gene_names]
-                # else:
-                #     gene_names = (gene_names, )
+            try:
+                with Fasta(seqs.seqfn, duplicate_action="first", key_function = lambda x: x.split('(')[0]) as ffn_in:
+                    for core, gene_names, ext_species in t:
+                        results_genes = set(gene_names).intersection(all_genes)
+                        results_locus = set(gene_names).intersection(all_locus)
+                        results = None
+                        if results_genes:
+                            results = results_genes.pop()
+                            entry = all_genes[results]
+                        elif results_locus:
+                            results = results_locus.pop()
+                            entry = all_locus[results]
+                        
+                        if results is not None:
+                            mpa_marker = '{}__{}__{}'.format(taxid, core, results)
+                            nuc_seq = ffn_in[entry]
+                            record = '>{} {}\n{}\n'.format(mpa_marker, 'UniRef90_{};{};{}'.format(core, taxonomy[0], gca), nuc_seq)
+                            nucls.append(record)
+                            if taxonomy_db not in db['taxonomy']:
+                                db['taxonomy'][taxonomy_db] = (taxonomy[1], sum(contig.rlen for contig in ffn_in.faidx.index.values()),)
 
-                found = False
-                for gene_name in gene_names:
-                    c = gff_db.conn.cursor()
-                    try:
-                        _ = c.execute('{} WHERE featuretype == "gene" AND attributes LIKE ?'.format(gffutils.constants._SELECT), ('%"{}"%'.format(gene_name),))
-                    except Exception as ex:
-                        self.log.info('cursor for {}'.format(taxid))
-                        self.log.info("{} WHERE featuretype == 'gene' AND attributes LIKE '%\"{}\"%'".format(gffutils.constants._SELECT, gene_name))
-                    results = c.fetchone()
-                    if results is not None:
-                        feature = gffutils.Feature(**results)
-                        found = True
-                        break
-
-                if found:
-                    with Fasta(fna_decompressed.name) as fna:
-                        try:
-                            nuc_seq = feature.sequence(fna).upper()
-                        except Exception as e:
-                            print(taxid)
-                            raise e
-                        mpa_marker = '{}__{}__{}'.format(taxid, core, feature['Name'][0].replace('|','_'))
-                        record = '>{} {}\n{}\n'.format(mpa_marker, 'UniRef90_{};{};{}'.format(core, taxonomy[0], gca), nuc_seq)
-                        nucls.append(record)
-                        if taxonomy_db not in db['taxonomy']:
-                            db['taxonomy'][taxonomy_db] = (taxonomy[1], sum(contig.rlen for contig in fna.faidx.index.values()),)
-                        ext_genomes = []
-                        for x in ext_species:
-                            cp = self.taxontree.get_child_proteomes(self.taxontree.taxid_n[x])
-                            if len(cp):
-                                ext_genomes.append(dict(self.proteomes[next(iter(cp))].get('ncbi_ids',{})).get('GCSetAcc','').split('.')[0])
-
-                        db['markers'][mpa_marker] = { 'clade': '{}__{}'.format(clade.rank[0], clade.name),
-                                                    'ext': list(set(ext_genomes)),
-                                                    'len': len(nuc_seq),
-                                                    'score': 0,
-                                                    'taxon': taxonomy[0]
-                                                    }
-                else:
-                    failed.append(str(core))
+                            ext_genomes = set()
+                            for x in set(ext_species):
+                                cp = self.taxontree.get_child_proteomes(self.taxontree.taxid_n[x])
+                                if len(cp):
+                                    e = dict(self.proteomes[next(iter(cp))].get('ncbi_ids',{})).get('GCSetAcc','').split('.')[0]
+                                    if len(e):
+                                        ext_genomes.add(e)
+                            db['markers'][mpa_marker] = { 'clade': '{}__{}'.format(clade.rank[0], clade.name),
+                                                        'ext': list(set(ext_genomes)),
+                                                        'len': len(nuc_seq),
+                                                        'score': 0,
+                                                        'taxon': taxonomy[0]
+                                                        }
+                        else:
+                            failed.append(str(core))
+            except Exception as e:
+                print(e)
+                print(gca)
         if not len(failed): failed = None
-        [ gff_db.delete(x) for x in gff_db.all_features() ]
         return (nucls, db, failed, )
 
 
@@ -421,9 +407,6 @@ class export_to_metaphlan2:
             possible_markers = self.extract_markers(panproteome, 50, 14, 10)
             if not possible_markers.empty:
                 possible_markers = possible_markers[:150]
-        elif pp_tax_id in [294      #Pseudomonas fluorescens
-        ]:
-            possible_markers = self.get_markers_for_species_in_group(panproteome)
         else:
             possible_markers = self.get_p_markers(panproteome)
         gc = {}
@@ -431,7 +414,7 @@ class export_to_metaphlan2:
         res = []
         failed_uniprot_repr = []
         for np90_cluster in possible_markers.index:
-            for (upkb_id, upid), count in panproteome['members'][np90_cluster]['copy_number'].items():
+            for (upkb_id, upid), _ in panproteome['members'][np90_cluster]['copy_number'].items():
                 is_uparc = upkb_id.startswith('UPI')
                 upkb_entry = self.uniprot[upkb_id] if not is_uparc else self.uniparc[upkb_id]
                 if is_uparc:
@@ -442,17 +425,6 @@ class export_to_metaphlan2:
                 if not gca:
                     continue
                 gca = gca.split('.')[0]
-                # gca, marker = None, None
-                # np90_members = self.uniref90_info_map['UniRef90_{}'.format(np90_cluster)][0]
-                # # If UniRef90 has member from species or below, use it
-                # upkb_from_species = list(filter(lambda x:int(x[1]) in low_lvls, np90_members))
-                # has_repr = any(x[2] for x in upkb_from_species)
-                # if upkb_from_species:
-                #     for species_list, repr_flag in [(upkb_from_species,has_repr), (upkb_from_species,not has_repr),
-                #                                     (np90_members,has_repr), (np90_members,not has_repr)]:
-                #         gca, gene_names  = self.get_genename_from_gca(species_list,repr_flag)
-                #         if gca is not None and gene_names is not None:
-                #             break
                 if gca and gene_names:
                     if (gca, panproteome['tax_id'], taxonomy) not in gc:
                         gc[(gca, panproteome['tax_id'], taxonomy)] = set()
@@ -494,7 +466,7 @@ class export_to_metaphlan2:
             self.log.warning("{}: Failed to find features of markers {}".format(pp_tax_id, (','.join(failed))))
 
         if len(markers_nucls) > 9:
-            with open('{}/{}/markers_fasta/{}.fna'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']), 'wt') as fasta_markers:
+            with bz2.open('{}/{}/markers_fasta/{}.fna.bz2'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']), 'wt') as fasta_markers:
                 [fasta_markers.write(marker.format('fasta')) for marker in markers_nucls]
         elif len(markers_nucls) == 0:
             self.log.warning("[{}]\tNo nucleotide sequences extracted".format(pp_tax_id))
@@ -502,10 +474,130 @@ class export_to_metaphlan2:
             pickle.dump(gc, open('{}/{}/markers_info/{}.txt'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']), 'wb'))
         possible_markers.to_csv('{}/{}/markers_stats/{}.txt'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], panproteome['tax_id']))
 
+    def merge_panproteomes(self, merged_pangenome, panproteome, low_lvls):
+        merged_pangenome['number_proteomes'] += panproteome['number_proteomes']
+        merged_pangenome['merged_panproteomes'].append(panproteome['tax_id'])
+        for k, v in panproteome['members'].items():
+            if k:
+                if k not in merged_pangenome['members']:
+                    merged_pangenome['members'][k] = { 'coreness': 0,
+                                                                    'uniqueness': {'90_90':0, '90_50':0},
+                                                                    'uniqueness_nosp' :  {'90_90':0, '90_50':0},
+                                                                    'copy_number': Counter(),
+                                                                    'proteomes_present': set(),
+                                                                    'external_hits' :  {'90_90':set(), '90_50':set()},
+                                                                    'external_genomes' :  {'90_90':Counter(), '90_50':Counter()},
+                                                                    'external_species' :  {'90_90':set(), '90_50':set()},
+                                                                    'external_species_nosp' :  {'90_90':set(), '90_50':set()}
+                                                                    }
+                merged_pangenome['members'][k]['coreness'] += v['coreness']
+                merged_pangenome['members'][k]['copy_number'].update(v['copy_number'])
+                merged_pangenome['members'][k]['proteomes_present'].update(v['proteomes_present'])
+
+                merged_pangenome['members'][k]['external_hits']['90_90'].update( [ (x[0], int(x[1]), x[2]) for x in v['external_hits']['90_90'] if int(x[1]) not in low_lvls ])
+                merged_pangenome['members'][k]['external_hits']['90_50'].update( [ (x[0], int(x[1]), x[2]) for x in v['external_hits']['90_50'] if int(x[1]) not in low_lvls ])
+
+                merged_pangenome['members'][k]['external_species']['90_90'].update( set(v['external_species']['90_90']).difference(low_lvls) )
+                merged_pangenome['members'][k]['external_species']['90_50'].update( set(v['external_species']['90_50']).difference(low_lvls) )
+
+                merged_pangenome['members'][k]['external_species_nosp']['90_90'].update( set(v['external_species_nosp']['90_90']).difference(low_lvls) )
+                merged_pangenome['members'][k]['external_species_nosp']['90_50'].update( set(v['external_species_nosp']['90_50']).difference(low_lvls) )
+                
+                merged_pangenome['members'][k]['external_genomes']['90_90'] = Counter(self.taxontree.go_up_to_species(int(taxid), True) for _, taxid, _ in merged_pangenome['members'][k]['external_hits']['90_90'] if taxid)
+                merged_pangenome['members'][k]['external_genomes']['90_50'] = Counter(self.taxontree.go_up_to_species(int(taxid), True) for _, taxid, _ in merged_pangenome['members'][k]['external_hits']['90_50'] if taxid)
+                if None in merged_pangenome['members'][k]['external_genomes']['90_90']: merged_pangenome['members'][k]['external_genomes']['90_90'].pop(None)
+                if None in merged_pangenome['members'][k]['external_genomes']['90_50']: merged_pangenome['members'][k]['external_genomes']['90_50'].pop(None)
+
+
+                merged_pangenome['members'][k]['uniqueness']['90_90'] = len(merged_pangenome['members'][k]['external_genomes']['90_90'])
+                merged_pangenome['members'][k]['uniqueness']['90_50'] = len(merged_pangenome['members'][k]['external_genomes']['90_50'])
+                merged_pangenome['members'][k]['uniqueness_nosp']['90_90'] = len([taxid for taxid in merged_pangenome['members'][k]['external_genomes']['90_90'] if not self.taxontree.taxid_n[taxid].is_low_quality])
+                merged_pangenome['members'][k]['uniqueness_nosp']['90_50'] = len([taxid for taxid in merged_pangenome['members'][k]['external_genomes']['90_50'] if not self.taxontree.taxid_n[taxid].is_low_quality])
+
+    def merge_group(self, taxid):
+        taxids = [clade.tax_id for clade in self.taxontree.taxid_n[taxid].find_clades() 
+            if os.path.exists('{}/{}/species/90/{}.pkl'.format(self.config['download_base_dir'], self.config['relpath_panproteomes_dir'], clade.tax_id)) and 
+            not clade.is_low_quality ]
+        if taxid == 235:
+            taxids = [235,29459,29461,36855,236,120577,120576,29460,1218315,981386,444163,520449,437701,520448,693750,693748,437685,1160234,1169234,1160235,437670,1169233,437687,437671,437663,437684,1341688,1891098,1867845,1149952,1844051,1885919]
+            taxids = [x for x in taxids if os.path.exists('{}/{}/species/90/{}.pkl'.format(self.config['download_base_dir'], self.config['relpath_panproteomes_dir'], x))]
+        low_lvls = set(c.tax_id for t in taxids for c in self.taxontree.taxid_n[t].find_clades())
+        merged_pangenome = {'number_proteomes':0, 'members': {}, 'merged_panproteomes' : [], 'tax_id' : taxid}
+        self.db['merged_taxon'][self.taxontree.print_full_taxonomy(taxid)] = []
+        for t in taxids:
+            self.db['merged_taxon'][self.taxontree.print_full_taxonomy(taxid)].append(self.taxontree.print_full_taxonomy(t))
+            panproteome = '{}/{}/species/90/{}.pkl'.format(self.config['download_base_dir'], self.config['relpath_panproteomes_dir'], t) 
+            with bz2.open(panproteome, 'r') as p_f:
+                panproteome = pickle.load(p_f)
+            self.merge_panproteomes(merged_pangenome, panproteome, low_lvls)
+
+        taxonomy = self.taxontree.print_full_taxonomy(taxid,include_groups=True)
+        possible_markers = self.extract_markers(merged_pangenome, 50, 15, 15, agg_fun=len)[:150]
+        if len(possible_markers < 10):
+            possible_markers = self.extract_markers(merged_pangenome, 30, 30, 30, agg_fun=len)[:150]
+
+        gc = {}
+        upid = ""
+        res = []
+        failed_uniprot_repr = []
+        for np90_cluster in possible_markers.index:
+            for (upkb_id, upid), _ in merged_pangenome['members'][np90_cluster]['copy_number'].items():
+                is_uparc = upkb_id.startswith('UPI')
+                upkb_entry = self.uniprot[upkb_id] if not is_uparc else self.uniparc[upkb_id]
+                if is_uparc:
+                    gene_names = tuple(x[2] for x in upkb_entry if x[1] in low_lvls)
+                else:
+                    gene_names = tuple(x[1] for x in upkb_entry[0] )
+                gca = self.get_gca(upid)
+                if not gca:
+                    continue
+                gca = gca.split('.')[0]
+                if gca and gene_names:
+                    if (gca, merged_pangenome['tax_id'], taxonomy) not in gc:
+                        gc[(gca, merged_pangenome['tax_id'], taxonomy)] = set()
+                    gc[(gca, merged_pangenome['tax_id'], taxonomy)].add((np90_cluster,
+                                                                    gene_names, 
+                                                                    tuple(set(x for x in itertools.chain.from_iterable(merged_pangenome['members'][np90_cluster]['external_species'].values())))
+                                                                    )
+                    )
+                    break
+                else:
+                    failed_uniprot_repr.append(np90_cluster)
+        markers_nucls, db, failed, res = [], {}, [], []
+        if len(gc):
+            # res = list(map(export.get_uniref90_nucl_seq, gc.items()))
+            with dummy.Pool(processes=30) as pool:
+                res = [x for x in pool.imap(self.get_uniref90_nucl_seq, gc.items(), chunksize=2)]
+
+        if len(res):
+            markers_nucls, db, failed = zip(*res)
+            for x in db:
+                if x is not None:
+                    self.db['taxonomy'].update(x['taxonomy'])
+                    self.db['markers'].update(x['markers'])
+            markers_nucls = list(itertools.chain.from_iterable(filter(None,markers_nucls)))
+        
+        #create export/markers_fasta
+        if failed is not None and not all(x is None for x in failed):
+            failed = list(filter(None, failed))[0]
+            possible_markers = possible_markers.loc[~possible_markers.index.isin(failed)]
+            self.log.warning("{}: Failed to find features of markers {}".format(taxid, (','.join(failed))))
+
+        if len(markers_nucls) > 9:
+            with bz2.open('{}/{}/markers_fasta/{}.fna.bz2'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], merged_pangenome['tax_id']), 'wt') as fasta_markers:
+                [fasta_markers.write(marker.format('fasta')) for marker in markers_nucls]
+        elif len(markers_nucls) == 0:
+            self.log.warning("[{}]\tNo nucleotide sequences extracted".format(taxid))
+        if len(gc):
+            pickle.dump(gc, open('{}/{}/markers_info/{}.txt'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], merged_pangenome['tax_id']), 'wb'))
+
+        possible_markers.to_csv('{}/{}/markers_stats/{}.txt'.format(self.config['export_dir'], self.config['exportpath_metaphlan2'], merged_pangenome['tax_id']))
+
 def map_markers_to_genomes(mpa_markers_fna, mpa_pkl, taxontree, proteomes, outfile_prefix, config):
-    bowtie2 = '/shares/CIBIO-Storage/CM/mir/tools/bowtie2-2.3.4.3/bowtie2'
     BT2OUT_FOLDER = '{}/mpa2_eval/bt2_out'.format(os.path.abspath(config['export_dir']))
     BT2IDX_FOLDER = '{}/mpa2_eval/bt2_idx'.format(os.path.abspath(config['export_dir']))
+
+    bowtie2 = '/shares/CIBIO-Storage/CM/mir/tools/bowtie2-2.3.4.3/bowtie2'
 
     os.makedirs('{}/mpa2_eval'.format(config['export_dir']), exist_ok=True)
     os.makedirs(BT2IDX_FOLDER, exist_ok=True)
@@ -587,9 +679,32 @@ def map_markers_to_genomes(mpa_markers_fna, mpa_pkl, taxontree, proteomes, outfi
                 markers2contig[marker][contig] = (int(chunk.split('/')[-1]),[])
             markers2contig[marker][contig][1].append((chunk, start, CIGAR, flag))
 
-    gca2taxon = { gca[:-2] : taxontree.go_up_to_species(taxid) for upid, gca, taxid in ((p, dict(proteomes[p]['ncbi_ids']).get('GCSetAcc',None), proteomes[p]['tax_id']) for p in proteomes if 'ncbi_ids' in proteomes[p]) if gca is not None}
+    taxid_to_merge = {}
+    for k,v in mpa_pkl['merged_taxon'].items():
+        if '_group' in k[0][-6:] or 'Brucella_abortus' in k[0]:
+            for x,y,_ in v:
+                taxid_to_merge.setdefault(int(k[1].split('|')[-1]), []).append(int(y.split('|')[-1]))
+
+    species_merged = set(itertools.chain.from_iterable(taxid_to_merge.values()))
+    taxid_merged = set(clade.tax_id for taxid in species_merged for clade in taxontree.taxid_n[taxid].find_clades())
+    taxid_merged.update(x.tax_id for g in taxid_to_merge for x in taxontree.taxid_n[g].find_clades())
+    gca2taxon = { gca[:-2] : taxontree.go_up_to_species(taxid, (taxid in taxid_merged)) for upid, gca, taxid in ((p, dict(proteomes[p]['ncbi_ids']).get('GCSetAcc',None), proteomes[p]['tax_id']) for p in proteomes if 'ncbi_ids' in proteomes[p]) if gca is not None}
+    
+    with open('{}/gca2taxonomy_groups.txt'.format(config['export_dir']), 'wt') as fout:
+        fout.write('GCA\ttaxstr\ttaxid\n')
+        fout.write('\n'.join(
+            ['{}\t{}'.format(k,'\t'.join(taxontree.print_full_taxonomy(v))) for k,v in gca2taxon.items()]
+        ))
+
     taxon2gca = {}
     [taxon2gca.setdefault( taxid , [ ] ).append(gca) for gca, taxid in gca2taxon.items()]
+    # if taxid_to_merge:
+    #     for new, old in taxid_to_merge.items():
+    #         if new not in taxon2gca:
+    #             taxon2gca[new] = []
+    #         for t in old:
+    #             taxon2gca[new].extend(taxon2gca.pop(t, [None]))
+
     utils.info('\tDone.\n')
     marker_present = {}
     utils.info('\tBuilding marker species matrix presence...')
@@ -606,6 +721,9 @@ def map_markers_to_genomes(mpa_markers_fna, mpa_pkl, taxontree, proteomes, outfi
         for c in chunks:
             if previous_start == 0 and c[0].startswith('1/'):
                 previous_start = int(c[1]) - (-1 if reverse_strand else +1) * READLEN
+            else:
+                previous_start = int(c[1]) - (-1 if reverse_strand else +1) * READLEN
+                idx = int(c[0].split('/')[0])
             #Determine if the chunks are consecutive and re-build the marker
             if c[0] == '{}/{}'.format(idx, total_chunks) and previous_start + (-1 if reverse_strand else +1) * READLEN == int(c[1]):
                 temp_chunks.append(c)
@@ -613,7 +731,7 @@ def map_markers_to_genomes(mpa_markers_fna, mpa_pkl, taxontree, proteomes, outfi
                 previous_start = int(c[1])
 
         chunks = temp_chunks
-        if [ int(c[1]) for c in chunks[1:] ] == [ int(c[1]) + (-1 if reverse_strand else +1) * READLEN for c in chunks[:-1] ]:
+        if len(chunks) and [ int(c[1]) for c in chunks[1:] ] == [ int(c[1]) + (-1 if reverse_strand else +1) * READLEN for c in chunks[:-1] ]:
             gca = contig2ass[contig]
             taxon = []
             if gca in gca2taxon:
@@ -621,10 +739,11 @@ def map_markers_to_genomes(mpa_markers_fna, mpa_pkl, taxontree, proteomes, outfi
                 if marker not in marker_present:
                      marker_present[marker] = set()
                 marker_present[marker].add(taxon)
+
     utils.info('\tDone.\n')
     markers2externals = {}
     for marker, hits in marker_present.items():
-        ext_species = Counter(taxontree.go_up_to_species(h) for h in hits if h !='')
+        ext_species = Counter(taxontree.go_up_to_species(h, True) for h in hits if h !='')
         marker_taxid = int(marker.split('__')[0])
         markers2externals.setdefault(marker, {})
         markers2externals[marker]['coreness'] = ext_species.pop(marker_taxid) if marker_taxid in ext_species else 0
@@ -634,9 +753,14 @@ def map_markers_to_genomes(mpa_markers_fna, mpa_pkl, taxontree, proteomes, outfi
     
     utils.info('\tUpdating the MetaPhlAn2 database with new external species...')
     for marker, vals in markers2externals.items():
-        ext_genomes = [(taxon2gca[x], taxontree.print_full_taxonomy(x)[0]) for x in vals['external_species']]
-        newt = [gca for gcas, taxstr in ext_genomes for gca in gcas if taxstr+'|t__'+gca in mpa_pkl['taxonomy']]
-        if newt and marker in mpa_pkl['markers']:
+        ext_genomes = [(taxon2gca[x], taxontree.print_full_taxonomy(x)) for x in vals['external_species'] if x in taxon2gca]
+        newt = []
+        for gcas, (taxstr, _) in ext_genomes:
+            for gca in gcas:
+                if taxstr+'|t__'+gca in mpa_pkl['taxonomy']:
+                    newt.append(gca)
+                    break
+        if marker in mpa_pkl['markers']:
             s_exts = set(mpa_pkl['markers'][marker]['ext'])
             s_exts.update(newt)
             mpa_pkl['markers'][marker]['ext'] = list(s_exts)
@@ -665,7 +789,7 @@ def build_bt2_idx(bin_list):
             
             try:
                 sb.check_call(bt2_build_comm, stdout=sb.DEVNULL, stderr=sb.DEVNULL)
-            except sb.CalledProcessError as e:
+            except sb.CalledProcessError:
                 terminating.set()
                 [ utils.remove_file('{}.{}'.format(idx_name,p)) for p in ["1.bt2", "2.bt2", "3.bt2", "4.bt2", "rev.1.bt2", "rev.2.bt2"] ]
 
@@ -706,9 +830,6 @@ def split_markers(ifn, ofn):
                 SeqIO.write(new_record, output_handle, "fasta")
 
 def merge_bad_species(sgb_release, gca2taxonomy, config):
-    # all_mpa_gca = [x.split('|')[7][3:] for x in mpa_db['taxonomy'].keys()]
-    # count_marker_per_clade = Counter(v['taxon'] for v in mpa_db['markers'].values())
-
     r = re.compile( r"(.*(C|c)andidat(e|us)_.*)|"
                     r"(.*_CAG_.*)|"
                     r"(.*_sp(_.*|$))|"
@@ -744,87 +865,133 @@ def merge_bad_species(sgb_release, gca2taxonomy, config):
             #If there are multiple refences, keep only one and the others list in a list of merged genomes
             else:
                 merged.setdefault(sgb,[]).append((genome,(taxonomy, taxidstr,)))
-    
-    #to_remove = set(y.split('|')[-1] for x,(y,z) in mpa_pkl['taxonomy'].items() if 'CAG' in x or 'Shigella' in x)
-    # all_species = set((x, y.split('|')[-1]) for x,(y,z) in mpa_pkl['taxonomy'].items())
-    report = {}
 
-    # def x(species):
-    #     report[species] = {}
-    #     report[species]['n_tot'] = len(list(filter(lambda x: x.startswith(species+'_'), mpa_pkl['markers'])))
-
-    #     ext_species_counter = Counter(itertools.chain((int(gca2taxonomy.loc[gca2taxonomy['GCA_accession'] == x].taxidstr.item().split('|')[6]) for marker in filter(lambda x: x.startswith(species+'_'), mpa_pkl['markers'])
-    #                                              for x in mpa_pkl['markers'][marker]['ext']
-    #                                                 )
-    #                                 ))
-    #     ext_sgb_counter = Counter(itertools.chain((gca2sgb[x][0] for marker in filter(lambda x: x.startswith(species+'_'), mpa_pkl['markers'])
-    #                                              for x in mpa_pkl['markers'][marker]['ext']
-    #                                                 )
-    #                                 ))
-    #     i=0.3
-    #     report[species][str(i)+'__all_confounded'] = set(x[0] for x in filter(lambda x: x[1]> i*report[species]['n_tot'], ext_species_counter.items()))
-    #     report[species][str(i)+'__all_confounded_len'] = len(report[species][str(i)+'__all_confounded'])
-    #     same_sgb_as_species = set(x[0] for x in filter(lambda x: x[1]> i*report[species]['n_tot'], ext_sgb_counter.items()) if species in tax2sgb and x[0] in tax2sgb[species])
-    #     report[species][str(i)+'__same_sgb'] = set(x for x in ext_species_counter if str(x) in tax2sgb and set(tax2sgb[str(x)]).intersection(same_sgb_as_species))
-        
-    #     merged_into = Counter([tax2sgb[str(ext)][0] for ext in report[species][str(i)+'__same_sgb'] for _ in range(ext_sgb_counter[tax2sgb[str(ext)][0]])])
-    #     if merged_into:
-    #         merged_into = merged_into.most_common(1)[0][0]
-    #     report[species][str(i)+'__same_sgb_len'] = len(report[species][str(i)+'__same_sgb'])
-    #     report[species]['merged_into'] = merged_into
-    #     report[species]['taxonomy'] = taxontree.print_full_taxonomy(int(species))[0]
-
-    # list(map(x, to_remove))
-    # report_pd = pd.DataFrame.from_dict(report).T
-    # report_pd.to_excel('markers_confounding.xlsx')
-    
-    #ADD REPORT TO NEW_SPECIES_MERGED
-
-    new_species_merged = {}
+ {}
     for sgb, gca_tax in merged.items():
         merged_into = ('|'.join(sgb_release.loc[sgb_release['ID'] == sgb, 'Assigned taxonomy'].item().split('|')[:7]),
                        '|'.join(sgb_release.loc[sgb_release['ID'] == sgb, 'Assigned taxonomic ID'].item().split('|')[:7]))
         if r.match(merged_into[0].split('|')[6]) and sgb_release.loc[sgb_release['ID'] == sgb, 'Number of Alternative taxonomies'].item() > 1:
-            old = merged_into
             new_merged_into = list(filter(lambda x: not r.match(x[1]), enumerate(sgb_release.loc[sgb_release['ID'] == sgb, 'List of alternative taxonomies'].item().split(','))))
             if new_merged_into:
                 merged_into = (new_merged_into[0][1].split(':')[0], sgb_release.loc[sgb_release['ID'] == sgb, 'List of alternative taxonomic IDs'].item().split(',')[new_merged_into[0][0]].split(':')[0], )
 
         species_in_sgb = set(taxstr for (gca, taxstr) in gca_tax)
         # merged_into=max([(s,count_marker_per_clade[s]) for s in species_in_sgb],key = lambda x:x[1])[0]
-        new_species_merged.setdefault(merged_into,set()).update(species_in_sgb)
-
-    # for species, v in report.items():
-    #     if v['merged_into']:
-    #         merged_into = ('|'.join(sgb_release.loc[sgb_release['ID'] == v['merged_into'], 'Assigned taxonomy'].item().split('|')[:7]),
-    #                    '|'.join(sgb_release.loc[sgb_release['ID'] == v['merged_into'], 'Assigned taxonomic ID'].item().split('|')[:7]))
-    #         if r.match(merged_into[0].split('|')[6]) and sgb_release.loc[sgb_release['ID'] == sgb, 'Number of Alternative taxonomies'].item() > 1:
-    #             old = merged_into
-    #             new_merged_into = list(filter(lambda x: not r.match(x[1]), enumerate(sgb_release.loc[sgb_release['ID'] == v['merged_into'], 'List of alternative taxonomies'].item().split(','))))
-    #             if new_merged_into:
-    #                 merged_into = (new_merged_into[0][1].split(':')[0], sgb_release.loc[sgb_release['ID'] == sgb, 'List of alternative taxonomic IDs'].item().split(',')[new_merged_into[0][0]].split(':')[0], )
-    #         new_species_merged.setdefault(merged_into,set()).add( taxontree.print_full_taxonomy(int(species))) 
+    etdefault(merged_into,set()).update(species_in_sgb)
 
     with open('{}/{}/merged_species_spp.tsv'.format(config['export_dir'],config['exportpath_metaphlan2']), 'wt') as fout:
         fout.write('old_taxonomy\told_taxonomy_id\tmerged_into\tmerged_into_id\n')
-        fout.write('\n'.join('{}\t{}\t{}\t{}'.format(list(old_tax)[0][0], list(old_tax)[0][1], new_t[0], new_t[1]) for new_t, old_tax in new_species_merged.items()))
+    tems()))
         fout.write('\n')
         fout.write('\n'.join('{}\t{}\t{}\t{}'.format(taxa[0], taxa[1], taxa[0], taxa[1]) for taxa, gca_tax in keep.items() for gca in gca_tax))
 
-    gca2taxid = dict(zip(gca2taxonomy.GCA_accession,gca2taxonomy.NCBI_taxid))
-    taxa_to_remove = [int(x[1].split('|')[6]) for merged_into, bad_species in new_species_merged.items() if len(bad_species) > 1 or (len(bad_species)==1 and list(bad_species)[0] != merged_into) for x in bad_species]
-    
-    # taxa2markers = {}
-    # [taxa2markers.setdefault(v['taxon'],[]).append(k) for k,v in mpa_db['markers'].items()]
-    
-    # for new_t, gca_tax in new_species_merged.items():
-    #     for gca, old_t in gca_tax:
-    #         if new_t != old_t and old_t in taxa2markers:
-    #             [mpa_db['markers'].pop(marker) for marker in taxa2markers[old_t] if marker in mpa_db['markers']]
-    #             mpa_db['taxonomy'].pop('{}|t__{}'.format(old_t,gca))
+tems() if len(bad_species) > 1 or (len(bad_species)==1 and list(bad_species)[0] != merged_into) for x in bad_species]
 
-    return taxa_to_remove
 
+def brucella_markers(export):
+    taxids = [235,29459,29461,36855,236,120577,120576,29460,1218315,981386,444163,520449,437701,520448,693750,693748,437685,1160234,1169234,1160235,437670,1169233,437687,437671,437663,437684,1341688,1891098,1867845,1149952,1844051,1885919]
+    low_lvls = set(c.tax_id for t in taxids for c in export.taxontree.taxid_n[t].find_clades())
+    merged_pangenome = {'number_proteomes':0, 'members':{}}
+    for t in taxids:
+        panproteome = '{}/{}/species/90/{}.pkl'.format(export.config['download_base_dir'], export.config['relpath_panproteomes_dir'], t) 
+        with bz2.open(panproteome, 'r') as p_f:
+            panproteome = pickle.load(p_f)
+        export.merge_panproteomes(merged_pangenome, panproteome)
+
+    low_lvls = [c.tax_id for c in export.taxontree.taxid_n[235].find_clades()]
+    taxonomy = export.taxontree.print_full_taxonomy(235)
+    merged_pangenome['tax_id'] = 235
+    possible_markers = export.get_p_markers(merged_pangenome)
+
+    gc = {}
+    upid = ""
+    res = []
+    failed_uniprot_repr = []
+    for np90_cluster in possible_markers.index:
+        for (upkb_id, upid), count in brucella_pangenome['members'][np90_cluster]['copy_number'].items():
+            is_uparc = upkb_id.startswith('UPI')
+            upkb_entry = export.uniprot[upkb_id] if not is_uparc else export.uniparc[upkb_id]
+            if is_uparc:
+                gene_names = tuple(x[2] for x in upkb_entry if x[1] in low_lvls)
+            else:
+                gene_names = tuple(x[1] for x in upkb_entry[0] )
+            gca = export.get_gca(upid)
+            if not gca:
+                continue
+            gca = gca.split('.')[0]
+            if gca and gene_names:
+                if (gca, brucella_pangenome['tax_id'], taxonomy) not in gc:
+                    gc[(gca, brucella_pangenome['tax_id'], taxonomy)] = set()
+                gc[(gca, brucella_pangenome['tax_id'], taxonomy)].add((np90_cluster,
+                                                                gene_names, 
+                                                                tuple(set(x for x in itertools.chain.from_iterable(brucella_pangenome['members'][np90_cluster]['external_species'].values())))
+                                                                )
+                )
+                break
+            else:
+                failed_uniprot_repr.append(np90_cluster)
+    markers_nucls, db, failed, res = [], {}, [], []
+    if len(gc):
+            res = list(map(export.get_uniref90_nucl_seq, gc.items()))
+    else:
+        if len(failed_uniprot_repr) == possible_markers.shape[0]:
+            ifnotgenome = not any([True for p in export.taxontree.get_child_proteomes(export.taxontree.taxid_n[pp_tax_id])
+                                    if dict(export.proteomes[p].get('ncbi_ids',{})).get('GCSetAcc','')])
+            export.log.warning('[{}]\tFailed to find any gene for all possible markers identified.{}'.format(brucella_pangenome['tax_id'], "No assemblies are available for the species' proteomes" if ifnotgenome else ''))
+        return (brucella_pangenome['tax_id'], taxonomy)
+
+    if len(res):
+        markers_nucls, db, failed = zip(*res)
+        for x in db:
+            if x is not None:
+                export.db['taxonomy'].update(x['taxonomy'])
+                export.db['markers'].update(x['markers'])
+        markers_nucls = list(itertools.chain.from_iterable(filter(None,markers_nucls)))
+    
+    #create export/markers_fasta
+    if failed is not None and not all(x is None for x in failed):
+        failed = list(filter(None, failed))[0]
+        possible_markers = possible_markers.loc[~possible_markers.index.isin(failed)]
+        export.log.warning("{}: Failed to find features of markers {}".format(pp_tax_id, (','.join(failed))))
+
+    if len(markers_nucls) > 9:
+        with bz2.open('{}/{}/markers_fasta/{}.fna.bz2'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], brucella_pangenome['tax_id']), 'wt') as fasta_markers:
+            [fasta_markers.write(marker.format('fasta')) for marker in markers_nucls]
+    elif len(markers_nucls) == 0:
+        export.log.warning("[{}]\tNo nucleotide sequences extracted".format(pp_tax_id))
+    if len(gc):
+        pickle.dump(gc, open('{}/{}/markers_info/{}.txt'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], brucella_pangenome['tax_id']), 'wb'))
+
+    possible_markers.to_csv('{}/{}/markers_stats/{}.txt'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], brucella_pangenome['tax_id']))
+
+    mpa_pkl = pickle.load(bz2.open('{}/{}/{}.pkl'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'].replace('_curated_markers',''), OUTFILE_PREFIX)))
+    ext_to_clean, markers_removed = [], []
+    for t in taxids:
+        torem_markers = list(filter(lambda x: x.startswith(str(t)+'__'), mpa_pkl['markers']))
+        torem_taxonomy = list(filter(lambda x: x.startswith( export.taxontree.print_full_taxonomy(t)[0] ), mpa_pkl['taxonomy']))
+        markers_removed.extend([(x, mpa_pkl['markers'].pop(x)) for x in torem_markers])
+        ext_to_clean.extend([(x, mpa_pkl['taxonomy'].pop(x)) for x in torem_taxonomy])
+
+    all_gca_old = set(taxid.split('|')[-1][3:] for taxid, _ in ext_to_clean)
+    all_gca_new = set(taxid.split('|')[-1][3:] for taxid, _ in export.db['taxonomy'].items())
+    excluded_genomes = all_gca_old.difference(all_gca_new)
+    for k,v in mpa_pkl['markers'].items():
+        has_brucella = all_gca_old.intersection(v['ext'])
+        if has_brucella:
+            mpa_pkl['markers'][k]['ext'] = set(v['ext']).difference(excluded_genomes)
+
+    mpa_pkl['markers'].update(export.db['markers'])
+    mpa_pkl['taxonomy'].update(export.db['taxonomy'])
+
+    with bz2.open('{}/{}/{}.fna.bz2'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'wt') as outfile, \
+            bz2.open('{}/{}/{}.fna.bz2'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'].replace('_curated_markers',''), OUTFILE_PREFIX), 'rt') as infile:
+        for record in SeqIO.parse(infile, 'fasta'):
+            if record.id not in taxids:
+                outfile.write(record.format('fasta'))
+        [outfile.write(marker.format('fasta')) for marker in markers_nucls]
+
+    with bz2.open('{}/{}/{}.pkl'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'wb') as pkl_out:
+        pickle.dump(mpa_pkl, pkl_out)
 def run_all(config):
     #Check if a previous export was performed for the same release
     #If exists but has failed (no DONE file in release folder), create a backup folder and export again
@@ -846,15 +1013,22 @@ def run_all(config):
     # gca2taxonomy = dict(zip(gca2taxonomy.GCA_accession, gca2taxonomy.NCBI_taxid))
     sgb_release = pd.read_csv('/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/sgbrepo/releases/Jul19/SGB.Jul19.txt.bz2', sep='\t', skiprows=1)
     sgb_release = sgb_release.loc[sgb_release['# Label'] == 'SGB',]
-    export.taxa_to_remove = merge_bad_species(sgb_release, gca2taxonomy, export.config)
+ merge_bad_species(sgb_release, gca2taxonomy, export.config)
     export.taxa_to_remove = Counter(export.taxa_to_remove * 50000)
     merged_species = pd.read_csv('{}/{}/merged_species_spp.tsv'.format(config['export_dir'],config['exportpath_metaphlan2']), sep = '\t')
     export.species_merged_into = [int(x.split('|')[-1]) for x in set(merged_species.merged_into_id)]
 
     if not os.path.exists('{}/{}/DONE'.format(export.config['export_dir'],export.config['exportpath_metaphlan2'])):
+        groups = [ 119603, 136841, 136843, 136845, 136846, 136849, 354276, 653685, 655183, 671232, 86661 ]
+        species_in_groups = [s.tax_id for g in groups for s in export.taxontree.taxid_n[g].find_clades()]
+
         species = [ '{}/{}/species/90/{}.pkl'.format(export.config['download_base_dir'], export.config['relpath_panproteomes_dir'], item.tax_id) 
                     for item in export.taxontree.lookup_by_rank()['species'] 
-                    if export.taxontree.get_child_proteomes(item) and item.tax_id not in export.taxa_to_remove ]
+                    if export.taxontree.get_child_proteomes(item) and 
+                    item.tax_id not in export.taxa_to_remove and 
+                    item.tax_id not in species_in_groups
+                ]
+        
         utils.info('Started extraction of MetaPhlAn2 markers.\n')
         with dummy.Pool(processes=30) as pool:
             failed = [x for x in pool.imap(export.get_uniref_uniprotkb_from_panproteome, species, chunksize=200)]
@@ -863,6 +1037,28 @@ def run_all(config):
         with open('{}/{}/failed_species_markers.txt'.format(export.config['export_dir'], export.config['exportpath_metaphlan2']), 'wt') as ofn_failed:
             ofn_failed.writelines('\n'.join('{}\t{}'.format(taxid, '\t'.join(taxonomy)) for taxid, taxonomy in filter(None, failed)))
 
+        with dummy.Pool(processes=10) as pool:
+            failed = [x for x in pool.imap(export.merge_group, groups, chunksize=1)]
+
+        ext_to_clean, markers_removed = [], []
+        for g in groups:
+            taxids = [clade.tax_id for clade in export.taxontree.taxid_n[g].find_clades() 
+                        if os.path.exists('{}/{}/species/90/{}.pkl'.format(export.config['download_base_dir'], export.config['relpath_panproteomes_dir'], clade.tax_id)) and 
+                        not clade.is_low_quality and clade.tax_id != g]
+            for t in taxids:
+                torem_markers = list(filter(lambda x: x.startswith(str(t)+'__'), export.db['markers']))
+                torem_taxonomy = list(filter(lambda y: y[1][0].split('|')[-1] == str(t), export.db['taxonomy'].items()))
+                markers_removed.extend([(x, export.db['markers'].pop(x)) for x in torem_markers])
+                ext_to_clean.extend([(x, export.db['taxonomy'].pop(x[0])) for x in torem_taxonomy])
+
+        all_gca_old = set(taxid[0].split('|')[-1][3:] for taxid, _ in ext_to_clean)
+        all_gca_new = set(taxid.split('|')[-1][3:] for taxid, _ in export.db['taxonomy'].items())
+        excluded_genomes = all_gca_old.difference(all_gca_new)
+        for k,v in export.db['markers'].items():
+            has_bc = all_gca_old.intersection(v['ext'])
+            if has_bc:
+                export.db['markers'][k]['ext'] = set(v['ext']).difference(excluded_genomes)
+            
         utils.info('Pickling the MetaPhlAn2 database...\n')
         with bz2.BZ2File('{}/{}/{}.orig.pkl'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as outfile:
             pickle.dump(export.db, outfile, protocol=2)
@@ -874,8 +1070,8 @@ def run_all(config):
         utils.info('Merging all the markers sequences...\n')
         mpa_fna_db = '{}/{}/{}.fna'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX)
         with open(mpa_fna_db, 'wb') as mpa2_markers_fna:
-            for f in glob.glob('{}/{}/markers_fasta/*.fna'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'])):
-                with open(f, 'rb') as fm:
+            for f in glob.glob('{}/{}/markers_fasta/*.fna.bz2'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'])):
+                with bz2.open(f, 'rb') as fm:
                     mpa2_markers_fna.write(fm.read())
         utils.info('Done.\n')
     else:
@@ -892,15 +1088,20 @@ def run_all(config):
     with bz2.BZ2File('{}/{}/{}.orig.nomerged.pkl'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as outfile:
         pickle.dump(mpa_pkl, outfile, protocol=2)
 
-    for tax, (taxid, glen) in mpa_pkl['taxonomy'].items():
+    gca2taxon = { gca[:-2] : taxontree.go_up_to_species(taxid) for upid, gca, taxid in ((p, dict(proteomes[p]['ncbi_ids']).get('GCSetAcc',None), proteomes[p]['tax_id']) for p in proteomes if 'ncbi_ids' in proteomes[p]) if gca is not None}
+
+    taxon2gca = {}
+    [taxon2gca.setdefault( taxid , [ ] ).append(gca) for gca, taxid in gca2taxon.items()]
+
+    for tax, (taxid, _) in mpa_pkl['taxonomy'].items():
         if 'CAG' in tax and not export.taxontree.taxid_n[int(taxid.split('|')[-1])].is_low_quality:
             true_species = '_'.join(tax.split('|')[-2][3:].split('_')[:2]) 
-            true_taxid = list(filter(lambda x: x.name==true_species, taxontree.taxid_n.values()))
+            true_taxid = list(filter(lambda x: x.name==true_species, export.taxontree.taxid_n.values()))
             if true_taxid:
                 true_taxid = true_taxid[0].tax_id
             _taxid = taxid.split('|')[-1]
 
-            if sum(1 for x in ( sum(1 for e in mpa_pkl['markers'][x]['ext'] if taxontree.go_up_to_species(gca2taxon[e]) == true_taxid) / len(mpa_pkl['markers'][x]['ext']) 
+            if sum(1 for x in ( sum(1 for e in mpa_pkl['markers'][x]['ext'] if export.taxontree.go_up_to_species(gca2taxon[e]) == true_taxid) / len(mpa_pkl['markers'][x]['ext']) 
                 if len(mpa_pkl['markers'][x]['ext']) else 0 
                 for x in filter(lambda x:x.startswith(_taxid), mpa_pkl['markers'])
             ) if x > 0.5) /  len(list(filter(lambda x:x.startswith(_taxid), mpa_pkl['markers']))) > 0.5:
@@ -930,6 +1131,17 @@ def run_all(config):
 
     for x in mpa_pkl['markers']:
         mpa_pkl['markers'][x]['ext'] = list(all_gca.intersection(set(mpa_pkl['markers'][x]['ext'])))
+
+    #K: merged_into V:[old_species]
+
+    for x,y in mpa_pkl['merged_taxon'].items():
+        mpa_pkl['merged_taxon'][x] = [(k, v, len(taxon2gca.get(int(v.split('|')[-1]),[])), ) for k,v in y]
+
+    with open('{}/{}/merged_mapping'.format(export.config['export_dir'], export.config['exportpath_metaphlan2']),'wt') as fout: 
+        fout.write('mergedinto\toldspecies\toldtaxid\n') 
+        for merged_into,v in mpa_pkl['merged_taxon'].items(): 
+            for x, y, _ in v: 
+                fout.write('\t'.join([merged_into[0], x, y]) + '\n' ) 
 
     with bz2.BZ2File('{}/{}/{}.pkl'.format(export.config['export_dir'], export.config['exportpath_metaphlan2'], OUTFILE_PREFIX), 'w') as outfile:
         pickle.dump(mpa_pkl, outfile, protocol=2)
@@ -985,7 +1197,8 @@ def init_fuzzy(ncbi_):
     ncbi_db = ncbi_
 
 def get_fuzzy_taxonomy(k):
-    return (k, ncbi_db.get_fuzzy_name_translation(k.split('|')[6][3:].replace('_',' '), sim=0.7))
+    retval = ncbi_db.get_fuzzy_name_translation(k.split('|')[6][3:].replace('_',' '), sim=0.7)
+    return (k, retval)
 
 def build_virus_db(config, taxontree, proteomes):
     from ete3 import NCBITaxa
@@ -1004,13 +1217,14 @@ def build_virus_db(config, taxontree, proteomes):
     to_proc = []
     for x in tmp_pkl['taxonomy']:
         if x.startswith('k__Vir'):
+            if 'PaeM_MAG1' in x:
+                break
             taxname = x.split('|')[6][3:].replace('_',' ')
             taxid = ncbi.get_name_translator([taxname])
             if not taxid:
                 to_proc.append(x)
             else:
                 taxid = taxid[taxname][0]
-            if taxid:
                 str2taxa[x] = taxid
 
 
@@ -1020,7 +1234,7 @@ def build_virus_db(config, taxontree, proteomes):
     # partial_fuzzy = partial(ncbi.get_fuzzy_name_translation,sim=0.7 )
     # d = [x[0] for x in map(partial_fuzzy, (k for k in to_proc)) ]
     
-    for x, taxid in d:
+    for x, taxid in d.items():
         str2taxa[x] = taxid
 
     newtaxa = {}
@@ -1066,10 +1280,11 @@ def build_virus_db(config, taxontree, proteomes):
                 new_clade = new_taxon.split('|')[-1]
                 taxid = newtaxa[old_taxon][0][1] .split('|')[-1]
             
-        tmp_pkl['markers'][marker]['clade'] = new_clade
-        tmp_pkl['markers'][marker]['taxon'] = new_taxon
-        tmp_pkl['markers']['{}__{}'.format(taxid, marker)] = tmp_pkl['markers'].pop(marker)
-    
+            tmp_pkl['markers'][marker]['clade'] = new_clade
+            tmp_pkl['markers'][marker]['taxon'] = new_taxon
+            tmp_pkl['markers']['{}__{}'.format(taxid, marker)] = tmp_pkl['markers'].pop(marker)
+        else:
+            failed.append(old_taxon) #find the taxid, taxonomy is missing from ['taxonomy']
     tmp_pkl['taxonomy'].update(new_db_pkl['taxonomy'])
 
     mpa_v294_viruses_fp = '{0}/{1}/{2}_viruses/{2}.fna'.format(config['export_dir'], config['exportpath_metaphlan2'], OUTFILE_PREFIX)
