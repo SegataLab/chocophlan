@@ -866,7 +866,8 @@ def merge_bad_species(sgb_release, gca2taxonomy, config):
             else:
                 merged.setdefault(sgb,[]).append((genome,(taxonomy, taxidstr,)))
 
- {}
+    new_species_merged = {}
+
     for sgb, gca_tax in merged.items():
         merged_into = ('|'.join(sgb_release.loc[sgb_release['ID'] == sgb, 'Assigned taxonomy'].item().split('|')[:7]),
                        '|'.join(sgb_release.loc[sgb_release['ID'] == sgb, 'Assigned taxonomic ID'].item().split('|')[:7]))
@@ -877,16 +878,18 @@ def merge_bad_species(sgb_release, gca2taxonomy, config):
 
         species_in_sgb = set(taxstr for (gca, taxstr) in gca_tax)
         # merged_into=max([(s,count_marker_per_clade[s]) for s in species_in_sgb],key = lambda x:x[1])[0]
-    etdefault(merged_into,set()).update(species_in_sgb)
+    new_species_merged.setdefault(merged_into,set()).update(species_in_sgb)
 
     with open('{}/{}/merged_species_spp.tsv'.format(config['export_dir'],config['exportpath_metaphlan2']), 'wt') as fout:
         fout.write('old_taxonomy\told_taxonomy_id\tmerged_into\tmerged_into_id\n')
-    tems()))
+        fout.write('\n'.join('{}\t{}\t{}\t{}'.format(list(old_tax)[0][0], list(old_tax)[0][1], new_t[0], new_t[1]) for new_t, old_tax in new_species_merged.items()))
         fout.write('\n')
         fout.write('\n'.join('{}\t{}\t{}\t{}'.format(taxa[0], taxa[1], taxa[0], taxa[1]) for taxa, gca_tax in keep.items() for gca in gca_tax))
+    
+    gca2taxid = dict(zip(gca2taxonomy.GCA_accession,gca2taxonomy.NCBI_taxid))
+    taxa_to_remove = [int(x[1].split('|')[6]) for merged_into, bad_species in new_species_merged.items() if len(bad_species) > 1 or (len(bad_species)==1 and list(bad_species)[0] != merged_into) for x in bad_species]
 
-tems() if len(bad_species) > 1 or (len(bad_species)==1 and list(bad_species)[0] != merged_into) for x in bad_species]
-
+    return taxa_to_remove
 
 def brucella_markers(export):
     taxids = [235,29459,29461,36855,236,120577,120576,29460,1218315,981386,444163,520449,437701,520448,693750,693748,437685,1160234,1169234,1160235,437670,1169233,437687,437671,437663,437684,1341688,1891098,1867845,1149952,1844051,1885919]
