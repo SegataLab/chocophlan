@@ -10,6 +10,7 @@ from _version import __CHOCOPhlAn_version__
 __date__ = '03 Jan 2018'
 
 import os
+import bz2
 import sys
 import argparse as ap
 import configparser as cp
@@ -85,7 +86,7 @@ class Stats:
             terminating.set()
     def panproteome_stats(self, tax_id, cluster):
         try:
-            panproteome = pickle.load(open('{}{}/{}/{}/{}.pkl'.format(self.config['download_base_dir'], self.config['relpath_panproteomes_dir'], 'species', cluster, tax_id),'rb'))
+            panproteome = pickle.load(bz2.open('{}{}/{}/{}/{}.pkl'.format(self.config['download_base_dir'], self.config['relpath_panproteomes_dir'], 'species', cluster, tax_id),'rb'))
         except FileNotFoundError as ex:
             # utils.error('TAXID {}: Panproteome calculated using UniRef{} does not exist!'.format(tax_id, cluster))
             return {}
