@@ -10,10 +10,10 @@ __date__ = '25 Mar 2019'
 
 if __name__ == '__main__':
     import utils
-    import extract
+    import build_taxontree
 else:
     import src.utils as utils
-    import src.extract as extract
+    import src.build_taxontree as build_taxontree
 import os
 import gzip
 import re

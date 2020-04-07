@@ -10,7 +10,7 @@ __date__ = '28 Sep 2017'
 
 
 import src.utils as utils
-import src.extract as extract
+import src.build_taxontree as build_taxontree
 import src.download as download
 import src.parse_uniprot as parse_uniprot
 import src.panproteomes as panproteomes
@@ -18,7 +18,7 @@ import src.chocophlan2phylophlan as chocophlan2phylophlan
 import src.stats as stats
 import src.export_to_metaphlan2 as export_to_metaphlan2
 import time
-from src.extract import Nodes as Nodes
+from src.build_taxontree import Nodes as Nodes
 import sys
 import multiprocessing as mp
 
@@ -30,7 +30,7 @@ def chocophlan():
     config = utils.read_configs(args.config_file, verbose=args.verbose)
     config = utils.check_configs(config, verbose=args.verbose)
     # download.download(config['download'], verbose=config['download']['verbose'])
-    # extract.do_extraction(config['extract'], verbose=config['extract']['verbose'])
+    # build_taxontree.do_extraction(config['build_taxontree'], verbose=config['build_taxontree']['verbose'])
     # parse_uniprot.parse_uniprot(config['parse_uniprot'])
     # download.download_ncbi_from_proteome_pickle(config['parse_uniprot'])
     # panproteomes.generate_panproteomes(config['panproteomes'])

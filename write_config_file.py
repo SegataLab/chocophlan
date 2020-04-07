@@ -286,25 +286,25 @@ def set_download_options(configparser_object, args, verbose=False):
     configparser_object.set('download', 'verbose', str(verbose))
     configparser_object.set('download', 'nproc', str(args.nproc))
 
-    configparser_object.add_section('extract')
-    configparser_object.set('extract', 'download_base_dir',
+    configparser_object.add_section('build_taxontree')
+    configparser_object.set('build_taxontree', 'download_base_dir',
                             args.download_base_dir)
-    configparser_object.set('extract', 'pickled_dir',
+    configparser_object.set('build_taxontree', 'pickled_dir',
                             args.pickled_dir)
-    configparser_object.set('extract', 'relpath_taxdump',
+    configparser_object.set('build_taxontree', 'relpath_taxdump',
                             args.relpath_taxdump)
-    configparser_object.set('extract', 'relpath_taxonomic_catalogue',
+    configparser_object.set('build_taxontree', 'relpath_taxonomic_catalogue',
                             args.relpath_taxonomic_catalogue)
-    configparser_object.set('extract', 'relpath_pickle_taxid_contigid',
+    configparser_object.set('build_taxontree', 'relpath_pickle_taxid_contigid',
                             args.relpath_pickle_taxid_contigid)
-    configparser_object.set('extract', 'relpath_pickle_taxid_taxonomy',
+    configparser_object.set('build_taxontree', 'relpath_pickle_taxid_taxonomy',
                             args.relpath_pickle_taxid_taxonomy)
-    configparser_object.set('extract', 'relpath_pickle_contigid_filename',
+    configparser_object.set('build_taxontree', 'relpath_pickle_contigid_filename',
                             args.relpath_pickle_contigid_filename)
-    configparser_object.set('extract', 'relpath_pickle_taxontree',
+    configparser_object.set('build_taxontree', 'relpath_pickle_taxontree',
                             args.relpath_pickle_taxontree)
-    configparser_object.set('extract', 'verbose', str(verbose))
-    configparser_object.set('extract', 'nproc', str(args.nproc))
+    configparser_object.set('build_taxontree', 'verbose', str(verbose))
+    configparser_object.set('build_taxontree', 'nproc', str(args.nproc))
     
     configparser_object.add_section('parse_uniprot')
     configparser_object.set('parse_uniprot', 'uniprot_ftp_base',

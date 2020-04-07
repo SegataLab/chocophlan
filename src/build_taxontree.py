@@ -585,7 +585,7 @@ if __name__ == '__main__':
     config = utils.read_configs(args.config_file, verbose=args.verbose)
     config = utils.check_configs(config)
 
-    do_extraction(config['extract'], verbose=config['extract']['verbose'])
+    do_extraction(config['build_taxontree'], verbose=config['build_taxontree']['verbose'])
 
     t1 = time.time()
 
