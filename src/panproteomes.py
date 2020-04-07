@@ -28,11 +28,11 @@ import importlib
 if __name__ == "__main__":
     import utils
     import stats
-    import process_proteomes
+    import parse_uniprot
 else:
     utils = importlib.import_module('src.utils')
     stats = importlib.import_module('src.stats')
-    process_proteomes = importlib.import_module('src.process_proteomes')
+    parse_uniprot = importlib.import_module('src.parse_uniprot')
 
 def init_parse(terminating_):
     global terminating

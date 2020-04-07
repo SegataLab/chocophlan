@@ -306,62 +306,62 @@ def set_download_options(configparser_object, args, verbose=False):
     configparser_object.set('extract', 'verbose', str(verbose))
     configparser_object.set('extract', 'nproc', str(args.nproc))
     
-    configparser_object.add_section('process_proteomes')
-    configparser_object.set('process_proteomes', 'uniprot_ftp_base',
+    configparser_object.add_section('parse_uniprot')
+    configparser_object.set('parse_uniprot', 'uniprot_ftp_base',
                             args.uniprot_ftp_base)
-    configparser_object.set('process_proteomes', 'uniprot_reference_proteomes', 
+    configparser_object.set('parse_uniprot', 'uniprot_reference_proteomes', 
                             args.uniprot_reference_proteomes)
-    configparser_object.set('process_proteomes', 'download_base_dir',
+    configparser_object.set('parse_uniprot', 'download_base_dir',
                             args.download_base_dir)
-    configparser_object.set('process_proteomes', 'pickled_dir',
+    configparser_object.set('parse_uniprot', 'pickled_dir',
                             args.pickled_dir)
-    configparser_object.set('process_proteomes', 'relpath_genomes',
+    configparser_object.set('parse_uniprot', 'relpath_genomes',
                             args.relpath_genomes)
-    configparser_object.set('process_proteomes', 'relpath_reference_proteomes',
+    configparser_object.set('parse_uniprot', 'relpath_reference_proteomes',
                             args.relpath_reference_proteomes)
-    configparser_object.set('process_proteomes', 'relpath_idmapping',
+    configparser_object.set('parse_uniprot', 'relpath_idmapping',
                             args.relpath_idmapping)
-    configparser_object.set('process_proteomes', 'relpath_uniprot_sprot',
+    configparser_object.set('parse_uniprot', 'relpath_uniprot_sprot',
                             args.relpath_uniprot_sprot)
-    configparser_object.set('process_proteomes', 'relpath_uniprot_trembl',
+    configparser_object.set('parse_uniprot', 'relpath_uniprot_trembl',
                             args.relpath_uniprot_trembl)
-    configparser_object.set('process_proteomes', 'relpath_uniref100',
+    configparser_object.set('parse_uniprot', 'relpath_uniref100',
                             args.relpath_uniref100)
-    configparser_object.set('process_proteomes', 'relpath_uniref90',
+    configparser_object.set('parse_uniprot', 'relpath_uniref90',
                             args.relpath_uniref90)
-    configparser_object.set('process_proteomes', 'relpath_uniref50',
+    configparser_object.set('parse_uniprot', 'relpath_uniref50',
                             args.relpath_uniref50)
-    configparser_object.set('process_proteomes', 'relpath_uniparc',
+    configparser_object.set('parse_uniprot', 'relpath_uniparc',
                             args.relpath_uniparc)
-    configparser_object.set('process_proteomes','relpath_proteomes_xml',
+    configparser_object.set('parse_uniprot','relpath_proteomes_xml',
                             args.relpath_proteomes_xml)
-    configparser_object.set('process_proteomes', 'relpath_pickle_proteomes',
+    configparser_object.set('parse_uniprot', 'relpath_pickle_proteomes',
                             args.relpath_pickle_proteomes)
-    configparser_object.set('process_proteomes', 'relpath_pickle_taxontree',
+    configparser_object.set('parse_uniprot', 'relpath_pickle_taxontree',
                             args.relpath_pickle_taxontree)
-    configparser_object.set('process_proteomes', 'relpath_pickle_uniprotkb_uniref_idmap',
+    configparser_object.set('parse_uniprot', 'relpath_pickle_uniprotkb_uniref_idmap',
                             args.relpath_pickle_uniprotkb_uniref_idmap)
-    configparser_object.set('process_proteomes', 'relpath_pickle_uniref100_idmap',
+    configparser_object.set('parse_uniprot', 'relpath_pickle_uniref100_idmap',
                             args.relpath_pickle_uniref100_idmap)
-    configparser_object.set('process_proteomes', 'relpath_pickle_uniref90_idmap',
+    configparser_object.set('parse_uniprot', 'relpath_pickle_uniref90_idmap',
                             args.relpath_pickle_uniref90_idmap)
-    configparser_object.set('process_proteomes', 'relpath_pickle_uniref50_idmap',
+    configparser_object.set('parse_uniprot', 'relpath_pickle_uniref50_idmap',
                             args.relpath_pickle_uniref50_idmap)
 
-    configparser_object.set('process_proteomes', 'relpath_pickle_uniref100_taxid_idmap',
+    configparser_object.set('parse_uniprot', 'relpath_pickle_uniref100_taxid_idmap',
                             args.relpath_pickle_uniref100_taxid_idmap)
-    configparser_object.set('process_proteomes', 'relpath_pickle_uniref90_taxid_idmap',
+    configparser_object.set('parse_uniprot', 'relpath_pickle_uniref90_taxid_idmap',
                             args.relpath_pickle_uniref90_taxid_idmap)
-    configparser_object.set('process_proteomes', 'relpath_pickle_uniref50_taxid_idmap',
+    configparser_object.set('parse_uniprot', 'relpath_pickle_uniref50_taxid_idmap',
                             args.relpath_pickle_uniref50_taxid_idmap)
 
-    configparser_object.set('process_proteomes', 'relpath_pickle_uniprotkb_idmap',
+    configparser_object.set('parse_uniprot', 'relpath_pickle_uniprotkb_idmap',
                             args.relpath_pickle_uniprotkb_idmap)
-    configparser_object.set('process_proteomes', 'relpath_taxon_to_process',
+    configparser_object.set('parse_uniprot', 'relpath_taxon_to_process',
                             args.relpath_taxon_to_process)
     
-    configparser_object.set('process_proteomes', 'verbose', str(verbose))
-    configparser_object.set('process_proteomes', 'nproc', str(args.nproc))
+    configparser_object.set('parse_uniprot', 'verbose', str(verbose))
+    configparser_object.set('parse_uniprot', 'nproc', str(args.nproc))
 
     configparser_object.add_section('stats')
     configparser_object.set('stats', 'download_base_dir',

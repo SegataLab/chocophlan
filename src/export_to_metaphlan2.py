@@ -47,7 +47,7 @@ else:
     utils = importlib.import_module('src.utils')
     from src.panproteomes import Panproteome
 
-OUTFILE_PREFIX = 'mpa_v{}_CHOCOPhlAn_{}'.format(version.__MetaPhlAn2_db_version__, version.__CHOCOPhlAn_version__)
+OUTFILE_PREFIX = 'mpa_v{}_CHOCOPhlAn_{}'.format(version.__MetaPhlAn2_db_version__.replace('.',''), version.__CHOCOPhlAn_version__)
 
 def init_parse(terminating_):
     global terminating
@@ -878,7 +878,7 @@ def merge_bad_species(sgb_release, gca2taxonomy, config):
 
         species_in_sgb = set(taxstr for (gca, taxstr) in gca_tax)
         # merged_into=max([(s,count_marker_per_clade[s]) for s in species_in_sgb],key = lambda x:x[1])[0]
-    new_species_merged.setdefault(merged_into,set()).update(species_in_sgb)
+        new_species_merged.setdefault(merged_into,set()).update(species_in_sgb)
 
     with open('{}/{}/merged_species_spp.tsv'.format(config['export_dir'],config['exportpath_metaphlan2']), 'wt') as fout:
         fout.write('old_taxonomy\told_taxonomy_id\tmerged_into\tmerged_into_id\n')
@@ -1014,7 +1014,7 @@ def run_all(config):
 
     gca2taxonomy = pd.read_csv(os.path.join(export.config['export_dir'], export.config['relpath_gca2taxa']), sep='\t')
     # gca2taxonomy = dict(zip(gca2taxonomy.GCA_accession, gca2taxonomy.NCBI_taxid))
-    sgb_release = pd.read_csv('/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/sgbrepo/releases/Jul19/SGB.Jul19.txt.bz2', sep='\t', skiprows=1)
+    sgb_release = pd.read_csv('/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/sgbrepo/releases/Jul19/SGB.Jan19.txt.bz2', sep='\t', skiprows=1)
     sgb_release = sgb_release.loc[sgb_release['# Label'] == 'SGB',]
     export.taxa_to_remove = merge_bad_species(sgb_release, gca2taxonomy, export.config)
     export.taxa_to_remove = Counter(export.taxa_to_remove * 50000)
@@ -1027,9 +1027,9 @@ def run_all(config):
 
         species = [ '{}/{}/species/90/{}.pkl'.format(export.config['download_base_dir'], export.config['relpath_panproteomes_dir'], item.tax_id) 
                     for item in export.taxontree.lookup_by_rank()['species'] 
-                    if export.taxontree.get_child_proteomes(item) and 
-                    item.tax_id not in export.taxa_to_remove and 
-                    item.tax_id not in species_in_groups
+                    if export.taxontree.get_child_proteomes(item) and (
+                    item.tax_id not in export.taxa_to_remove or
+                    item.tax_id not in species_in_groups)
                 ]
         
         utils.info('Started extraction of MetaPhlAn2 markers.\n')

@@ -12,7 +12,7 @@ __date__ = '28 Sep 2017'
 import src.utils as utils
 import src.extract as extract
 import src.download as download
-import src.process_proteomes as process_proteomes
+import src.parse_uniprot as parse_uniprot
 import src.panproteomes as panproteomes
 import src.chocophlan2phylophlan as chocophlan2phylophlan
 import src.stats as stats
@@ -31,8 +31,8 @@ def chocophlan():
     config = utils.check_configs(config, verbose=args.verbose)
     # download.download(config['download'], verbose=config['download']['verbose'])
     # extract.do_extraction(config['extract'], verbose=config['extract']['verbose'])
-    # process_proteomes.process_proteomes(config['process_proteomes'])
-    # download.download_ncbi_from_proteome_pickle(config['process_proteomes'])
+    # parse_uniprot.parse_uniprot(config['parse_uniprot'])
+    # download.download_ncbi_from_proteome_pickle(config['parse_uniprot'])
     # panproteomes.generate_panproteomes(config['panproteomes'])
     #stats.generate_stats(config['stats'])
     #export_to_metaphlan2.run_all(config['export'])
