@@ -425,12 +425,20 @@ def run_all(config):
     with mp.Pool(processes = 40, maxtasksperchild = 70) as pll:
         res = [_ for _ in pll.imap_unordered(export_panproteome_centroid, set(int(s[0].split('|')[-1]) for s in mpa_pkl['taxonomy'].values()), chunksize=1)]
 
-    OUTFILE_PREFIX = 'HUMAnN2_{}_CHOCOPhlAn_{}'.format(version.__MetaPhlAn2_db_version__, version.__CHOCOPhlAn_version__)
+    functional_annot_d = {}
+    OUTFILE_PREFIX = 'HUMAnN_{}_CHOCOPhlAn_{}'.format(version.__MetaPhlAn2_db_version__, version.__CHOCOPhlAn_version__)
     with bz2.open('{}/{}/{}_functional_annotation_mapping.tsv.bz2'.format(config['export_dir'], config['exportpath_humann2'],OUTFILE_PREFIX), 'wt') as functional_annot:
-        for s in glob.glob('/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/chocophlan/export_201901/humann2/functional_annot/*.txt.bz2'):
+        functional_annot.write('NR90\tNR50\tGO\tKO\tKEGG\tPfam\tEC\teggNOG\n')
+        for s in glob.glob('{}/{}/functional_annot/*.txt.bz2'.format(config['export_dir'], config['exportpath_humann2'])):
             with bz2.BZ2File(s) as p_fa:
-                functional_annot.write('NR90\tNR50\tGO\tKO\tKEGG\tPfam\tEC\teggNOG\n')
-                functional_annot.write('\n'.join( '{}\t{}'.format( x[0], '\t'.join(x[1])) for x in dict(pickle.load(p_fa)).items() ) )
+                for k,v in dict(pickle.load(p_fa)).items():
+                    if k not in functional_annot_d:
+                        functional_annot_d[k] = [v[0], set(), set(), set(), set(), set(), set()]
+                    for i in range(1,7):
+                        functional_annot_d[k][i].update(v[i].split(','))        
+        
+            for k,v in functional_annot_d.items():
+                functional_annot.write('{}\t{}\t{}\n'.format(k,v[0], '\t'.join([','.join(filter(lambda x:x is not '',x)) for x in v[1:]])))
 
     with mp.Pool(processes = 10, maxtasksperchild = 100) as pll:
         res = [ _ for _ in pll.imap_unordered(export_genome_annotation, shared_variables.proteomes, chunksize=1)]

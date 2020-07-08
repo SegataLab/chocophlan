@@ -1014,7 +1014,7 @@ def run_all(config):
 
     gca2taxonomy = pd.read_csv(os.path.join(export.config['export_dir'], export.config['relpath_gca2taxa']), sep='\t')
     # gca2taxonomy = dict(zip(gca2taxonomy.GCA_accession, gca2taxonomy.NCBI_taxid))
-    sgb_release = pd.read_csv('/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/sgbrepo/releases/Jul19/SGB.Jan19.txt.bz2', sep='\t', skiprows=1)
+    sgb_release = pd.read_csv('/shares/CIBIO-Storage/CM/news/users/francesco.beghini/git/MetaRefSGB/releases/Jul19/SGB.Jan19.txt.bz2', sep='\t', skiprows=1)
     sgb_release = sgb_release.loc[sgb_release['# Label'] == 'SGB',]
     export.taxa_to_remove = merge_bad_species(sgb_release, gca2taxonomy, export.config)
     export.taxa_to_remove = Counter(export.taxa_to_remove * 50000)
