@@ -185,12 +185,12 @@ def read_params():
                        default='phylophlan/',
                        help='')
 
-    group.add_argument('--exportpath_metaphlan2',
-                       default='metaphlan2/',
+    group.add_argument('--exportpath_metaphlan',
+                       default='metaphlan/',
                        help='')
 
-    group.add_argument('--exportpath_humann2',
-                       default='humann2/',
+    group.add_argument('--exportpath_humann',
+                       default='humann/',
                        help='')
 
     group.add_argument('--exportpath_panphlan',
@@ -428,8 +428,8 @@ def set_download_options(configparser_object, args, verbose=False):
                             args.export_dir)
     configparser_object.set('export', 'exportpath_phylophlan',
                             args.exportpath_phylophlan)
-    configparser_object.set('export', 'exportpath_metaphlan2',
-                        args.exportpath_metaphlan2)
+    configparser_object.set('export', 'exportpath_metaphlan',
+                        args.exportpath_metaphlan)
     configparser_object.set('export', 'relpath_panproteomes_dir',
                             args.relpath_panproteomes_dir)
     configparser_object.set('export', 'relpath_genomes',
