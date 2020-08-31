@@ -343,20 +343,6 @@ class Nodes:
                         trac_print_t(c, names)
             trac_print_t(tree.root)
 
-            """
-            for t in tree.get_terminals():
-                tax = "|".join([red_rank(p.rank)+'__'+p.name for p in tree.get_path( t )])
-                outf.write("\t".join( [ t.name,
-                                        #t.accession['status'],
-                                        #",".join(t.accession['gen_seqs']),
-                                        str(t.tax_id),
-                                        #t.accession['code'],
-                                        #",".join(t.accession['accession']),
-                                        #str(t.accession['len']),
-                                        tax
-                                        ]    )+"\n")
-            """
-
     def get_tree_with_reduced_taxonomy(self, superkingdom="Bacteria"):
         reduced_tax_levels = ['superkingdom', 'phylum',
                               'class', 'order', 'family', 'genus', 'species']
@@ -452,16 +438,8 @@ class Nodes:
             for c in clade.clades:
                 reduce_double_taxa(c)
 
-        #add_noranks( self.reduced_tree.root )
-
-        utils.info('Removing noranks from the taxonomy\n')
         remove_noranks(self.tree.root)
-        #add_noranks( self.reduced_tree.root)
-        utils.info('Adding taxon names to the taxonomy\n')
         add_taxa(self.tree.root)
-        # utils.info('Adding internal missing taxonomic levels\n')
-        # add_internal_missing_levels(self.reduced_tree.root, lev=-1)
-        utils.info('Removing duplicated taxa\n')
         reduce_double_taxa(self.tree.root)
 
 class Names:
@@ -494,22 +472,22 @@ class Names:
     def get_tax_ids_to_names(self):
         return self.tax_ids_to_names
 
-def do_extraction(config, verbose=False):
+def do_extraction(config, logger, verbose=False):
     taxdump_dir = config['download_base_dir'] + config['relpath_taxdump']
 
-    names_buf, nodes_buf = read_taxdump(taxdump_dir)
+    names_buf, nodes_buf = read_taxdump(taxdump_dir, logger)
 
-    utils.info("Starting extraction of taxonomic names... ")
+    logger.info("Starting extraction of taxonomic names... ")
     names = Names(names_buf)
-    utils.info("Finished\n")
+    logger.info("Finished\n")
 
-    utils.info("Creating taxonomy files from nodes.dmp... ")
+    logger.info("Creating taxonomy files from nodes.dmp... ")
     tax_tree = Nodes(nodes_buf, names.get_tax_ids_to_names())
-    utils.info("Finished\n")
+    logger.info("Finished\n")
 
     tax_tree.tree.root.clades = tax_tree.tree.root.clades[0:2] + tax_tree.tree.root.clades[4::]
 
-    utils.info("Refining tree... ")
+    logger.info("Refining tree... ")
     # tax_tree.get_tree_with_reduced_taxonomy()
     r = re.compile( r"(.*(C|c)andidat(e|us)_.*)|"
                     r"(.*_sp(_.*|$).*)|"
@@ -526,27 +504,27 @@ def do_extraction(config, verbose=False):
     merged_low_quality = [tax_tree.taxid_n[x].tax_id for x in tax_tree.taxid_n if r.match(tax_tree.taxid_n[x].name)]
     [tax_tree.taxid_n[x].__setattr__('is_low_quality', True) for x in merged_low_quality]
     [tax_tree.taxid_n[x].__setattr__('is_low_quality', False) for x in set(tax_tree.taxid_n.keys()).difference(merged_low_quality)]
-    utils.info('Finished postprocessing the taxonomy\n')
+    logger.info('Finished postprocessing the taxonomy\n')
 
-    utils.info("Pickling tree... ")
+    logger.info("Pickling tree... ")
     os.makedirs(config['download_base_dir'] + '/pickled', exist_ok=True)
     pickle.dump(tax_tree, 
                 open(config['download_base_dir'] + config['relpath_pickle_taxontree'], "wb" ))
-    utils.info("Finished\n")
+    logger.info("Finished\n")
 
 
 # Additional idea: we can also save the position of each contig within each file like so:
 # Final_dir = {"contig_id_1": ("file_name_abc", 252624)}, where the second entry of the tuple is the number of the contig within the file.
 # Can be easily added while reading and creating the contigid to filename mapping. This would later safe us a LOT of time, right?
-def read_taxdump(taxdump_dir, verbose=False):
-    utils.info('Reading the NCBI taxdump file from {}\n'.format(taxdump_dir))
+def read_taxdump(taxdump_dir, logger, verbose=False):
+    logger.info('Reading the NCBI taxdump file from {}\n'.format(taxdump_dir))
     try:
         tarf = None
 
         if os.path.isfile(taxdump_dir):
             tarf = tarfile.open(taxdump_dir, "r:gz")
         else:
-            utils.error('{} does not exists. Exiting...'.format(taxdump_dir))
+            logger.error('{} does not exists. Exiting...'.format(taxdump_dir))
             sys.exit()
         for m in tarf.getmembers():
             if m.name == "names.dmp":
@@ -556,11 +534,11 @@ def read_taxdump(taxdump_dir, verbose=False):
                 nodes_buf = (l.decode("utf-8").strip().split('\t')
                              for l in tarf.extractfile(m).readlines())
     except Exception as e:
-        utils.error("Error in extracting or reading {}: {}"
+        logger.error("Error in extracting or reading {}: {}"
                     .format(taxdump_dir, e))
         sys.exit()
 
-    utils.info('names.dmp and nodes.dmp successfully read\n')
+    logger.info('names.dmp and nodes.dmp successfully read\n')
 
     return (names_buf, nodes_buf)
 
@@ -573,9 +551,11 @@ if __name__ == '__main__':
     config = utils.read_configs(args.config_file, verbose=args.verbose)
     config = utils.check_configs(config)
 
-    do_extraction(config['build_taxontree'], verbose=config['build_taxontree']['verbose'])
+    logger = utils.setup_logger('.','CHOCOPhlAn_build_taxontree{}'.format(datetime.datetime.today().strftime('%Y%m%d_%H%M')))
+
+    do_extraction(config['build_taxontree'], logger, verbose=config['build_taxontree']['verbose'])
 
     t1 = time.time()
 
-    utils.info('Total elapsed time {}s\n'.format(int(t1 - t0)), init_new_line=True)
+    logger.info('Total elapsed time {}s\n'.format(int(t1 - t0)), init_new_line=True)
     sys.exit(0)

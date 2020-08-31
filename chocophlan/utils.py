@@ -17,7 +17,7 @@ import importlib
 import logging
 
 def setup_logger(logPath, fileName):
-    logFormatter = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
+    logFormatter = logging.Formatter("%(asctime)s [ %(filename)s ] [ %(funcName)s ] [%(levelname)-5.5s]  %(message)s")
     rootLogger = logging.getLogger()
 
     fileHandler = logging.FileHandler("{0}/{1}.log".format(logPath, fileName))

@@ -25,8 +25,6 @@ FTP_COLUMN=19
 GFF_EXTENSION="_genomic.gff.gz"
 FNA_EXTENSION="_genomic.fna.gz"
 
-logger = utils.setup_logger('.','CHOCOPhlAn_download')
-
 def do_download(inputs, verbose):
     if not terminating.is_set():
         try:
@@ -59,7 +57,7 @@ def do_download(inputs, verbose):
         terminating.set()
 
 
-def download(config, verbose=False):
+def download(config, logger, verbose=False):
     os.makedirs(config['download_base_dir']+os.path.split(config['relpath_uniref100'])[0], exist_ok=True)
     os.makedirs(config['download_base_dir']+os.path.split(config['relpath_taxdump'])[0], exist_ok=True)
     os.makedirs(config['download_base_dir']+os.path.split(config['relpath_taxonomic_catalogue'])[0], exist_ok=True)
@@ -379,8 +377,9 @@ if __name__ == '__main__':
 
     config = utils.read_configs(args.config_file, verbose=args.verbose)
     config = utils.check_configs(config)
-
-    download(config['download'], verbose=config['download']['verbose'])
+    logger = utils.setup_logger('.','CHOCOPhlAn_download_{}'.format(datetime.datetime.today().strftime('%Y%m%d_%H%M')))
+    
+    download(config['download'], logger, verbose=config['download']['verbose'])
 
     t1 = time.time()
 
