@@ -7,6 +7,7 @@ __author__ = ('Francesco Beghini (francesco.beghini@unitn.it)'
               'Nicola Segata (nicola.segata@unitn.it)')
 
 from chocophlan import *
+import ray
 import chocophlan.utils as utils
 import chocophlan.build_taxontree as build_taxontree
 __date__ = '31 Aug 2020'
@@ -60,8 +61,9 @@ def uniprot_tuple_to_dict(v):
              'isFragment' : v[17]
             }
 
+@ray.remote
 def parse_uniref_xml_elem(elem):
-    if not terminating.is_set() and elem is not None:
+    if elem is not None:
         elem = etree.fromstring(elem)
         members = []
         t_uniref = None
@@ -94,7 +96,6 @@ def parse_uniref_xml_elem(elem):
                         )
         except Exception as e:
             utils.error('Failed to elaborate item: '+ elem.get('id'))
-            terminating.set()
         finally:
             elem.clear()
             for ancestor in elem.xpath('ancestor-or-self::*'):
@@ -103,10 +104,10 @@ def parse_uniref_xml_elem(elem):
         
         return t_uniref
 
+@ray.remote
 def parse_uniref_xml(xml_input, config):  
     uniref_xml = etree.iterparse(gzip.GzipFile(xml_input), events = ('end',), tag = '{http://uniprot.org/uniref}entry', huge_tree = True)
 
-    terminating = mp.Event()
     chunksize = config['nproc']
     cluster = os.path.basename(xml_input).split('.')[0]
     if config['verbose']:
@@ -122,7 +123,7 @@ def parse_uniref_xml(xml_input, config):
         try:
             file_chunk = 1
             pickle_chunk = open("{}/{}/{}/{}_{}.pkl".format(config['download_base_dir'], config['pickled_dir'], cluster, cluster, file_chunk),'wb')
-            for index, elem in enumerate(pool.imap_unordered(parse_uniref_xml_elem, yield_filtered_xml_string(uniref_xml), chunksize=chunksize)):
+            for index, elem in enumerate([ray.get(parse_uniref_xml_elem.remote(x)) for x in yield_filtered_xml_string(uniref_xml)]):
                 if not index % GROUP_CHUNK:
                     pickle_chunk.close()
                     file_chunk = 1 + (index//GROUP_CHUNK )
@@ -159,9 +160,9 @@ def parse_uniref_xml(xml_input, config):
 # 15 NR90
 # 16 NR50
 # isFragment
+@ray.remote
 def parse_uniprotkb_xml_elem(elem):
-    if not terminating.is_set() and elem is not None:
-        global uniprotkb_uniref_idmap, taxid_to_process
+    if elem is not None:
         elem = etree.fromstring(elem)
         t_prot = None
         try:
@@ -171,7 +172,7 @@ def parse_uniprotkb_xml_elem(elem):
                 accession = ''.join(elem.xpath("/upkb:entry/upkb:accession[1]/text()", namespaces=ns, smart_strings=False))
                 gene = elem.xpath("/upkb:entry/upkb:gene/upkb:name/@type|/upkb:entry/upkb:gene/upkb:name/text()", namespaces=ns, smart_strings=False)
                 gene = tuple(zip(gene[0::2], gene[1::2]))
-                nr_ids = uniprotkb_uniref_idmap.get(accession,['','',''])
+                nr_ids = ray.get(r_uniprotkb_uniref_idmap).get(accession,['','',''])
                 t_prot = (accession,  #0
                           tax_id,      #1
                           ''.join(elem.xpath("/upkb:entry/upkb:sequence/text()", namespaces=ns, smart_strings=False)),   #2
@@ -201,9 +202,9 @@ def parse_uniprotkb_xml_elem(elem):
                     del ancestor.getparent()[0]
         
         return t_prot
-    
+
+@ray.remote
 def parse_uniprotkb_xml(xml_input, config):
-    terminating = mp.Event()
     chunksize = int(config['nproc'])
 
     db = -1 if 'uniprot_sprot' in xml_input else +1
@@ -214,12 +215,11 @@ def parse_uniprotkb_xml(xml_input, config):
     
     tree = etree.iterparse(gzip.GzipFile(xml_input), events = ('end',), tag = '{http://uniprot.org/uniprot}entry', huge_tree = True)
 
-    with mpdummy.Pool(initializer=init_parse, initargs=(terminating, ), processes=chunksize) as pool, \
-         open("{}/{}/uniprotkb_{}_idmap.pkl".format(config['download_base_dir'], config['pickled_dir'], db_name),'ab') as pickle_idmap:
+    with open("{}/{}/uniprotkb_{}_idmap.pkl".format(config['download_base_dir'], config['pickled_dir'], db_name),'ab') as pickle_idmap:
         try:
             file_chunk = 1
             pickle_chunk = open("{}/{}/uniprotkb/{}_{}.pkl".format(config['download_base_dir'], config['pickled_dir'], db_name, file_chunk),'ab')
-            for index, elem in enumerate(pool.imap_unordered(parse_uniprotkb_xml_elem, yield_filtered_xml_string(tree)),1):
+            for index, elem in enumerate([ray.get(parse_uniprotkb_xml_elem.remote(x)) for x in yield_filtered_xml_string(tree)],1):
                 if not index % GROUP_CHUNK:
                     pickle_chunk.close()
                     file_chunk = 1 + (index//GROUP_CHUNK )
@@ -539,50 +539,39 @@ def merge_idmap(config):
     utils.info('Done merging UniProtKB ids.\n')
 
 
-def parse_uniprot(config):
+def parse_uniprot(config, logger):
     os.makedirs('{}/{}'.format(config['download_base_dir'],config['pickled_dir']), exist_ok=True)
     if not os.path.exists("{}/{}/{}".format(config['download_base_dir'], config['pickled_dir'], 'uniprotkb')):
         os.makedirs("{}/{}/{}".format(config['download_base_dir'], config['pickled_dir'], 'uniprotkb'))
 
-    step1 = [ mp.Process(target=parse_uniref_xml, args=(config['download_base_dir']+config['relpath_uniref100'],config)),
-              mp.Process(target=parse_uniref_xml, args=(config['download_base_dir']+config['relpath_uniref90'],config)),
-              mp.Process(target=parse_uniref_xml, args=(config['download_base_dir']+config['relpath_uniref50'],config))
-            ]
-    # for p in step1:
-    #     p.start()
-
-    # for p in step1:
-    #     p.join()
-        
+    [ray.get(parse_uniref_xml.remote(x)) for x in [(config['download_base_dir']+config['relpath_uniref100'],config), 
+                                                    (config['download_base_dir']+config['relpath_uniref90'],config),
+                                                    (config['download_base_dir']+config['relpath_uniref50'],config)
+    ]]
+       
     global uniprotkb_uniref_idmap
 
-    utils.info('Loading NCBI taxonomic tree...')
+    logger.info('Loading NCBI taxonomic tree...')
     taxontree_path = "{}/{}".format(config['download_base_dir'],config['relpath_pickle_taxontree'])
     if os.path.exists(taxontree_path):
         taxontree = pickle.load(open(taxontree_path,'rb'))
         taxon_to_process(config, taxontree)
-        utils.info('Done.\n')
+        logger.info('Done.\n')
     else:
-        utils.error('NCBI taxonomic tree not found. Exiting...', exit = True)
+        logger.error('NCBI taxonomic tree not found. Exiting...', exit = True)
         
     # parse_uniprotkb_uniref_idmapping(config)
     uniprotkb_uniref_idmap = merge_uniparc_idmapping(config)
     
     if not uniprotkb_uniref_idmap:
-        utils.info('Loading UniProtKB-UniRef mapping...')
+        logger.info('Loading UniProtKB-UniRef mapping...')
         uniprotkb_uniref_idmap = pickle.load(open('{}{}'.format(config['download_base_dir'],config['relpath_pickle_uniprotkb_uniref_idmap']),'rb'))
-        utils.info('Done.\n')
+        logger.info('Done.\n')
     
-    step2 = [ mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_sprot'], config)),
-              mp.Process(target=parse_uniprotkb_xml, args=(config['download_base_dir']+config['relpath_uniprot_trembl'], config)),
-              mp.Process(target=parse_uniparc_xml, args=(config['download_base_dir']+config['relpath_uniparc'],config))
-            ]
-    for p in step2:
-        p.start()
 
-    for p in step2:
-        p.join()
-
+    [ray.get(parse_uniprotkb_xml.remote(x)) for x in [(config['download_base_dir']+config['relpath_uniprot_sprot'], config),(config['download_base_dir']+config['relpath_uniprot_trembl'], config)]]
+    [ray.get(parse_uniprotkb_xml.parse_uniparc_xml(x)) for x in [(config['download_base_dir']+config['relpath_uniparc'], config)]]
+    
     merge_idmap(config)
     create_proteomes_pkl(config['download_base_dir']+config['relpath_proteomes_xml'], config)
     annotate_taxon_tree(config)
@@ -592,11 +581,12 @@ if __name__ == '__main__':
     t0=time.time()
     args = utils.read_params()
     utils.check_params(args, verbose=args.verbose)
-    
+    logger = utils.setup_logger('.','CHOCOPhlAn_parse_uniprot_{}'.format(datetime.datetime.today().strftime('%Y%m%d_%H%M')))
+
     config = utils.read_configs(args.config_file, verbose=args.verbose)
     config = utils.check_configs(config)
     config = config['parse_uniprot']
-    parse_uniprot(config)
+    parse_uniprot(config, logger)
     t1=time.time()
 
     utils.info('Total elapsed time {}s\n'.format(float(t1 - t0)))
