@@ -21,7 +21,7 @@ import chocophlan.export_to_metaphlan as export_to_metaphlan
 def chocophlan():
     logger = utils.setup_logger('.','CHOCOPhlAn_{}'.format(datetime.datetime.today().strftime('%Y%m%d_%H%M')))
     
-    logger.info('CHOCOPhlAn: Cluster of HOmologous Cdses fOr PHyLogenetic ANalysis\n')
+    logger.info('CHOCOPhlAn: Cluster of HOmologous Cdses fOr PHyLogenetic ANalysis')
     args = utils.read_params()
     utils.check_params(args, verbose=args.verbose)
 
@@ -38,7 +38,7 @@ def chocophlan():
     if os.path.exists('{}/{}'.format(config['parse_uniprot']['download_base_dir'], config['parse_uniprot']['relpath_pickle_taxontree'])):
         parse_uniprot.parse_uniprot(config['parse_uniprot'])
     
-    if os.path.exists('{}/{}'.format(config['parse_uniprot']['download_base_dir'], config['parse_uniprot']['relpath_pickle_taxontree'])) and 
+    if os.path.exists('{}/{}'.format(config['parse_uniprot']['download_base_dir'], config['parse_uniprot']['relpath_pickle_taxontree'])) and \
         os.path.exists('{}/{}'.format(config['parse_uniprot']['download_base_dir'], config['parse_uniprot']['relpath_pickle_proteomes'])):
         download.download_ncbi_from_proteome_pickle(config['parse_uniprot'])
     # panproteomes.generate_panproteomes(config['panproteomes'])
