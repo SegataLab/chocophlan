@@ -25,7 +25,7 @@ FTP_COLUMN=19
 GFF_EXTENSION="_genomic.gff.gz"
 FNA_EXTENSION="_genomic.fna.gz"
 
-def do_download(inputs, verbose):
+def do_download(inputs, verbose, logger):
     if not terminating.is_set():
         try:
             ftp_base, full_link, output_path = inputs
@@ -69,7 +69,7 @@ def download(config, logger, verbose=False):
     chunksize = config['nproc']
     with mp.Pool(initializer=init_parse, initargs=(terminating,), processes=1) as pool:
         try:
-            do_download_partial = partial(do_download,verbose=config['verbose'])
+            do_download_partial = partial(do_download,verbose=config['verbose'], logger=logger)
 
             [_ for _ in pool.imap_unordered(do_download_partial, [(config['uniprot_ftp_base'],
                   config['relnotes'],
@@ -140,16 +140,16 @@ def download(config, logger, verbose=False):
 
     terminating = mp.Event()
     chunksize = config['nproc']
-    with mp.Pool(initializer=init_parse, initargs=(terminating,), processes=chunksize*3) as pool:
+    with mp.Pool(initializer=init_parse, initargs=(terminating,), processes= len(argument_list)//2 ) as pool:
         try:
             if verbose:
                 logger.info("Starting parallel download")
             
             # Need to define a partial function because function passed via imap require only one argument
-            do_download_partial = partial(do_download,verbose=config['verbose'])
+            do_download_partial = partial(do_download,verbose=config['verbose'], logger=logger)
 
             [_ for _ in pool.imap_unordered(do_download_partial, argument_list,
-                                  chunksize=2)]
+                                  chunksize=1)]
         except Exception as e:
             logger.error(str(e))
             logger.error('Download failed', exit=True)
@@ -168,16 +168,14 @@ def download(config, logger, verbose=False):
     find_file = etree.ETXPath("//{http://www.metalinker.org/}file")
     find_veri = etree.ETXPath("//{http://www.metalinker.org/}verification")
 
+    with mp.Pool(processes= len(files_to_check) ) as pool:
+        check_hash_partial = partial(check_hash, verbose=verbose, logger=logger)
+
+        ret = {x[0]:x[1] for x in pool.imap_unordered(check_hash_partial, files_to_check,
+                                chunksize=1)}
 
     for d, m in files_to_check:
-        if verbose:
-            logger.info("Checking {} md5 hash...".format(d))
-        md5hash = hashlib.md5()
-        with open(d,'rb') as f:
-            for chunk in iter(lambda: f.read(4096), b""):
-                md5hash.update(chunk)
-
-        calc_hash = md5hash.hexdigest()[:32]
+        calc_hash = ret[d]
         down_hash = ""
         meta = etree.parse(m)
         entry = [x for x in find_file(meta) if x.get('name') == os.path.split(d)[1]][0]
@@ -194,6 +192,15 @@ def download(config, logger, verbose=False):
 
     with open('{}/DONE'.format( config['download_base_dir']), 'w') as d_status:
         d_status.write('{}\n'.format(__UniRef_version__))
+
+def check_hash(d, verbose, logger):
+    if verbose:
+        logger.info("Checking {} md5 hash...".format(d[0]))
+    md5hash = hashlib.md5()
+    with open(d[0],'rb') as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            md5hash.update(chunk)
+    return (d[0], md5hash.hexdigest()[:32])
 
 def download_file(url,file):
     try:
