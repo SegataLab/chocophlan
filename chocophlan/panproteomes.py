@@ -10,7 +10,6 @@ import chocophlan.stats as stats
 __date__ = '31 Aug 2020'
 
 from collections import Counter
-import bz2
 from operator import itemgetter
 
 class Panproteome:
