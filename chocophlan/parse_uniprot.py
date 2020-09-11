@@ -104,27 +104,27 @@ def parse_uniref_xml_elem(elem):
         
         return t_uniref
 
-@ray.remote
-def parse_uniref_xml(xml_input, config):  
+def parse_uniref_xml(xml_input, logger, config):  
     uniref_xml = etree.iterparse(gzip.GzipFile(xml_input), events = ('end',), tag = '{http://uniprot.org/uniref}entry', huge_tree = True)
 
     chunksize = config['nproc']
     cluster = os.path.basename(xml_input).split('.')[0]
     if config['verbose']:
-        utils.info("Starting processing UniRef {} database\n".format(cluster))
+        logger.info("Starting processing UniRef {} database\n".format(cluster))
 
     if not os.path.exists("{}/{}/{}".format(config['download_base_dir'], config['pickled_dir'], cluster)):
         os.makedirs("{}/{}/{}".format(config['download_base_dir'], config['pickled_dir'], cluster))
-
-    with mp.Pool(initializer=init_parse, initargs=(terminating, ), processes=chunksize) as pool,\
-         open("{}/{}/{}_uniparc_idmap.pkl".format(config['download_base_dir'],config['pickled_dir'], cluster),'wb') as pickle_uniref_uniparc_idmap,\
+    
+    ray.init()
+    with open("{}/{}/{}_uniparc_idmap.pkl".format(config['download_base_dir'],config['pickled_dir'], cluster),'wb') as pickle_uniref_uniparc_idmap,\
          open("{}/{}/{}_idmap.pkl".format(config['download_base_dir'],config['pickled_dir'], cluster),'wb') as pickle_uniref_idmap,\
          open("{}/pickled/{}_taxid_idmap.pkl".format(config['download_base_dir'],cluster),'wb') as pickle_taxid_map:
         try:
             file_chunk = 1
             pickle_chunk = open("{}/{}/{}/{}_{}.pkl".format(config['download_base_dir'], config['pickled_dir'], cluster, cluster, file_chunk),'wb')
-            for index, elem in enumerate([ray.get(parse_uniref_xml_elem.remote(x)) for x in yield_filtered_xml_string(uniref_xml)]):
+            for index, elem in enumerate((ray.get(parse_uniref_xml_elem.remote(x)) for x in yield_filtered_xml_string(uniref_xml))):
                 if not index % GROUP_CHUNK:
+                    print(file_chunk)
                     pickle_chunk.close()
                     file_chunk = 1 + (index//GROUP_CHUNK )
                     pickle_chunk = open("{}/{}/{}/{}_{}.pkl".format(config['download_base_dir'], config['pickled_dir'], cluster, cluster, file_chunk),'wb')
@@ -139,7 +139,7 @@ def parse_uniref_xml(xml_input, config):
         finally:
             pickle_chunk.close()
     if config['verbose']:
-        utils.info('UniRef {} database processed successfully.\n'.format(cluster))
+        logger.info('UniRef {} database processed successfully.\n'.format(cluster))
 
 # UniProtKB elemtes are mapped in a int-based id tuple
 #  0 accession
@@ -203,7 +203,6 @@ def parse_uniprotkb_xml_elem(elem):
         
         return t_prot
 
-@ray.remote
 def parse_uniprotkb_xml(xml_input, config):
     chunksize = int(config['nproc'])
 
@@ -544,37 +543,37 @@ def parse_uniprot(config, logger):
     if not os.path.exists("{}/{}/{}".format(config['download_base_dir'], config['pickled_dir'], 'uniprotkb')):
         os.makedirs("{}/{}/{}".format(config['download_base_dir'], config['pickled_dir'], 'uniprotkb'))
 
-    [ray.get(parse_uniref_xml.remote(x)) for x in [(config['download_base_dir']+config['relpath_uniref100'],config), 
-                                                    (config['download_base_dir']+config['relpath_uniref90'],config),
-                                                    (config['download_base_dir']+config['relpath_uniref50'],config)
+    [parse_uniref_xml(x[0], x[1], x[2]) for x in [(config['download_base_dir']+config['relpath_uniref100'],logger, config), 
+                                                    (config['download_base_dir']+config['relpath_uniref90'],logger, config),
+                                                    (config['download_base_dir']+config['relpath_uniref50'],logger, config)
     ]]
        
-    global uniprotkb_uniref_idmap
+    # global uniprotkb_uniref_idmap
 
-    logger.info('Loading NCBI taxonomic tree...')
-    taxontree_path = "{}/{}".format(config['download_base_dir'],config['relpath_pickle_taxontree'])
-    if os.path.exists(taxontree_path):
-        taxontree = pickle.load(open(taxontree_path,'rb'))
-        taxon_to_process(config, taxontree)
-        logger.info('Done.\n')
-    else:
-        logger.error('NCBI taxonomic tree not found. Exiting...', exit = True)
+    # logger.info('Loading NCBI taxonomic tree...')
+    # taxontree_path = "{}/{}".format(config['download_base_dir'],config['relpath_pickle_taxontree'])
+    # if os.path.exists(taxontree_path):
+    #     taxontree = pickle.load(open(taxontree_path,'rb'))
+    #     taxon_to_process(config, taxontree)
+    #     logger.info('Done.\n')
+    # else:
+    #     logger.error('NCBI taxonomic tree not found. Exiting...', exit = True)
         
-    # parse_uniprotkb_uniref_idmapping(config)
-    uniprotkb_uniref_idmap = merge_uniparc_idmapping(config)
+    # # parse_uniprotkb_uniref_idmapping(config)
+    # uniprotkb_uniref_idmap = merge_uniparc_idmapping(config)
     
-    if not uniprotkb_uniref_idmap:
-        logger.info('Loading UniProtKB-UniRef mapping...')
-        uniprotkb_uniref_idmap = pickle.load(open('{}{}'.format(config['download_base_dir'],config['relpath_pickle_uniprotkb_uniref_idmap']),'rb'))
-        logger.info('Done.\n')
+    # if not uniprotkb_uniref_idmap:
+    #     logger.info('Loading UniProtKB-UniRef mapping...')
+    #     uniprotkb_uniref_idmap = pickle.load(open('{}{}'.format(config['download_base_dir'],config['relpath_pickle_uniprotkb_uniref_idmap']),'rb'))
+    #     logger.info('Done.\n')
     
 
-    [ray.get(parse_uniprotkb_xml.remote(x)) for x in [(config['download_base_dir']+config['relpath_uniprot_sprot'], config),(config['download_base_dir']+config['relpath_uniprot_trembl'], config)]]
-    [ray.get(parse_uniprotkb_xml.parse_uniparc_xml(x)) for x in [(config['download_base_dir']+config['relpath_uniparc'], config)]]
+    # [ray.get(parse_uniprotkb_xml.remote(x)) for x in [(config['download_base_dir']+config['relpath_uniprot_sprot'], config),(config['download_base_dir']+config['relpath_uniprot_trembl'], config)]]
+    # [ray.get(parse_uniprotkb_xml.parse_uniparc_xml(x)) for x in [(config['download_base_dir']+config['relpath_uniparc'], config)]]
     
-    merge_idmap(config)
-    create_proteomes_pkl(config['download_base_dir']+config['relpath_proteomes_xml'], config)
-    annotate_taxon_tree(config)
+    # merge_idmap(config)
+    # create_proteomes_pkl(config['download_base_dir']+config['relpath_proteomes_xml'], config)
+    # annotate_taxon_tree(config)
 
 
 if __name__ == '__main__':

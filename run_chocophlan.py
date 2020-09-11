@@ -33,10 +33,13 @@ def chocophlan():
     else:
         logger.info('UniRef and NCBI taxonomy data already downloaded. Moving on.')
     if os.path.exists('{}/DONE'.format(config['download']['download_base_dir'])):
-        build_taxontree.do_extraction(config['build_taxontree'], logger, verbose=config['build_taxontree']['verbose'])
+        if not os.path.exists('{}/{}'.format(config['parse_uniprot']['download_base_dir'], config['parse_uniprot']['relpath_pickle_taxontree'])):
+            build_taxontree.do_extraction(config['build_taxontree'], logger, verbose=config['build_taxontree']['verbose'])
+        else:
+            logger.info('NCBI taxonomic tree already built. Moving on.')
     
     if os.path.exists('{}/{}'.format(config['parse_uniprot']['download_base_dir'], config['parse_uniprot']['relpath_pickle_taxontree'])):
-        parse_uniprot.parse_uniprot(config['parse_uniprot'])
+        parse_uniprot.parse_uniprot(config['parse_uniprot'], logger)
     
     if os.path.exists('{}/{}'.format(config['parse_uniprot']['download_base_dir'], config['parse_uniprot']['relpath_pickle_taxontree'])) and \
         os.path.exists('{}/{}'.format(config['parse_uniprot']['download_base_dir'], config['parse_uniprot']['relpath_pickle_proteomes'])):

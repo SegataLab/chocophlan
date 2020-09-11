@@ -24,6 +24,7 @@ TAX_COLUMN=5
 FTP_COLUMN=19
 GFF_EXTENSION="_genomic.gff.gz"
 FNA_EXTENSION="_genomic.fna.gz"
+logger = utils.setup_logger('.','CHOCOPhlAn_download_{}'.format(datetime.datetime.today().strftime('%Y%m%d_%H%M')))
 
 def do_download(inputs, verbose, logger):
     if not terminating.is_set():
@@ -328,7 +329,7 @@ def download_ncbi_from_txt(input_file, basefolder):
     # download the assembly data once
     data = get_ncbi_assembly_info()
     terminating = mpdummy.Event()
-    logger.info("Loading input file with GCA ids to download...")
+    print("Loading input file with GCA ids to download...")
     assembly_ids = [x.strip() for x in open(input_file).readlines()]
     partial_process = partial(process_from_file, data=data, basefolder=basefolder)
     with mpdummy.Pool(initializer=init_parse, initargs=(terminating, ), processes=20) as pool:
@@ -336,7 +337,7 @@ def download_ncbi_from_txt(input_file, basefolder):
 
     failed = [x.split('.')[0] for x in filter(None,failed)]
 
-    with open('failed_GCA.txt','w') as f:
+    with open(os.path.join(basefolder,'failed_GCA.txt'),'w') as f:
         f.write('\n'.join(failed))
 
 def download_ncbi_from_proteome_pickle(config, proteomes=None, taxontree=None):
