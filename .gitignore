@@ -1,0 +1,17 @@
+*.txt
+data_*/*
+export_*/*
+genom_annot/*
+*bz2
+metaphlan3_genomes/*
+curated_markers/*
+*.ipynb_checkpoints*
+logs/
+tmp/*
+*.log
+***.ipynb
+*.pl
+*.sh
+chocophlan/__pycache__/*
+__pycache__/*
+.vscode/*

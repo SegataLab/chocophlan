@@ -28,7 +28,7 @@ from Bio.SeqIO.FastaIO import SimpleFastaParser
 from pyfaidx import Fasta
 import errno
 
-OUTFILE_PREFIX = 'mpa_v{}_CHOCOPhlAn_{}'.format(version.__MetaPhlAn_db_version__, version.__CHOCOPhlAn_version__)
+OUTFILE_PREFIX = 'mpa_v{}_CHOCOPhlAn_{}'.format(__MetaPhlAn_db_version__.replace('.',''), __CHOCOPhlAn_version__)
 shared_variables = type('shared_variables', (object,), {})
 log = logging.getLogger(__name__)
 ch = logging.FileHandler('CHOCOPhlAn_export_to_humann_{}.log'.format(datetime.datetime.today().strftime('%Y%m%d_%H%M')),'w')
@@ -122,7 +122,7 @@ def get_uniref90_nucl_seq(item):
                         print(taxid)
                         raise e
                     mpa_marker = '{}__{}__{}|{}|{}|{}|{}'.format(taxid, NR90[9:], feature['Name'][0], taxonomy, NR90, NR50, len(nuc_seq))
-                    record = SeqIO.SeqRecord(seq=Seq(nuc_seq, alphabet=DNAAlphabet()), id=mpa_marker, description='')
+                    record = SeqIO.SeqRecord(seq=Seq(nuc_seq, alphabet=DNAAlphabet()), id=mpa_marker, description='', name=NR90[9:])
                     nucls.append(record)
                 else:
                     failed.append(str(NR90))
@@ -168,7 +168,7 @@ def export_panproteome_centroid(species_id):
         pangene_nr50 = 'UniRef50_'+shared_variables.uniref90_taxid_map[pangene][1][2]
         added=False
         for (upkb_id, upid, count) in (x.split(':') for x in row.copy_number.split(';')):
-            gca = get_gca(upid)            
+            gca = get_gca(upid)
             if gca:
                 is_uparc = upkb_id.startswith('UPI')
                 upkb_entry = shared_variables.uniprot[upkb_id] if not is_uparc else shared_variables.uniparc[upkb_id]
@@ -201,13 +201,12 @@ def export_panproteome_centroid(species_id):
                         gc[(gca, species_id, taxonomy)][(pangene, pangene_nr50)] = set()
                     gc[(gca, species_id, taxonomy)][(pangene, pangene_nr50)].update(gene_names)
                     added=True
-                    break
         return (gc, func_annot, pangene if not added else None)
 
     _gc, func_annot, failed = zip(*map(get_gene_names, panproteome.itertuples()))
     
     func_annot = {k:v for x in func_annot for k, v in x.items()}
-    [gc.setdefault(k, {}).setdefault(w, set()).update(z) for x in filter(None,_gc) for k, v in x.items() for w,z in v.items()]
+    _ = [gc.setdefault(k, {}).setdefault(w, set()).update(z) for x in filter(None,_gc) for k, v in x.items() for w,z in v.items()]
     if failed is not None and not all(x is None for x in failed):
         failed = list(filter(None, failed))
         log.warning("[{}]\tFailed to find gene names associated to the following pangenes {}".format(species_id, (','.join(failed))))
@@ -227,13 +226,22 @@ def export_panproteome_centroid(species_id):
             print(species_id)
             return
         pangenes = list(itertools.chain.from_iterable(filter(None,pangenes)))
+        pangenes = sorted(pangenes, key=lambda x:x.name)
+        all_pangenes = set('UniRef90_'+x.id.split('__')[1] for x in pangenes)
     if failed is not None and not all(x is None for x in failed):
         failed = list(filter(None, failed))[0]
-        log.warning("[{}]\tFailed to extract nucleotide sequences for the following pangene {}".format(species_id, (','.join(failed))))
+        failed = set(failed).difference(all_pangenes)
+        if failed:
+            log.warning("[{}]\tFailed to extract nucleotide sequences for the following pangene {}".format(species_id, (','.join(failed))))
     if len(pangenes):
+        pangenes_saved = set()
+
         #save tsv of annots
         with bz2.open('{}/{}/panproteomes_fna/{}.fna.bz2'.format(shared_variables.config['export_dir'], shared_variables.config['exportpath_humann'], species_id), 'wt') as fasta_pangenes:
-            [fasta_pangenes.write(marker.format('fasta')) for marker in pangenes]
+            for marker in pangenes:
+                if marker.name not in pangenes_saved:
+                    fasta_pangenes.write(marker.format('fasta'))
+                    pangenes_saved.add(marker.name)
 
         with bz2.BZ2File('{}/{}/functional_annot/{}.txt.bz2'.format(shared_variables.config['export_dir'], shared_variables.config['exportpath_humann'], species_id), 'w') as functional_annot:
             pickle.dump(func_annot, functional_annot)
@@ -395,7 +403,7 @@ def export_genome_annotation(panproteome_id):
 
 def run_all(config):
     config['exportpath_metaphlan'] = os.path.join( config['exportpath_metaphlan'],OUTFILE_PREFIX)
-    config['relpath_gca2taxa'] = config['relpath_gca2taxa'].replace('DATE',version.__UniRef_version__)
+    config['relpath_gca2taxa'] = config['relpath_gca2taxa'].replace('DATE',__UniRef_version__)
     initialize(config)
 
     mpa_pkl = pickle.load(bz2.BZ2File('{}/{}/{}.pkl'.format(config['export_dir'], config['exportpath_metaphlan'], OUTFILE_PREFIX), 'r'))
@@ -404,7 +412,7 @@ def run_all(config):
         res = [_ for _ in pll.imap_unordered(export_panproteome_centroid, set(int(s[0].split('|')[-1]) for s in mpa_pkl['taxonomy'].values()), chunksize=1)]
 
     functional_annot_d = {}
-    OUTFILE_PREFIX = 'HUMAnN_{}_CHOCOPhlAn_{}'.format(version.__MetaPhlAn_db_version__, version.__CHOCOPhlAn_version__)
+    OUTFILE_PREFIX = 'HUMAnN_{}_CHOCOPhlAn_{}'.format(__MetaPhlAn_db_version__, __CHOCOPhlAn_version__)
     with bz2.open('{}/{}/{}_functional_annotation_mapping.tsv.bz2'.format(config['export_dir'], config['exportpath_humann'],OUTFILE_PREFIX), 'wt') as functional_annot:
         functional_annot.write('NR90\tNR50\tGO\tKO\tKEGG\tPfam\tEC\teggNOG\n')
         for s in glob.glob('{}/{}/functional_annot/*.txt.bz2'.format(config['export_dir'], config['exportpath_humann'])):
