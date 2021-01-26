@@ -75,7 +75,7 @@ def initialize (config):
         utils.info('Finished.\n')
 
 def get_all_species_panproteomes():
-    return [x.split('/')[-1][:-4] for x in glob.glob('{}/{}/species/90/*'.format(shared_variables.config['download_base_dir'], shared_variables.config['relpath_panproteomes_dir']))]
+    return [x.split('/')[-1][:-4] for x in glob.iglob('{}/{}/species/90/*'.format(shared_variables.config['download_base_dir'], shared_variables.config['relpath_panproteomes_dir']))]
 
 
 def get_uniref90_nucl_seq(item):
@@ -415,7 +415,7 @@ def run_all(config):
     OUTFILE_PREFIX = 'HUMAnN_{}_CHOCOPhlAn_{}'.format(__MetaPhlAn_db_version__, __CHOCOPhlAn_version__)
     with bz2.open('{}/{}/{}_functional_annotation_mapping.tsv.bz2'.format(config['export_dir'], config['exportpath_humann'],OUTFILE_PREFIX), 'wt') as functional_annot:
         functional_annot.write('NR90\tNR50\tGO\tKO\tKEGG\tPfam\tEC\teggNOG\n')
-        for s in glob.glob('{}/{}/functional_annot/*.txt.bz2'.format(config['export_dir'], config['exportpath_humann'])):
+        for s in glob.iglob('{}/{}/functional_annot/*.txt.bz2'.format(config['export_dir'], config['exportpath_humann'])):
             with bz2.BZ2File(s) as p_fa:
                 for k,v in dict(pickle.load(p_fa)).items():
                     if k not in functional_annot_d:
@@ -431,7 +431,7 @@ def run_all(config):
 
     with bz2.open('{}/{}/gca_upkb_to_NR90_NR50.tsv.bz2'.format(config['export_dir'], config['exportpath_humann']), 'wt') as genome_functional_annot:
         genome_functional_annot.write('GCA\tUPKBID\tNR90\tNR50\n')
-        for s in glob.iglob('/shares/CIBIO-Storage/CM/scratch/users/francesco.beghini/hg/chocophlan/export_201901/humann2/gca_upkb_to_nr/*.txt.bz2'):
+        for s in glob.iglob('{}/{}/gca_upkb_to_nr/*.txt.bz2'.format(config['export_dir'], config['exportpath_humann'])):
             with bz2.open(s, 'rt') as p_fa:
                 genome_functional_annot.writelines( line for line in p_fa if '#GCA' not in line )
 
